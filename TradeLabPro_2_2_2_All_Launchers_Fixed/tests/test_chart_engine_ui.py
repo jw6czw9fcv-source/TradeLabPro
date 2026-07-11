@@ -44,6 +44,155 @@ def test_chart_widget_handles_empty_dataframe_gracefully(qapp):
     assert widget.symbol == "ZZZZ"  # should not raise, just shows placeholder
 
 
+def test_price_pane_y_axis_fits_real_data_after_empty_placeholder(qapp, ohlcv_df):
+    """show_empty_placeholder() (shown once at construction) pins the Y-axis
+    to a fixed [-1, 1] range. Regression test for a real bug where every
+    chart's price pane stayed locked to that placeholder range forever -
+    candles rendered, but squeezed into a sliver at the top of the pane
+    instead of filling it. Y range is now set explicitly in replot() (like
+    X already was) rather than left to pyqtgraph's auto-range, which only
+    recomputes on the next paint and would leave a stale range on a chart
+    replotted while its dock tab is hidden.
+    """
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    widget = PGChartWidget()
+    widget.plot("AAPL", ohlcv_df, ScannerConfig())
+
+    assert widget._empty_text_item is None  # placeholder must be removed once real data loads
+
+    y_lo, y_hi = widget.price_plot.getViewBox().viewRange()[1]
+    visible = ohlcv_df.iloc[max(0, len(ohlcv_df) - 100):]
+    close_lo, close_hi = float(visible["Low"].min()), float(visible["High"].max())
+    # The view must actually fit the visible window's price range, not stay
+    # pinned to the placeholder's [-1, 1].
+    assert y_lo < close_lo
+    assert y_hi > close_hi
+    assert (y_hi - y_lo) < (close_hi - close_lo) * 3  # fits snugly, not diluted by a stray item
+
+
+def test_price_pane_crosshair_and_signals_survive_construction(qapp):
+    """show_empty_placeholder() (called once at the end of __init__) does
+    price_plot.clear(), which - before this fix - silently orphaned every
+    item added to price_plot before that point: the price pane's own
+    crosshair InfiniteLines (_hline_price and _crosshair_lines[0]) and the
+    BUY/SELL signal_scatter, none of which were ever re-added. The result
+    was a crosshair that visually only worked in the volume/MACD/RSI
+    sub-panes, and BUY/SELL markers that silently never appeared, no
+    matter how much real signal data existed.
+    """
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    import pyqtgraph as pg
+
+    widget = PGChartWidget()
+    item_types = [type(it) for it in widget.price_plot.getPlotItem().items]
+    assert widget.signal_scatter.__class__ in item_types
+    assert item_types.count(pg.InfiniteLine) == 2  # price pane's own vline + hline_price
+
+
+def test_buy_sell_signals_computed_and_rendered(qapp, ohlcv_df):
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    widget = PGChartWidget()
+    widget.plot("AAPL", ohlcv_df, ScannerConfig())
+
+    # signal_scatter must still be attached to the plot (see the orphaning
+    # regression test above) and, for 260 bars of synthetic trending data,
+    # must actually have found at least one EMA-crossover signal.
+    assert widget.signal_scatter in widget.price_plot.getPlotItem().items
+    assert len(widget.signal_scatter.data) > 0
+    symbols = {rec["symbol"] for rec in widget.signal_scatter.data}
+    assert symbols <= {"arrow_up", "arrow_down"}
+
+
+def test_crosshair_readout_shows_full_ohlcv_at_hovered_bar(qapp, ohlcv_df):
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    from PySide6.QtCore import QPointF
+
+    widget = PGChartWidget()
+    widget.plot("AAPL", ohlcv_df, ScannerConfig())
+    widget.resize(800, 600)
+    widget.show()
+    qapp.processEvents()
+
+    vb = widget.price_plot.getViewBox()
+    (x0, x1), (y0, y1) = vb.viewRange()
+    mid_view = QPointF((x0 + x1) / 2, (y0 + y1) / 2)
+    widget._on_mouse_moved(vb.mapViewToScene(mid_view))
+
+    text = widget.crosshair_info.text()
+    assert "AAPL" in text
+    for token in ("O ", "H ", "L ", "C ", "Vol "):
+        assert token in text
+
+
+def test_crosshair_tracks_mouse_over_volume_macd_rsi_panes(qapp, ohlcv_df):
+    """Each PlotWidget owns its own QGraphicsScene. Regression test for a
+    real bug where only price_plot's sigMouseMoved was connected, so the
+    crosshair silently froze - never updating the vertical lines or the
+    OHLCV readout - the instant the mouse moved into the volume/MACD/RSI
+    panes below the main chart.
+    """
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    from PySide6.QtCore import QPointF
+
+    widget = PGChartWidget()
+    widget._toggle_subpanel("MACD", True)
+    widget._toggle_subpanel("RSI", True)
+    widget.plot("AAPL", ohlcv_df, ScannerConfig())
+    widget.resize(800, 600)
+    widget.show()
+    qapp.processEvents()
+
+    for plot in (widget.volume_plot, widget.macd_plot, widget.rsi_plot):
+        vb = plot.getViewBox()
+        (x0, x1), (y0, y1) = vb.viewRange()
+        mid_view = QPointF((x0 + x1) / 2, (y0 + y1) / 2)
+        widget._on_mouse_moved(vb.mapViewToScene(mid_view), plot)
+
+        assert "AAPL" in widget.crosshair_info.text()
+        positions = {round(line.getXPos(), 3) for line in widget._crosshair_lines}
+        assert len(positions) == 1  # all four panes' vertical lines stay in sync
+
+
+def test_macd_and_rsi_visible_by_default(qapp, ohlcv_df):
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+
+    widget = PGChartWidget()
+    widget.resize(800, 600)
+    widget.show()
+    qapp.processEvents()
+    widget.plot("AAPL", ohlcv_df, ScannerConfig())
+    qapp.processEvents()
+
+    assert widget._sub_panel_flags["MACD"] is True
+    assert widget._sub_panel_flags["RSI"] is True
+    assert widget.macd_plot.isVisible()
+    assert widget.rsi_plot.isVisible()
+
+
+def test_macd_and_rsi_crosshair_line_survives_a_real_replot(qapp, ohlcv_df):
+    """_plot_macd/_plot_rsi call .clear() on their own pane on every single
+    replot (symbol change, overlay toggle, anything) - regression test for
+    a bug where that wiped each pane's own crosshair InfiniteLine (added
+    once at construction) without ever re-adding it. setPos() on the
+    orphaned line object still "succeeded" silently, which is why this
+    slipped past a test that only checked positions and not scene
+    attachment - the crosshair simply never rendered on MACD/RSI after the
+    first replot, no matter how correctly _on_mouse_moved computed the
+    position.
+    """
+    import pyqtgraph as pg
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+
+    widget = PGChartWidget()
+    widget.plot("AAPL", ohlcv_df, ScannerConfig())  # first replot - the bug only appears after this
+
+    for plot in (widget.macd_plot, widget.rsi_plot):
+        items = plot.getPlotItem().items
+        assert any(isinstance(it, pg.InfiniteLine) for it in items), (
+            f"{plot} lost its crosshair line after replot()"
+        )
+
+
 @pytest.mark.parametrize("chart_type", ["Candlestick", "Heikin-Ashi", "Line", "Area"])
 def test_all_chart_types_render_without_raising(qapp, ohlcv_df, chart_type):
     from tradelab.ui.widgets.pg_chart_widget import PGChartWidget

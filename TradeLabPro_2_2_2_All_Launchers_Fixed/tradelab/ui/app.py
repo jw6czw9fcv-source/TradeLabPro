@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 import pandas as pd
 from PySide6.QtCore import Qt, QThread, Signal, QSettings, QTimer
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QSpinBox, QDoubleSpinBox, QComboBox,
@@ -20,6 +19,7 @@ from tradelab.data.universe import list_symbols, available_universes, refresh_ex
 from tradelab.data.market_data import get_history
 from tradelab.core.scanner import scan_symbols
 from tradelab.ui.chart_widget import ChartWorkspace, ChartWidget
+from tradelab.ui import colors
 from tradelab.core.backtester import backtest_ema_macd
 from tradelab.core.ai_ranker import explain_symbol
 
@@ -237,7 +237,16 @@ class ScannerPanel(QWidget):
         self.setup_container = QWidget()
         setup_row = QHBoxLayout(self.setup_container)
         setup_row.setContentsMargins(0, 0, 0, 0)
-        self.setup_name = QLineEdit("Default Setup")
+        # SCN-029: editable combo instead of a plain text field - lets you
+        # pick an existing preset to switch to it instantly (no Open file
+        # dialog needed for the common case), or type a new name to Save/
+        # Save As under. refresh_preset_list() keeps the dropdown list
+        # in sync with what's actually on disk.
+        self.setup_name = QComboBox()
+        self.setup_name.setEditable(True)
+        self.setup_name.setInsertPolicy(QComboBox.NoInsert)
+        self.setup_name.setEditText("Default Setup")
+        self.setup_name.activated.connect(self.on_preset_picked)
         new_setup = QPushButton("New")
         new_setup.setToolTip("Create a new scanner setup from default values")
         new_setup.clicked.connect(self.new_setup)
@@ -248,7 +257,7 @@ class ScannerPanel(QWidget):
         save_as_setup.setToolTip("Save the current scanner setup to a chosen file")
         save_as_setup.clicked.connect(self.save_setup_as)
         load_setup = QPushButton("Open")
-        load_setup.setToolTip("Open a saved scanner setup")
+        load_setup.setToolTip("Open a setup file from elsewhere on disk. To switch between your saved presets, use the Preset dropdown instead.")
         load_setup.clicked.connect(self.load_setup)
         duplicate_setup = QPushButton("Duplicate")
         duplicate_setup.setToolTip("Duplicate this setup name so you can save a variation")
@@ -268,7 +277,8 @@ class ScannerPanel(QWidget):
             btn.setMinimumWidth(0)
             btn.setMaximumWidth(max(48, btn.sizeHint().width() + 8))
             btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        setup_label = QLabel("Setup:")
+        setup_label = QLabel("Preset:")
+        setup_label.setToolTip("Pick a saved preset to switch instantly, or type a new name to Save/Save As under it.")
         setup_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         self.setup_name.setMinimumWidth(360)
         self.setup_name.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -385,6 +395,7 @@ class ScannerPanel(QWidget):
         row.addWidget(self.add_watch); row.addWidget(self.add_port); row.addWidget(self.load_chart); row.addWidget(export_btn)
         layout.addLayout(row)
 
+        self.refresh_preset_list()
 
     def _format_seconds(self, seconds):
         try:
@@ -434,28 +445,49 @@ class ScannerPanel(QWidget):
     def setup_path(self):
         d = DATA_DIR / "setups"
         d.mkdir(exist_ok=True)
-        safe = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in self.setup_name.text().strip() or "Default Setup").strip()
+        safe = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in self.setup_name.currentText().strip() or "Default Setup").strip()
         return d / f"{safe}.json"
 
+    def refresh_preset_list(self):
+        """Keep the Preset dropdown in sync with what's actually saved in
+        DATA_DIR/setups, so switching presets is a pick from the list
+        instead of an Open file dialog every time.
+        """
+        d = DATA_DIR / "setups"
+        names = sorted(p.stem for p in d.glob("*.json")) if d.exists() else []
+        current_text = self.setup_name.currentText()
+        self.setup_name.blockSignals(True)
+        self.setup_name.clear()
+        self.setup_name.addItems(names)
+        self.setup_name.setEditText(current_text)
+        self.setup_name.blockSignals(False)
+
+    def on_preset_picked(self, index: int):
+        name = self.setup_name.itemText(index)
+        if name:
+            self.load_setup_by_name(name)
 
     def new_setup(self):
-        self.setup_name.setText("New Setup")
+        # default_setup() also resets the name to "Default Setup" - call it
+        # first so "New Setup" isn't immediately clobbered afterward.
         self.default_setup()
+        self.setup_name.setEditText("New Setup")
         self.status.setText("New setup started. Adjust filters, then Save or Save As.")
 
     def save_setup_as(self):
         d = DATA_DIR / "setups"
         d.mkdir(exist_ok=True)
-        path, _ = QFileDialog.getSaveFileName(self, "Save scanner setup as", str(d / f"{self.setup_name.text().strip() or 'Scanner Setup'}.json"), "JSON files (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, "Save scanner setup as", str(d / f"{self.setup_name.currentText().strip() or 'Scanner Setup'}.json"), "JSON files (*.json)")
         if not path:
             return
         Path(path).write_text(json.dumps(self.current_setup_dict(), indent=2), encoding="utf-8")
-        self.setup_name.setText(Path(path).stem)
+        self.setup_name.setEditText(Path(path).stem)
+        self.refresh_preset_list()
         self.status.setText(f"Setup saved as: {Path(path).name}")
 
     def duplicate_setup(self):
-        base = self.setup_name.text().strip() or "Default Setup"
-        self.setup_name.setText(base + " Copy")
+        base = self.setup_name.currentText().strip() or "Default Setup"
+        self.setup_name.setEditText(base + " Copy")
         self.status.setText("Setup duplicated. Use Save to create the copied setup file.")
 
     def delete_setup(self):
@@ -465,6 +497,7 @@ class ScannerPanel(QWidget):
             return
         if QMessageBox.question(self, "Delete setup", f"Delete setup file?\n\n{path}") == QMessageBox.Yes:
             path.unlink()
+            self.refresh_preset_list()
             self.status.setText(f"Deleted setup: {path.name}")
 
 
@@ -495,6 +528,7 @@ class ScannerPanel(QWidget):
     def save_setup(self):
         path = self.setup_path()
         path.write_text(json.dumps(self.current_setup_dict(), indent=2), encoding="utf-8")
+        self.refresh_preset_list()
         self.status.setText(f"Setup saved: {path.name}")
 
     def load_setup(self):
@@ -503,8 +537,19 @@ class ScannerPanel(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "Load setup", str(d), "JSON files (*.json)")
         if not path:
             return
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.setup_name.setText(Path(path).stem)
+        self._apply_setup_data(json.loads(Path(path).read_text(encoding="utf-8")), Path(path).stem)
+        self.status.setText(f"Setup loaded: {Path(path).name}")
+
+    def load_setup_by_name(self, name: str):
+        path = DATA_DIR / "setups" / f"{name}.json"
+        if not path.exists():
+            self.status.setText(f"No setup file found for preset: {name}")
+            return
+        self._apply_setup_data(json.loads(path.read_text(encoding="utf-8")), name)
+        self.status.setText(f"Preset loaded: {name}")
+
+    def _apply_setup_data(self, data: dict, name: str):
+        self.setup_name.setEditText(name)
         self.scan_name.setText(data.get("scan_name", "My Scan"))
         preset = data.get("exchange_preset", data.get("market", data.get("country", "All Exchanges")))
         # 2.1.11 migration: ETF is now under My Lists; Custom Selection was removed.
@@ -530,7 +575,6 @@ class ScannerPanel(QWidget):
         selected = set(data.get("universes", []))
         for cb in self.universe_checks:
             cb.setChecked(bool(set(cb.property('universe_names') or []) & selected) or cb.property('universe_name') in selected)
-        self.status.setText(f"Setup loaded: {Path(path).name}")
 
     def default_setup(self):
         self.country.setCurrentText("All Exchanges")
@@ -553,7 +597,7 @@ class ScannerPanel(QWidget):
         for cb in self.universe_checks:
             name = cb.property('universe_name')
             cb.setChecked(bool(cb.property("universe_names")))
-        self.setup_name.setText("Default Setup")
+        self.setup_name.setEditText("Default Setup")
         self.status.setText("Default professional swing setup restored.")
 
     def create_custom_universe(self):
@@ -1045,22 +1089,35 @@ class ScannerPanel(QWidget):
             self.table.setItem(r, 8, table_item(atr_pct, numeric=True, display=f"{float(atr_pct or 0):.2f}%" if str(atr_pct) != "" else ""))
             self.table.setItem(r, 9, table_item(ema_trend))
             self.table.setItem(r, 10, table_item(macd_state))
+
+            is_error = str(signal).upper() == "ERROR"
+            if is_error:
+                error_text = row.get("Error", "")
+                item = self.table.item(r, 0)
+                if item and error_text:
+                    item.setToolTip(str(error_text))
+
             try:
                 score_f = float(score or 0)
-                if score_f >= 85:
-                    bg = QColor(20, 70, 35)
-                elif score_f >= 70:
-                    bg = QColor(45, 70, 25)
-                elif score_f >= 55:
-                    bg = QColor(70, 60, 20)
-                else:
-                    bg = QColor(65, 35, 30)
+                bg = colors.score_row_color(score_f, is_error=is_error)
                 for c in range(self.table.columnCount()):
                     it = self.table.item(r, c)
                     if it:
                         it.setBackground(bg)
             except Exception:
                 pass
+
+            for col, color in (
+                (1, colors.signal_color(signal)),
+                (7, colors.rsi_zone_color(rsi14)),
+                (9, colors.trend_color(ema_trend)),
+                (10, colors.trend_color(macd_state)),
+            ):
+                if color is None:
+                    continue
+                it = self.table.item(r, col)
+                if it:
+                    it.setForeground(color)
         self.table.setSortingEnabled(True)
         self.result_status.setText(f"Results: {len(df)}")
         if len(df) <= 200:

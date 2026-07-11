@@ -1,7 +1,40 @@
 # TradeLab Pro Project Status
 
-Current version: 2.2.0
-Current phase: Phase 1 - Chart Engine (complete)
+Current version: 2.4.1
+Current phase: Phase 2 - Scanner Professional (in progress)
+
+## Completed in 2.4.1 (Chart workspace multi-tab UX)
+- Explicit chart switcher row (own row below the toolbar, one button per open chart) - fixes real confusion ("I don't see the second added chart") caused by the native QDockWidget tab bar being easy to miss.
+- "Reset charts" button to collapse back to a single clean chart.
+- Removed each dock's native title bar (was repeating the same symbol name the switcher row and the chart's own search box already show); added a small per-chart close (x) button in the switcher row to replace the title bar's close button, shown only once more than one chart is open.
+- pytest regression suite now 92 tests, all passing.
+
+## Completed in 2.4.0 (Scanner Preset Manager upgrade, SCN-029)
+- Setup name field is now an editable combo box ("Preset:") listing every saved preset from `data/setups/` - pick one to switch instantly instead of using an Open file dialog. Stays in sync automatically after Save/Save As/Delete. "Open" button kept for loading a file from elsewhere on disk.
+- `load_setup()` and the new `load_setup_by_name()` now share one `_apply_setup_data()` implementation instead of duplicating the field-by-field restore logic.
+- Fixed a real bug found while doing this: `new_setup()` set the name to "New Setup" then called `default_setup()`, which itself unconditionally reset the name back to "Default Setup" - the New button never actually worked as intended.
+- pytest regression suite now 86 tests, all passing.
+
+## Completed in 2.3.2 (Chart Engine rendering fixes, part 2)
+Continued first manual pass over Phase 1. All silent bugs - no exception, no error log:
+- BUY/SELL signal triangles and the price pane's own crosshair lines never appeared: `show_empty_placeholder()`'s `price_plot.clear()` silently orphaned both, added at construction but never re-added. Also sized signal markers up (14 to 36) and gave them a white outline - they were technically rendering but invisible next to same-colored candles.
+- Crosshair froze outside the price pane: each pane (price/volume/MACD/RSI) has its own `QGraphicsScene`, but only price_plot's mouse-move signal was connected. Now all four are wired in.
+- MACD/RSI crosshair lines specifically still didn't render even after that fix - `_plot_macd()`/`_plot_rsi()` call `.clear()` on their own pane on every replot, wiping their crosshair line every time. This is why a test checking only position values (not scene attachment) didn't catch it; two rounds of fixing were needed here.
+- Opening a second chart tab silently made the workspace forget the first tab existed (`visibilityChanged` fires on tab-switch hides, not just real closes) and never actually raised the new tab to front (`dock.raise_()` called before Qt processes `tabifyDockWidget()` is a no-op).
+- MACD/RSI sub-panels now visible by default. Crosshair readout moved to a bottom status bar (date+time, full OHLCV, visible indicator values) instead of a floating label that could obscure the candle it described.
+- pytest regression suite now 80 tests, all passing.
+
+## Completed in 2.3.1 (Chart Engine rendering fixes)
+Phase 1 (Chart Engine) had only ever been verified by automated tests and headless launches. This release is the first time it was actually clicked through by hand, which surfaced three real bugs invisible to the test suite (none of them raise an exception):
+- Candle bodies visually fused with no visible wicks: the outline pen width was set in the same data-space coordinate system as the candle body width, so the stroke bridged the gap into neighboring candles regardless of zoom. Fixed with a cosmetic (pixel-width) wick pen and no outline on the body (fill only).
+- Price pane Y-axis permanently stuck at a placeholder `[-1, 1]` range from construction-time `show_empty_placeholder()`, which disables pyqtgraph's Y auto-range until explicitly re-enabled - nothing ever did. Fixed by setting Y range explicitly from visible High/Low on every replot, same as X range already was.
+- Bar-duration (Interval) selector was missing from the Chart tab entirely - Phase 1's PyQtGraph rewrite only carried over the Period dropdown. Added `interval_combo`, wired to `cfg.interval`, synced correctly when a chart is loaded from a Scanner result.
+- pytest regression suite now 71 tests, all passing.
+
+## Completed in 2.3.0 (Scanner Professional Phase 2, kickoff)
+- SCN-027 Scanner result color standard: `tradelab/ui/colors.py` centralizes score-tier row backgrounds, Signal/EMA/MACD Bull-Bear foreground colors, and RSI overbought/oversold highlighting, replacing inline magic-number `QColor` values.
+- Fixed a real bug: scan-error rows (Score 0) were visually indistinguishable from genuinely weak low-score results. Errors now render as a distinct gray, and the previously-hidden error message is surfaced as a Symbol-cell tooltip.
+- pytest regression suite now 70 tests, all passing.
 
 ## Completed in 2.2.0 (Chart Engine Phase 1)
 - Dockable, resizable, floatable chart workspace (QDockWidget-based), replacing fixed tabs.
@@ -21,10 +54,10 @@ Current phase: Phase 1 - Chart Engine (complete)
 ## Open / Watch
 - BUG-005 Stop Scanner remains under user validation.
 - BUG-006 Canadian ticker coverage remains under user validation.
-- SCN-026 IBKR-style Technical Filter Builder planned.
+- SCN-026 IBKR-style Technical Filter Builder planned, not yet started.
 - `app.py` (76KB) is still a UI monolith. Splitting it into `tradelab/ui/panels/` and `tradelab/ui/widgets/` is planned to start alongside Phase 2 (Scanner Pro), not yet done.
 - Strategy/plugin interface unification (formal `Strategy` base class + auto-discovery) not yet done — planned for Phase 2/5.
-- Dependency versions pinned in 2.2.0; re-verify against your actual installed environment (`pip freeze`) before your next release, since exact patch versions may need adjustment for your machine.
+- Dependency versions in requirements.txt were relaxed to `>=` floors in 2.2.2/2.2.3 after exact pins broke on Python 3.14 (no prebuilt wheels for pandas 2.2.3/numpy 1.26.4/matplotlib 3.9.2). Re-verify against your actual installed environment (`pip freeze`) before your next release regardless, since floors can still drift.
 
 ## Next
-- Phase 2: Scanner Professional (multi-strategy, sector/market-cap breakdown, preset manager - SCN-029).
+- Continue Phase 2: Scanner Professional - SCN-026 (Technical Filter Builder), plus multi-strategy scanning, sector/market-cap breakdown, and confidence scoring tied to backtest stats.

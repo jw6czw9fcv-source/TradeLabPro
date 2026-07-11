@@ -42,10 +42,13 @@ pg.setConfigOptions(antialias=True, background="#11151c", foreground="#c7d0d8")
 BULL_COLOR = "#3fb950"
 BEAR_COLOR = "#e5534b"
 GRID_ALPHA = 0.15
+BAR_WIDTH = 0.4  # candle/volume/MACD bar body width; bars sit 1 unit apart, so
+                  # anything above ~0.6 makes adjacent bars look like they're touching.
 
 CHART_TYPES = ["Candlestick", "Heikin-Ashi", "Line", "Area"]
 DRAWING_TOOLS = ["Cursor", "Trendline", "H-Line", "V-Line", "Rect", "Fib", "Text"]
 PERIOD_OPTIONS = ["3mo", "6mo", "1y", "2y", "5y", "max"]
+INTERVAL_OPTIONS = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo"]
 
 
 class CandlestickItem(pg.GraphicsObject):
@@ -70,9 +73,14 @@ class CandlestickItem(pg.GraphicsObject):
         if self.df is None or self.df.empty:
             painter.end()
             return
-        width = 0.6
-        bull_pen = QPen(QColor(BULL_COLOR)); bull_pen.setWidthF(1.0)
-        bear_pen = QPen(QColor(BEAR_COLOR)); bear_pen.setWidthF(1.0)
+        width = BAR_WIDTH
+        # Cosmetic pens stay a constant screen-pixel width regardless of
+        # zoom. A non-cosmetic pen is measured in the same data-space units
+        # as `width` (0.4) - a width of 1.0 there stretches half a unit past
+        # each edge, comfortably bridging the 0.6-unit gap between candles
+        # and fusing every body's outline into its neighbors.
+        bull_pen = QPen(QColor(BULL_COLOR)); bull_pen.setCosmetic(True); bull_pen.setWidthF(1.2)
+        bear_pen = QPen(QColor(BEAR_COLOR)); bear_pen.setCosmetic(True); bear_pen.setWidthF(1.2)
         bull_brush = QBrush(QColor(BULL_COLOR))
         bear_brush = QBrush(QColor(BEAR_COLOR))
         opens = self.df["Open"].to_numpy()
@@ -83,9 +91,12 @@ class CandlestickItem(pg.GraphicsObject):
             o, h, l, c = opens[i], highs[i], lows[i], closes[i]
             bullish = c >= o
             painter.setPen(bull_pen if bullish else bear_pen)
-            painter.setBrush(bull_brush if bullish else bear_brush)
             painter.drawLine(QPointF(i, l), QPointF(i, h))
             top, bottom = (c, o) if bullish else (o, c)
+            # No outline on the body - fill only, so a wide stroke can never
+            # bridge the gap into a neighboring candle regardless of zoom.
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(bull_brush if bullish else bear_brush)
             painter.drawRect(pg.QtCore.QRectF(i - width / 2, bottom, width, max(top - bottom, 1e-6)))
         painter.end()
 
@@ -95,9 +106,15 @@ class CandlestickItem(pg.GraphicsObject):
     def boundingRect(self):
         if self.df is None or self.df.empty:
             return pg.QtCore.QRectF()
+        lo = float(self.df["Low"].min())
+        hi = float(self.df["High"].max())
+        # Pad by a fraction of the visible High-Low span rather than a tiny
+        # percent of price - a percent-of-price pad barely registers during
+        # a tight consolidation, leaving wicks pinned to the plot edges.
+        pad = (hi - lo) * 0.08 or (hi * 0.01) or 1.0
         return pg.QtCore.QRectF(
-            -1, float(self.df["Low"].min()) * 0.999,
-            len(self.df) + 1, float(self.df["High"].max()) * 1.001 - float(self.df["Low"].min()) * 0.999,
+            -1, lo - pad,
+            len(self.df) + 1, (hi - lo) + 2 * pad,
         )
 
 
@@ -119,9 +136,12 @@ class PGChartWidget(QWidget):
         self._db: Optional[Database] = None
         self._overlay_flags = {
             "EMA": True, "SMA": False, "Bollinger": False, "VWAP": False,
-            "SuperTrend": False, "Ichimoku": False, "Pivots": False,
+            "SuperTrend": False, "Ichimoku": False, "Pivots": False, "Signals": True,
         }
-        self._sub_panel_flags = {"Volume": True, "MACD": False, "RSI": False}
+        self._sub_panel_flags = {"Volume": True, "MACD": True, "RSI": True}
+        self._empty_text_item = None
+        self._last_indicators: Optional[pd.DataFrame] = None
+        self._last_display: Optional[pd.DataFrame] = None
 
         self._build_ui()
 
@@ -150,6 +170,13 @@ class PGChartWidget(QWidget):
         self.period_combo.setCurrentText(self.cfg.period)
         self.period_combo.currentTextChanged.connect(self._on_period_changed)
         toolbar.addWidget(self.period_combo)
+
+        self.interval_combo = QComboBox()
+        self.interval_combo.addItems(INTERVAL_OPTIONS)
+        self.interval_combo.setCurrentText(self.cfg.interval)
+        self.interval_combo.setToolTip("Bar duration")
+        self.interval_combo.currentTextChanged.connect(self._on_interval_changed)
+        toolbar.addWidget(self.interval_combo)
 
         self.chart_type_combo = QComboBox()
         self.chart_type_combo.addItems(CHART_TYPES)
@@ -186,6 +213,8 @@ class PGChartWidget(QWidget):
         self.line_item = self.price_plot.plot([], [], pen=pg.mkPen("#4aa3ff", width=1.5))
         self.line_item.setVisible(False)
         self.price_plot.addItem(self.candle_item)
+        self.signal_scatter = pg.ScatterPlotItem()
+        self.price_plot.addItem(self.signal_scatter)
         layout.addWidget(self.price_plot, stretch=3)
 
         self.volume_plot = pg.PlotWidget()
@@ -198,13 +227,11 @@ class PGChartWidget(QWidget):
         self.macd_plot = pg.PlotWidget()
         self.macd_plot.showGrid(x=True, y=True, alpha=GRID_ALPHA)
         self.macd_plot.setXLink(self.price_plot)
-        self.macd_plot.hide()
         layout.addWidget(self.macd_plot, stretch=1)
 
         self.rsi_plot = pg.PlotWidget()
         self.rsi_plot.showGrid(x=True, y=True, alpha=GRID_ALPHA)
         self.rsi_plot.setXLink(self.price_plot)
-        self.rsi_plot.hide()
         layout.addWidget(self.rsi_plot, stretch=1)
 
         self._overlay_curves = {}
@@ -218,11 +245,22 @@ class PGChartWidget(QWidget):
             self._crosshair_lines.append(v_line)
         self._hline_price = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen("#666f78", width=1))
         self.price_plot.addItem(self._hline_price, ignoreBounds=True)
-        self._crosshair_label = pg.TextItem(anchor=(0, 1), color="#e6e9ec")
-        self.price_plot.addItem(self._crosshair_label)
 
-        self.price_plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
+        # Each PlotWidget owns its own QGraphicsScene - connecting only
+        # price_plot's sigMouseMoved means the crosshair simply freezes the
+        # moment the mouse crosses into the volume/MACD/RSI panes below it.
+        # Wire every pane (including any added later) into the same handler.
+        for plot in (self.price_plot, self.volume_plot, self.macd_plot, self.rsi_plot):
+            plot.scene().sigMouseMoved.connect(lambda pos, p=plot: self._on_mouse_moved(pos, p))
         self.price_plot.scene().sigMouseClicked.connect(self._on_mouse_clicked)
+
+        # Crosshair readout: date/time + full OHLCV + visible-indicator values
+        # at the hovered bar, anchored at the bottom instead of floating over
+        # the candles (where it can obscure the very bar it describes).
+        self.crosshair_info = QLabel("Move mouse over chart for OHLCV / indicator values")
+        self.crosshair_info.setStyleSheet("color:#b8b8b8; font-size:11px;")
+        self.crosshair_info.setWordWrap(True)
+        layout.addWidget(self.crosshair_info)
 
         self.show_empty_placeholder()
 
@@ -267,6 +305,12 @@ class PGChartWidget(QWidget):
             df = self._get_cached_history(self.symbol, self.cfg.period, self.cfg.interval)
             self.plot(self.symbol, df, self.cfg)
 
+    def _on_interval_changed(self, interval: str):
+        self.cfg.interval = interval
+        if self.symbol:
+            df = self._get_cached_history(self.symbol, self.cfg.period, self.cfg.interval)
+            self.plot(self.symbol, df, self.cfg)
+
     def _on_chart_type_changed(self, chart_type: str):
         self.chart_type = chart_type
         if self.symbol:
@@ -297,6 +341,14 @@ class PGChartWidget(QWidget):
         self.df_raw = df if df is not None else pd.DataFrame()
         self.symbol_edit.setText(self.symbol)
         self.status_label.setText(f"{self.symbol} · {len(self.df_raw)} bars")
+        # cfg may come from elsewhere (e.g. a Scanner result) with a
+        # different period/interval than what the toolbar shows - keep the
+        # combos in sync without re-triggering their change handlers.
+        for combo, value in ((self.period_combo, self.cfg.period), (self.interval_combo, self.cfg.interval)):
+            combo.blockSignals(True)
+            if value and combo.findText(value) >= 0:
+                combo.setCurrentText(value)
+            combo.blockSignals(False)
         self._load_drawings_for_symbol()
         self.replot()
         self.symbolChanged.emit(self.symbol)
@@ -305,6 +357,13 @@ class PGChartWidget(QWidget):
         if self.df_raw is None or self.df_raw.empty:
             self.show_empty_placeholder()
             return
+
+        if self._empty_text_item is not None:
+            # Left over from show_empty_placeholder(); its bounding rect
+            # sits near (0, 0) and was dragging the price pane's Y
+            # auto-range toward zero instead of fitting the real price data.
+            self.price_plot.removeItem(self._empty_text_item)
+            self._empty_text_item = None
 
         indicators = add_indicators(
             self.df_raw, self.cfg.ema_fast, self.cfg.ema_slow,
@@ -333,12 +392,35 @@ class PGChartWidget(QWidget):
                 self.line_item.setFillLevel(None)
 
         self._plot_overlays(indicators, x)
+        self._plot_signals(indicators, display, x)
         self._plot_volume(display, x)
         self._plot_macd(indicators, x)
         self._plot_rsi(indicators, x)
         self._plot_drawings()
 
-        self.price_plot.setXRange(max(0, len(x) - 180), len(x), padding=0.02)
+        # Kept for the crosshair readout (_on_mouse_moved), which needs the
+        # same indicator/display values used to draw the chart.
+        self._last_indicators = indicators
+        self._last_display = display
+
+        # Default zoom: fewer visible bars means more screen pixels per bar,
+        # so the gap between candle bodies (BAR_WIDTH) is actually visible
+        # instead of shrinking to sub-pixel and looking like one solid block.
+        visible_start = max(0, len(x) - 100)
+        self.price_plot.setXRange(visible_start, len(x), padding=0.02)
+
+        # Y range is set explicitly (like X above) rather than left to
+        # pyqtgraph's auto-range, which only recomputes on the next paint -
+        # a chart replotted while its dock tab is hidden would silently keep
+        # a stale range. show_empty_placeholder() also pins Y to a fixed
+        # [-1, 1] at construction, which must be overridden here or every
+        # chart's price pane stays locked to that placeholder range forever.
+        visible = display.iloc[visible_start:]
+        if self.chart_type in ("Candlestick", "Heikin-Ashi"):
+            y_lo, y_hi = float(visible["Low"].min()), float(visible["High"].max())
+        else:
+            y_lo, y_hi = float(visible["Close"].min()), float(visible["Close"].max())
+        self.price_plot.setYRange(y_lo, y_hi, padding=0.08)
 
     def _plot_overlays(self, ind: pd.DataFrame, x: np.ndarray):
         for name, curve in self._overlay_curves.items():
@@ -375,26 +457,76 @@ class PGChartWidget(QWidget):
             add_line(piv["R1"], "#e5534b", "R1", dash=True)
             add_line(piv["S1"], "#3fb950", "S1", dash=True)
 
+    def _plot_signals(self, ind: pd.DataFrame, display: pd.DataFrame, x: np.ndarray):
+        """BUY/SELL triangle markers: EMA fast/slow crossover confirmed by
+        MACD histogram sign, same rule the legacy matplotlib chart used
+        (kept for continuity - this is what a "BUY"/"SELL" mark on this
+        chart has always meant, not a new signal definition).
+        """
+        if not self._overlay_flags["Signals"]:
+            self.signal_scatter.setData([])
+            return
+        fast_col, slow_col = f"EMA{self.cfg.ema_fast}", f"EMA{self.cfg.ema_slow}"
+        if fast_col not in ind.columns or slow_col not in ind.columns:
+            self.signal_scatter.setData([])
+            return
+
+        fast = ind[fast_col].to_numpy()
+        slow = ind[slow_col].to_numpy()
+        prev_fast = np.roll(fast, 1); prev_fast[0] = fast[0]
+        prev_slow = np.roll(slow, 1); prev_slow[0] = slow[0]
+        macd_hist = ind["MACD_HIST"].fillna(0).to_numpy() if "MACD_HIST" in ind.columns else np.zeros(len(ind))
+
+        cross_up = (fast > slow) & (prev_fast <= prev_slow)
+        cross_down = (fast < slow) & (prev_fast >= prev_slow)
+        buy_mask = cross_up & (macd_hist >= 0)
+        sell_mask = cross_down & (macd_hist <= 0)
+
+        lows = display["Low"].to_numpy()
+        highs = display["High"].to_numpy()
+        # A white outline and a larger size than you'd guess are both needed
+        # here - at the candle body's own fill color and a "reasonable"
+        # ~14px size, an arrow_up/arrow_down marker is nearly invisible
+        # sitting next to a same-colored candle.
+        outline = pg.mkPen("#f5f6fa", width=1.5)
+        spots = [
+            dict(pos=(x[i], lows[i] * 0.985), symbol="arrow_up", size=36,
+                 brush=pg.mkBrush(BULL_COLOR), pen=outline)
+            for i in np.nonzero(buy_mask)[0]
+        ] + [
+            dict(pos=(x[i], highs[i] * 1.015), symbol="arrow_down", size=36,
+                 brush=pg.mkBrush(BEAR_COLOR), pen=outline)
+            for i in np.nonzero(sell_mask)[0]
+        ]
+        self.signal_scatter.setData(spots)
+
     def _plot_volume(self, display: pd.DataFrame, x: np.ndarray):
         colors = [
             BULL_COLOR if c >= o else BEAR_COLOR
             for o, c in zip(display["Open"], display["Close"])
         ]
         self.volume_plot.removeItem(self.volume_bars)
-        self.volume_bars = pg.BarGraphItem(x=x, height=display["Volume"].to_numpy(), width=0.6, brushes=colors)
+        self.volume_bars = pg.BarGraphItem(x=x, height=display["Volume"].to_numpy(), width=BAR_WIDTH, brushes=colors)
         self.volume_plot.addItem(self.volume_bars)
 
     def _plot_macd(self, ind: pd.DataFrame, x: np.ndarray):
         self.macd_plot.clear()
+        # clear() wipes this pane's own crosshair vline (added once at
+        # construction) on every single replot - a symbol change, an
+        # overlay toggle, anything - so without re-adding it here the
+        # crosshair silently stops rendering on this pane after the very
+        # first replot, even though _on_mouse_moved keeps "moving" it.
+        self.macd_plot.addItem(self._crosshair_lines[2], ignoreBounds=True)
         if not self._sub_panel_flags["MACD"]:
             return
         self.macd_plot.plot(x, ind["MACD"].to_numpy(), pen=pg.mkPen("#4aa3ff", width=1.2))
         self.macd_plot.plot(x, ind["MACD_SIGNAL"].to_numpy(), pen=pg.mkPen("#fbc531", width=1.2))
         hist_colors = [BULL_COLOR if v >= 0 else BEAR_COLOR for v in ind["MACD_HIST"].fillna(0)]
-        self.macd_plot.addItem(pg.BarGraphItem(x=x, height=ind["MACD_HIST"].fillna(0).to_numpy(), width=0.6, brushes=hist_colors))
+        self.macd_plot.addItem(pg.BarGraphItem(x=x, height=ind["MACD_HIST"].fillna(0).to_numpy(), width=BAR_WIDTH, brushes=hist_colors))
 
     def _plot_rsi(self, ind: pd.DataFrame, x: np.ndarray):
         self.rsi_plot.clear()
+        self.rsi_plot.addItem(self._crosshair_lines[3], ignoreBounds=True)  # see _plot_macd
         if not self._sub_panel_flags["RSI"]:
             return
         self.rsi_plot.plot(x, ind["RSI14"].to_numpy(), pen=pg.mkPen("#9c88ff", width=1.4))
@@ -404,26 +536,47 @@ class PGChartWidget(QWidget):
     # ------------------------------------------------------------------
     # Crosshair
     # ------------------------------------------------------------------
-    def _on_mouse_moved(self, scene_pos):
-        if not self.price_plot.sceneBoundingRect().contains(scene_pos):
+    def _on_mouse_moved(self, scene_pos, source_plot=None):
+        source_plot = source_plot or self.price_plot
+        if not source_plot.sceneBoundingRect().contains(scene_pos):
             return
-        view_pos = self.price_plot.getViewBox().mapSceneToView(scene_pos)
+        # Each pane has its own scene, so scene_pos is only meaningful
+        # mapped through the ViewBox of whichever pane the mouse is
+        # actually over - price and RSI, say, are on wildly different
+        # value scales, and mapping through the wrong one would put the
+        # horizontal line and OHLCV lookup at a nonsense position.
+        view_pos = source_plot.getViewBox().mapSceneToView(scene_pos)
         x_val, y_val = view_pos.x(), view_pos.y()
         for line in self._crosshair_lines:
             line.setPos(x_val)
-        self._hline_price.setPos(y_val)
+        if source_plot is self.price_plot:
+            self._hline_price.setPos(y_val)
 
         idx = int(round(x_val))
-        label = f"{self.symbol}  {y_val:,.2f}"
-        if 0 <= idx < len(self.df_raw):
-            row = self.df_raw.iloc[idx]
-            date_str = str(self.df_raw.index[idx])[:10]
-            label = (
-                f"{self.symbol}  {date_str}   O:{row['Open']:.2f} H:{row['High']:.2f} "
-                f"L:{row['Low']:.2f} C:{row['Close']:.2f}"
-            )
-        self._crosshair_label.setText(label)
-        self._crosshair_label.setPos(x_val, y_val)
+        if not (0 <= idx < len(self.df_raw)):
+            return
+
+        row = self.df_raw.iloc[idx]
+        ts = pd.Timestamp(self.df_raw.index[idx])
+        # Intraday intervals need a time-of-day; daily+ bars don't.
+        date_str = ts.strftime("%a %d %b %Y" if self.cfg.interval in ("1d", "5d", "1wk", "1mo") else "%a %d %b %Y  %H:%M")
+
+        parts = [
+            self.symbol, date_str,
+            f"O {row['Open']:.2f}", f"H {row['High']:.2f}", f"L {row['Low']:.2f}", f"C {row['Close']:.2f}",
+            f"Vol {row['Volume']:,.0f}",
+        ]
+        ind = self._last_indicators
+        if ind is not None and idx < len(ind):
+            ind_row = ind.iloc[idx]
+            if self._overlay_flags["EMA"]:
+                parts.append(f"EMA{self.cfg.ema_fast} {ind_row.get(f'EMA{self.cfg.ema_fast}', float('nan')):.2f}")
+                parts.append(f"EMA{self.cfg.ema_slow} {ind_row.get(f'EMA{self.cfg.ema_slow}', float('nan')):.2f}")
+            if self._sub_panel_flags["RSI"] and "RSI14" in ind.columns:
+                parts.append(f"RSI {ind_row['RSI14']:.1f}")
+            if self._sub_panel_flags["MACD"] and "MACD" in ind.columns:
+                parts.append(f"MACD {ind_row['MACD']:.3f}")
+        self.crosshair_info.setText("   |   ".join(parts))
 
     def _on_mouse_clicked(self, event):
         if self.active_tool == "Cursor":
@@ -531,9 +684,19 @@ class PGChartWidget(QWidget):
     def show_empty_placeholder(self):
         self.candle_item.set_data(pd.DataFrame())
         self.line_item.setData([], [])
+        self.signal_scatter.setData([])
         self.price_plot.clear()
         self.price_plot.addItem(self.candle_item)
+        self.price_plot.addItem(self.signal_scatter)
+        # price_plot.clear() also strips the price pane's own crosshair
+        # lines (added once at construction, before this method's very
+        # first call) - without re-adding them, the crosshair silently
+        # never worked in the price pane, only in the volume/MACD/RSI
+        # sub-panes (which are never cleared).
+        self.price_plot.addItem(self._crosshair_lines[0], ignoreBounds=True)
+        self.price_plot.addItem(self._hline_price, ignoreBounds=True)
         text = pg.TextItem("Empty chart — search a symbol", color="#9aa4ad", anchor=(0.5, 0.5))
         self.price_plot.addItem(text)
+        self._empty_text_item = text
         self.price_plot.setXRange(-1, 1)
         self.price_plot.setYRange(-1, 1)

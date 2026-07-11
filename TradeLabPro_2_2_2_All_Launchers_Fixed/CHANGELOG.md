@@ -1,5 +1,76 @@
 # Changelog
 
+## 2.4.1 - Chart workspace multi-tab UX
+
+### Added
+- Explicit, always-visible chart switcher row (its own row below the toolbar) - one button per open chart, click to bring it to front. The native QDockWidget tab bar this sits alongside is easy to miss, which is exactly the confusion this fixes ("I don't see the second added chart" / "how do I switch chart").
+- "Reset charts" toolbar button - closes every open chart tab and starts over with a single clean chart, for when multi-tab state gets confusing.
+- A small close (x) button next to each chart in the switcher row, appearing only once more than one chart is open (same rule the old QTabWidget-based workspace used: never let you close your last tab).
+
+### Changed
+- Removed each dock's native title bar. It repeated the same symbol name the new switcher row and the chart's own search box already show, directly above each other. Trade-off: dragging a dock by its title bar to float/split it is no longer available - the switcher row and Reset button cover the everyday cases.
+
+### Verified
+- 92/92 pytest regression tests pass (12 new across the switcher row, reset, title bar removal, and per-chart close button).
+- Manually tested in the real running app after each step of this round.
+
+## 2.4.0 - Scanner Preset Manager upgrade (SCN-029)
+
+### Changed
+- The Setup name field is now an editable combo box (`Preset:`) listing every saved preset from `data/setups/`, instead of a plain text field paired with an Open file dialog. Picking a preset from the dropdown loads it instantly; typing a new name and hitting Save/Save As still works exactly as before. The dropdown stays in sync automatically after Save, Save As, and Delete. The existing "Open" button is kept for loading a setup file from elsewhere on disk (outside `data/setups/`), which the dropdown doesn't cover.
+- `load_setup()` (file-dialog path) and the new `load_setup_by_name()` (dropdown path) now share one `_apply_setup_data()` implementation instead of duplicating the whole field-by-field restore logic.
+
+### Fixed
+- `new_setup()` set the name to "New Setup" and then immediately called `default_setup()`, which itself unconditionally reset the name back to "Default Setup" - the New button never actually showed "New Setup". Reordered so the name is set after the reset, not before.
+
+### Verified
+- 86/86 pytest regression tests pass (6 new: `tests/test_scanner_presets.py`, covering dropdown sync on save/save-as/delete, preset switching restoring saved values, and the New Setup naming fix).
+- Manually tested in the real running app.
+
+## 2.3.2 - Chart Engine rendering fixes, part 2 (BUY/SELL, crosshair, multi-tab)
+
+Continued first manual pass over Phase 1 (Chart Engine). All of these were silent - no exception, no error log - which is exactly the class of bug automated tests miss unless they specifically check scene/tracking state rather than just "did this raise."
+
+### Fixed
+- **BUY/SELL signal triangles and the price pane's own crosshair lines never appeared.** `show_empty_placeholder()` (called once at construction) does `price_plot.clear()`, which silently orphaned every item added to price_plot before that point - `signal_scatter` and the price pane's own `InfiniteLine`s were removed and never re-added. Fixed by re-adding them in `show_empty_placeholder()`.
+- **Signal markers, once actually rendering, were nearly invisible** - `size=14` with no outline, using the same green/red as the candles right next to them. Sized up (14 to 20, then to 36 per follow-up feedback) and given a white outline for contrast.
+- **Crosshair froze the instant the mouse left the price pane.** Each chart pane (price/volume/MACD/RSI) is a separate `PlotWidget` with its own independent `QGraphicsScene`, but only price_plot's `sigMouseMoved` was ever connected. Wired all four panes into the same handler, mapping through whichever pane's own ViewBox the mouse is actually over (panes are on very different value scales, so this matters).
+- **MACD/RSI crosshair lines specifically still didn't render even after the above fix** - `_plot_macd()`/`_plot_rsi()` each call `.clear()` on their own pane on *every* replot (symbol change, overlay toggle, anything), which wiped that pane's own crosshair line every time, never re-added. `setPos()` on the orphaned line succeeded silently, which is why a test that only checked position values (not scene attachment) didn't catch it. Fixed by re-adding each pane's line right after its own `.clear()`.
+- **Opening a second chart tab made the workspace forget the first one existed.** `ChartWorkspace` tracked dock lifecycle via `visibilityChanged`, which fires both on a real close AND whenever a dock is hidden for merely not being the active tab in a tabified group - the latter happens to every dock the instant a second one is tabified onto it. The new tab was also never actually brought to front (`dock.raise_()` called before Qt finishes processing `tabifyDockWidget()` is a no-op). Fixed with a proper close-only signal (`QDockWidget` subclass overriding `closeEvent`) and a deferred `QTimer.singleShot(0, dock.raise_)`.
+
+### Changed
+- MACD and RSI sub-panels now visible by default (were off, requiring a manual toggle every session).
+- Crosshair readout moved from a floating label that could obscure the very candle it described to a status bar fixed at the bottom of the chart, showing date+time (with time-of-day on intraday intervals), full OHLCV, and visible EMA/RSI/MACD values.
+
+### Verified
+- 80/80 pytest regression tests pass (9 new, covering scene attachment after a real replot - not just position values - plus the multi-tab dock lifecycle).
+- Manually tested in the real running app after each fix; two of these bugs (BUY/SELL markers, MACD/RSI crosshair) only surfaced because a first "fix" that passed automated + offscreen verification still didn't work when actually clicked through, which is why several fixes above needed a second pass.
+
+## 2.3.1 - Chart Engine rendering fixes (found during first manual test of Phase 1)
+
+Phase 1 (Chart Engine) had only ever been verified by automated tests and headless launches - this is the first release where it was actually clicked through by hand, which surfaced three real bugs the test suite couldn't catch because none of them raise an exception:
+
+### Fixed
+- **Candle bodies visually fused into a solid ribbon with no visible wicks.** Root cause: the candle outline pen width (`1.0`) was set in the same data-space coordinate system as the candle body width (`0.4`), not screen pixels - the stroke extended half a data-unit past every edge, comfortably bridging the gap to the next candle and fusing outlines together regardless of how much fill-gap was configured. Fixed by using a cosmetic (constant-pixel-width) pen for the wick and dropping the outline on the body entirely (fill only), so a stroke can never bridge into a neighboring candle.
+- **Price pane Y-axis permanently stuck at a placeholder `[-1, 1]` range.** `show_empty_placeholder()` (shown once at widget construction) pins the Y-axis with `setYRange`, which disables pyqtgraph's Y auto-range until explicitly re-enabled - nothing ever did, so every chart's price pane stayed locked to that placeholder range instead of fitting the real price data. A leftover placeholder text item (never removed once real data loaded) compounded this by also pulling the auto-range toward zero. Fixed by removing the placeholder item on first real plot and setting the Y range explicitly from the visible candles' High/Low (matching how X range was already handled), instead of relying on auto-range's deferred, paint-cycle-dependent recompute.
+- **Bar-duration (Interval) selector missing from the Chart tab.** The PyQtGraph rewrite (Phase 1) only carried over a Period dropdown (3mo-max); the Interval control (1m/5m/.../1d/1wk/1mo) that the Scanner tab has always had was never wired into the standalone chart toolbar, even though the data layer already supported it. Added `interval_combo` next to Period, and `plot()` now syncs both combos when a cfg with a different period/interval is loaded externally (e.g. from a Scanner result), instead of leaving the toolbar showing stale values.
+- Default visible window on chart load reduced from 180 to 100 bars, and candle/volume/MACD-histogram bar width tightened, so bars have a real, visible gap at typical panel widths instead of compressing to sub-pixel spacing.
+
+### Verified
+- 71/71 pytest regression tests pass (1 new: a Y-axis-fit regression test in `test_chart_engine_ui.py`).
+- Manually tested by launching the real (non-offscreen) app after each fix.
+
+## 2.3.0 - Scanner result color standard (Phase 2 kickoff, SCN-027)
+
+### Added
+- `tradelab/ui/colors.py`: single source of truth for Scanner result table colors - score tiers (background), Signal/EMA/MACD Bull-Bear state (foreground), and RSI overbought/oversold zones (foreground). Previously the score-tier row tint was the only coloring, defined as unlabeled magic `QColor` values inline in `populate_table`.
+
+### Fixed
+- Scan errors (`Signal == "ERROR"`) previously fell into the same "poor score" red tint as a genuinely weak but valid result (both had `Score == 0`), making a scan failure indistinguishable from a real low-scoring symbol at a glance. Errors now render as a distinct neutral gray, and the error message (previously computed but never shown anywhere) is now surfaced as a tooltip on the Symbol cell.
+
+### Verified
+- 70/70 pytest regression tests pass (16 new: `tests/test_scanner_colors.py`), including an integration test that drives `ScannerPanel.populate_table()` end-to-end and checks table cell colors/tooltip.
+
 ## 2.2.2 - Installer fix, part 2 (all launchers protected)
 
 ### Fixed
