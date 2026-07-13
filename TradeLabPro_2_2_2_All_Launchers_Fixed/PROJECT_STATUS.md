@@ -1,7 +1,16 @@
 # TradeLab Pro Project Status
 
-Current version: 2.8.0
-Current phase: Phase 4 - Backtesting Lab (started)
+Current version: 2.9.0
+Current phase: Phase 5 - Strategy Builder (started)
+
+## Completed in 2.9.0 (No-code Strategy Builder + configurable indicators, Phase 5)
+- No-code Strategy Builder: BUY/SELL condition blocks -> saveable custom strategies (`tradelab/strategies/custom.py`, persisted in data/strategies/) that run in the Scanner and Backtest like built-ins.
+- Expanded indicator library (Stochastic, Williams %R, CCI, ROC, OBV, MFI, VWAP).
+- Field-vs-field comparison operators ("Above/Below field") for crossover-style conditions.
+- Period-parameterized fields everywhere with standard defaults + on-demand computation (`ensure_columns`); legacy keys auto-migrate.
+- Chart indicator manager (add/remove overlays with tunable periods), configurable MACD/RSI sub-pane periods, and a clickable on-chart legend that opens the editor.
+- pytest regression suite now 269 tests, all passing.
+- data/setups/ and data/strategies/ added to .gitignore (runtime user data).
 
 ## Completed in 2.8.0 (Backtesting Lab, Phase 4)
 - `tradelab/core/backtest.py`: strategy-agnostic engine - single-symbol simulation, multi-symbol aggregation, single-parameter optimization, and walk-forward analysis with a consistency score. Adds Max drawdown %. Qt-free, offline-testable.

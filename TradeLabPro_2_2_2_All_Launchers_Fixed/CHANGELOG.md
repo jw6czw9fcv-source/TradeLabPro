@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.9.0 - No-code Strategy Builder + configurable indicators (Phase 5)
+
+Phase 5, plus a major push toward TradingView/IBKR-level flexibility: indicators are now parameterized and editable everywhere from the UI, with no code.
+
+### Added
+- **No-code Strategy Builder**: build a strategy from BUY/SELL condition blocks, save/load/delete it, and it becomes a real runnable strategy in the Scanner and Backtest dropdowns (keyed `custom:<name>`) via the registry. New `tradelab/strategies/custom.py` (CustomStrategy: signal_series on rising-edge of the condition blocks + score_symbol), persisted as JSON in `data/strategies/`.
+- **Expanded indicator library**: Stochastic %K/%D, Williams %R, CCI, Rate of Change, OBV, Money Flow Index, and VWAP added to `add_indicators` and exposed as condition/overlay fields.
+- **Field-vs-field comparisons**: new "Above field"/"Below field" operators compare one indicator to another (e.g. EMA 9 above EMA 30, Price above VWAP, MACD above Signal) - so crossover strategies are expressible in the no-code builder.
+- **Tunable periods everywhere, with standard defaults**: `filters.py` fields became period-parameterized (`FIELD_SPECS` + `ensure_columns` computes any period on demand). Every condition row (Scanner filters and Strategy Builder) has an inline period spinbox pre-filled with the standard value (RSI 14, EMA 20, SMA 50, CCI 20, ROC 12, ATR 14, ADX 14, MFI 14, Bollinger 20). Legacy field keys (`rsi14`, `ema_fast`, ...) auto-migrate so saved presets/strategies keep working.
+- **Chart indicator manager**: the fixed "Overlays" menu became an "Indicators…" dialog to add/remove any number of price overlays (EMA, SMA, VWAP, Bollinger, SuperTrend, Ichimoku, Pivots) each with a tunable period, plus toggles and periods for the oscillator sub-panes.
+- **Configurable MACD/RSI sub-panes**: RSI period and MACD fast/slow/signal are now editable (were hardcoded 14 and 12/26/9).
+- **Clickable on-chart legend**: each pane shows a colour-coded legend of its indicators in the top-left; clicking any entry opens the Indicators editor - the legend is the primary editing entry point, TradingView-style.
+
+### Verified
+- 269/269 pytest regression tests pass (new suites for custom strategies, the strategy-builder panel, chart indicators, plus extended filter/indicator coverage).
+- Manually tested in the real app: building an EMA-crossover custom strategy, scanning/backtesting with it, adding multi-period overlays, editing MACD/RSI periods, and editing via the legend.
+
 ## 2.8.0 - Backtesting Lab (Phase 4)
 
 The Backtest panel existed but wasn't even registered as a tab (dead code) and was single-symbol, single-strategy (hardcoded EMA/MACD). Rebuilt into a proper lab and wired in as a "Backtest" tab.

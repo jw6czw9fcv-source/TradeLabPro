@@ -10,11 +10,13 @@ from tradelab.core.filters import FilterCondition, evaluate_condition, passes_cu
 def row():
     return pd.Series({
         "Close": 100.0, "Volume": 1_000_000, "REL_VOL": 2.5,
-        "RSI14": 75.0, "ATR14": 3.0, "ADX14": 28.0,
+        "RSI14": 75.0, "ATR14": 3.0, "ATRPCT14": 3.0, "ADX14": 28.0,
         "MACD": 1.2, "MACD_SIGNAL": 0.9, "MACD_HIST": 0.3,
         "EMA9": 101.0, "EMA30": 98.0,
         "SMA20": 99.0, "SMA50": 95.0, "SMA200": 90.0,
         "BB_UPPER": 105.0, "BB_LOWER": 95.0,
+        "VWAP": 97.0, "STOCHK14": 82.0, "STOCHD14": 78.0, "WILLR14": -18.0,
+        "CCI20": 120.0, "ROC12": 4.5, "OBV": 5_000_000.0, "MFI14": 60.0,
     })
 
 
@@ -98,5 +100,70 @@ def test_condition_serialization_round_trip():
 
 
 def test_condition_label():
-    assert FilterCondition(field="rsi14", operator="Above", value1=70).label() == "RSI (14) above 70"
-    assert FilterCondition(field="rsi14", operator="Between", value1=30, value2=70).label() == "RSI (14) between 30 and 70"
+    assert FilterCondition(field="rsi14", operator="Above", value1=70).label() == "RSI 14 above 70"
+    assert FilterCondition(field="rsi14", operator="Between", value1=30, value2=70).label() == "RSI 14 between 30 and 70"
+
+
+def test_period_is_tunable_and_reflected_in_label_and_column():
+    # Pick RSI but change its period to 7 - reads the RSI7 column.
+    cond = FilterCondition(field="rsi", operator="Above", value1=50, period=7)
+    row = pd.Series({"RSI7": 60.0, "RSI14": 40.0})
+    assert evaluate_condition(row, ScannerConfig(), cond) is True  # RSI7=60 > 50
+    assert cond.label() == "RSI 7 above 50"
+
+
+def test_ensure_columns_computes_requested_period():
+    import numpy as np
+    from tradelab.core.filters import ensure_columns
+    df = pd.DataFrame({"Open": range(1, 101), "High": range(2, 102),
+                       "Low": range(0, 100), "Close": range(1, 101), "Volume": [1000] * 100})
+    conds = [FilterCondition(field="ema", operator="Above", value1=0, period=15),
+             FilterCondition(field="rsi", operator="Above", value1=0, period=9)]
+    ensure_columns(df, conds)
+    assert "EMA15" in df.columns
+    assert "RSI9" in df.columns
+
+
+# -- Phase 5: field-vs-field comparison (A) -------------------------------
+
+def test_above_field_compares_two_indicators(row, cfg):
+    # EMA9 (101) above EMA30 (98) -> a bullish trend / crossover condition.
+    cond = FilterCondition(field="ema_fast", operator="Above field", field2="ema_slow")
+    assert evaluate_condition(row, cfg, cond) is True
+    # And the reverse is false.
+    cond = FilterCondition(field="ema_slow", operator="Above field", field2="ema_fast")
+    assert evaluate_condition(row, cfg, cond) is False
+
+
+def test_below_field_compares_two_indicators(row, cfg):
+    # Close (100) above VWAP (97) -> "Close below VWAP" is false.
+    cond = FilterCondition(field="price", operator="Below field", field2="vwap")
+    assert evaluate_condition(row, cfg, cond) is False
+    cond = FilterCondition(field="price", operator="Above field", field2="vwap")
+    assert evaluate_condition(row, cfg, cond) is True
+
+
+def test_field_operator_label_reads_naturally():
+    cond = FilterCondition(field="ema_fast", operator="Above field", field2="ema_slow")
+    assert cond.label() == "EMA 9 above EMA 30"
+
+
+def test_field_operator_unknown_compared_field_does_not_exclude(row, cfg):
+    cond = FilterCondition(field="rsi14", operator="Above field", field2="made_up")
+    assert evaluate_condition(row, cfg, cond) is True
+
+
+def test_field_operator_round_trips_through_dict():
+    cond = FilterCondition(field="macd", operator="Above field", field2="macd_signal")
+    restored = FilterCondition.from_dict(cond.to_dict())
+    assert restored == cond
+
+
+@pytest.mark.parametrize("field,expected", [
+    ("vwap", True), ("stoch_k", True), ("williams_r", False),  # WILLR -18 not > 0
+    ("cci20", True), ("roc12", True), ("mfi14", True),
+])
+def test_new_indicator_fields_are_usable(row, cfg, field, expected):
+    # Above 0 is true for the positive-valued new fields, false for Williams %R (negative).
+    cond = FilterCondition(field=field, operator="Above", value1=0)
+    assert evaluate_condition(row, cfg, cond) is expected

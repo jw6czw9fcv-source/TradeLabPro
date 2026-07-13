@@ -2,7 +2,7 @@ import pandas as pd
 
 from tradelab.core.config import ScannerConfig
 from tradelab.core.confidence import historical_confidence
-from tradelab.core.filters import FilterCondition, passes_custom_filters
+from tradelab.core.filters import FilterCondition, ensure_columns, passes_custom_filters
 from tradelab.core.indicators import add_indicators
 from tradelab.data.market_data import get_history, get_quote_meta, market_cap_bucket
 from tradelab.strategies import strategy_module
@@ -72,6 +72,10 @@ def scan_symbols(symbols: list[str], cfg: ScannerConfig, progress_callback=None,
                 macd_slow=cfg.macd_slow,
                 macd_signal=cfg.macd_signal,
             )
+            # Add any columns the custom filters reference at their chosen
+            # periods (e.g. EMA20, RSI7) before we read the latest bar.
+            if custom_conditions:
+                ensure_columns(indicators, custom_conditions, cfg)
             last = indicators.iloc[-1]
             price = _safe_float(last.get("Close"))
             volume = _safe_float(last.get("Volume"))

@@ -57,6 +57,56 @@ def adx(df: pd.DataFrame, length: int = 14) -> pd.Series:
     return dx.ewm(alpha=1/length, adjust=False).mean()
 
 
+def stochastic(df: pd.DataFrame, k: int = 14, d: int = 3):
+    """Stochastic oscillator %K (fast) and %D (its SMA). 0-100; <20 oversold,
+    >80 overbought."""
+    low_k = df["Low"].rolling(k).min()
+    high_k = df["High"].rolling(k).max()
+    percent_k = 100 * (df["Close"] - low_k) / (high_k - low_k).replace(0, np.nan)
+    return percent_k, percent_k.rolling(d).mean()
+
+
+def williams_r(df: pd.DataFrame, length: int = 14) -> pd.Series:
+    """Williams %R: like Stochastic but scaled -100..0 (>-20 overbought,
+    <-80 oversold)."""
+    high = df["High"].rolling(length).max()
+    low = df["Low"].rolling(length).min()
+    return -100 * (high - df["Close"]) / (high - low).replace(0, np.nan)
+
+
+def cci(df: pd.DataFrame, length: int = 20) -> pd.Series:
+    """Commodity Channel Index. Typically ranges +/-100; extremes flag
+    overbought/oversold."""
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3.0
+    sma_tp = tp.rolling(length).mean()
+    mad = tp.rolling(length).apply(lambda x: np.abs(x - x.mean()).mean(), raw=True)
+    return (tp - sma_tp) / (0.015 * mad.replace(0, np.nan))
+
+
+def roc(close: pd.Series, length: int = 12) -> pd.Series:
+    """Rate of Change: percent change over `length` bars (momentum)."""
+    return (close - close.shift(length)) / close.shift(length).replace(0, np.nan) * 100.0
+
+
+def obv(df: pd.DataFrame) -> pd.Series:
+    """On-Balance Volume: running total of volume signed by the day's
+    close-to-close direction."""
+    direction = np.sign(df["Close"].diff().fillna(0))
+    return (direction * df["Volume"]).cumsum()
+
+
+def mfi(df: pd.DataFrame, length: int = 14) -> pd.Series:
+    """Money Flow Index: a volume-weighted RSI. 0-100; <20 oversold, >80
+    overbought."""
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3.0
+    raw_flow = tp * df["Volume"]
+    tp_diff = tp.diff()
+    pos_flow = raw_flow.where(tp_diff > 0, 0.0).rolling(length).sum()
+    neg_flow = raw_flow.where(tp_diff < 0, 0.0).rolling(length).sum()
+    ratio = pos_flow / neg_flow.replace(0, np.nan)
+    return 100 - (100 / (1 + ratio))
+
+
 def add_indicators(df: pd.DataFrame, ema_fast: int = 9, ema_slow: int = 30, macd_fast: int = 12, macd_slow: int = 26, macd_signal: int = 9) -> pd.DataFrame:
     out = df.copy()
     out[f"EMA{ema_fast}"] = ema(out["Close"], ema_fast)
@@ -71,6 +121,14 @@ def add_indicators(df: pd.DataFrame, ema_fast: int = 9, ema_slow: int = 30, macd
     out["MACD"], out["MACD_SIGNAL"], out["MACD_HIST"] = macd(out["Close"], macd_fast, macd_slow, macd_signal)
     out["VOL_AVG20"] = out["Volume"].rolling(20).mean()
     out["REL_VOL"] = out["Volume"] / out["VOL_AVG20"].replace(0, np.nan)
+    # Extended library (Phase 5) so the no-code builder has a pro-grade field set.
+    out["STOCHK14"], out["STOCHD14"] = stochastic(out, 14, 3)
+    out["WILLR14"] = williams_r(out, 14)
+    out["CCI20"] = cci(out, 20)
+    out["ROC12"] = roc(out["Close"], 12)
+    out["OBV"] = obv(out)
+    out["MFI14"] = mfi(out, 14)
+    out["VWAP"] = vwap(out)
     return out
 
 

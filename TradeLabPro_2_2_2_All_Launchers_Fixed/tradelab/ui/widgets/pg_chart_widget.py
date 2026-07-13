@@ -23,12 +23,14 @@ from PySide6.QtCore import Qt, Signal, QPointF
 from PySide6.QtGui import QPicture, QPainter, QColor, QPen, QBrush
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QComboBox,
-    QToolButton, QMenu, QLabel, QInputDialog, QSizePolicy
+    QToolButton, QMenu, QLabel, QInputDialog, QSizePolicy,
+    QDialog, QDialogButtonBox, QSpinBox, QCheckBox, QScrollArea
 )
 
 from tradelab.core.config import ScannerConfig
 from tradelab.core.indicators import (
-    add_indicators, vwap, pivot_points, supertrend, ichimoku, heikin_ashi,
+    add_indicators, ema, sma, rsi as rsi_ind, macd as macd_ind,
+    vwap, pivot_points, supertrend, ichimoku, heikin_ashi,
 )
 from tradelab.core.drawings import Drawing, fib_levels, serialize, deserialize
 from tradelab.data.market_data import get_history
@@ -49,6 +51,40 @@ CHART_TYPES = ["Candlestick", "Heikin-Ashi", "Line", "Area"]
 DRAWING_TOOLS = ["Cursor", "Trendline", "H-Line", "V-Line", "Rect", "Fib", "Text"]
 PERIOD_OPTIONS = ["3mo", "6mo", "1y", "2y", "5y", "max"]
 INTERVAL_OPTIONS = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo"]
+
+# Price-pane overlay indicators the user can add to a chart with a tunable
+# period, without touching code. Each compute() returns {line label: Series}
+# (some indicators draw more than one line). "period" is the default; None
+# means the indicator has no tunable period.
+def _bollinger_lines(df, p):
+    from tradelab.core.indicators import bollinger
+    mid, up, lo = bollinger(df["Close"], p)
+    return {f"BB Upper {p}": up, f"BB Mid {p}": mid, f"BB Lower {p}": lo}
+
+
+def _ichimoku_lines(df, p):
+    cloud = ichimoku(df)
+    return {"Tenkan": cloud["TENKAN"], "Kijun": cloud["KIJUN"]}
+
+
+def _pivot_lines(df, p):
+    piv = pivot_points(df)
+    return {"PP": piv["PP"], "R1": piv["R1"], "S1": piv["S1"]}
+
+
+CHART_OVERLAYS = {
+    "EMA": {"period": 20, "compute": lambda df, p: {f"EMA {p}": ema(df["Close"], p)}},
+    "SMA": {"period": 50, "compute": lambda df, p: {f"SMA {p}": sma(df["Close"], p)}},
+    "VWAP": {"period": None, "compute": lambda df, p: {"VWAP": vwap(df)}},
+    "Bollinger": {"period": 20, "compute": _bollinger_lines},
+    "SuperTrend": {"period": 10, "compute": lambda df, p: {"SuperTrend": supertrend(df, p)[0]}},
+    "Ichimoku": {"period": None, "compute": _ichimoku_lines},
+    "Pivots": {"period": None, "compute": _pivot_lines},
+}
+
+# Distinct colors cycled across whatever overlays the user adds.
+_OVERLAY_COLORS = ["#fbc531", "#e84118", "#4cd137", "#00a8ff", "#9c88ff",
+                   "#e056fd", "#badc58", "#ff9f43", "#00cec9", "#74b9ff"]
 
 
 class CandlestickItem(pg.GraphicsObject):
@@ -118,6 +154,108 @@ class CandlestickItem(pg.GraphicsObject):
         )
 
 
+class ChartIndicatorsDialog(QDialog):
+    """Manage which indicators are on the chart and their periods, with no
+    code: add/remove overlay rows (indicator + period), toggle the BUY/SELL
+    signal markers, and toggle the Volume/MACD/RSI sub-panes."""
+    def __init__(self, overlays, show_signals, sub_panels, rsi_period=14, macd_params=(12, 26, 9), parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Chart Indicators")
+        self.resize(440, 460)
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("Price overlays (pick an indicator, set its period):"))
+        self._rows_layout = QVBoxLayout()
+        self._rows = []
+        holder = QWidget(); holder.setLayout(self._rows_layout)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(holder)
+        layout.addWidget(scroll, 1)
+        add = QPushButton("+ Add overlay"); add.clicked.connect(lambda: self._add_row())
+        layout.addWidget(add)
+        for e in overlays:
+            self._add_row(e.get("indicator", "EMA"), e.get("period"))
+
+        self._signals_cb = QCheckBox("Show BUY/SELL signal markers")
+        self._signals_cb.setChecked(show_signals)
+        layout.addWidget(self._signals_cb)
+
+        layout.addWidget(QLabel("Sub-panes (toggle on/off and set their periods):"))
+        self._panel_cbs = {}
+        # Volume: just a toggle. RSI: toggle + period. MACD: toggle + fast/slow/signal.
+        vol_row = QHBoxLayout()
+        self._panel_cbs["Volume"] = QCheckBox("Volume"); self._panel_cbs["Volume"].setChecked(sub_panels.get("Volume", True))
+        vol_row.addWidget(self._panel_cbs["Volume"]); vol_row.addStretch()
+        layout.addLayout(vol_row)
+
+        rsi_row = QHBoxLayout()
+        self._panel_cbs["RSI"] = QCheckBox("RSI"); self._panel_cbs["RSI"].setChecked(sub_panels.get("RSI", True))
+        self._rsi_spin = QSpinBox(); self._rsi_spin.setRange(1, 200); self._rsi_spin.setValue(int(rsi_period)); self._rsi_spin.setMaximumWidth(70)
+        rsi_row.addWidget(self._panel_cbs["RSI"]); rsi_row.addWidget(QLabel("period")); rsi_row.addWidget(self._rsi_spin); rsi_row.addStretch()
+        layout.addLayout(rsi_row)
+
+        macd_row = QHBoxLayout()
+        self._panel_cbs["MACD"] = QCheckBox("MACD"); self._panel_cbs["MACD"].setChecked(sub_panels.get("MACD", True))
+        self._macd_fast = QSpinBox(); self._macd_fast.setRange(1, 200); self._macd_fast.setValue(int(macd_params[0])); self._macd_fast.setMaximumWidth(60)
+        self._macd_slow = QSpinBox(); self._macd_slow.setRange(1, 300); self._macd_slow.setValue(int(macd_params[1])); self._macd_slow.setMaximumWidth(60)
+        self._macd_signal = QSpinBox(); self._macd_signal.setRange(1, 100); self._macd_signal.setValue(int(macd_params[2])); self._macd_signal.setMaximumWidth(60)
+        macd_row.addWidget(self._panel_cbs["MACD"]); macd_row.addWidget(QLabel("fast/slow/signal"))
+        macd_row.addWidget(self._macd_fast); macd_row.addWidget(self._macd_slow); macd_row.addWidget(self._macd_signal); macd_row.addStretch()
+        layout.addLayout(macd_row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def rsi_period(self):
+        return self._rsi_spin.value()
+
+    def macd_params(self):
+        return (self._macd_fast.value(), self._macd_slow.value(), self._macd_signal.value())
+
+    def _add_row(self, indicator="EMA", period=None):
+        row = QWidget(); h = QHBoxLayout(row); h.setContentsMargins(0, 0, 0, 0)
+        combo = QComboBox()
+        for name in CHART_OVERLAYS:
+            combo.addItem(name, name)
+        i = combo.findData(indicator); combo.setCurrentIndex(i if i >= 0 else 0)
+        spin = QSpinBox(); spin.setRange(1, 500); spin.setMaximumWidth(70)
+        spin.setValue(int(period or CHART_OVERLAYS.get(indicator, {}).get("period") or 14))
+
+        def sync():
+            spin.setVisible(CHART_OVERLAYS.get(combo.currentData(), {}).get("period") is not None)
+        combo.currentTextChanged.connect(lambda *_: (self._on_indicator_changed(combo, spin), sync()))
+        sync()
+
+        rm = QToolButton(); rm.setText("×"); rm.setMaximumWidth(24)
+        rm.clicked.connect(lambda: self._remove_row(row))
+        h.addWidget(combo, 2); h.addWidget(spin); h.addWidget(rm)
+        self._rows_layout.addWidget(row)
+        self._rows.append({"row": row, "combo": combo, "spin": spin})
+
+    def _on_indicator_changed(self, combo, spin):
+        p = CHART_OVERLAYS.get(combo.currentData(), {}).get("period")
+        if p:
+            spin.setValue(p)
+
+    def _remove_row(self, row):
+        self._rows = [r for r in self._rows if r["row"] is not row]
+        self._rows_layout.removeWidget(row); row.deleteLater()
+
+    def overlays(self):
+        out = []
+        for r in self._rows:
+            name = r["combo"].currentData()
+            has_period = CHART_OVERLAYS.get(name, {}).get("period") is not None
+            out.append({"indicator": name, "period": (r["spin"].value() if has_period else None)})
+        return out
+
+    def show_signals(self):
+        return self._signals_cb.isChecked()
+
+    def sub_panels(self):
+        return {k: cb.isChecked() for k, cb in self._panel_cbs.items()}
+
+
 class PGChartWidget(QWidget):
     symbolChanged = Signal(str)
 
@@ -134,14 +272,24 @@ class PGChartWidget(QWidget):
         self.drawings: list[Drawing] = []
         self._pending_point: Optional[tuple] = None
         self._db: Optional[Database] = None
-        self._overlay_flags = {
-            "EMA": True, "SMA": False, "Bollinger": False, "VWAP": False,
-            "SuperTrend": False, "Ichimoku": False, "Pivots": False, "Signals": True,
-        }
+        # User-configurable price-pane overlays: a list of {indicator, period}
+        # the user adds/edits via the Indicators dialog. Defaults to the two
+        # EMAs the chart previously showed out of the box.
+        self._overlays = [
+            {"indicator": "EMA", "period": self.cfg.ema_fast},
+            {"indicator": "EMA", "period": self.cfg.ema_slow},
+        ]
+        self._show_signals = True
         self._sub_panel_flags = {"Volume": True, "MACD": True, "RSI": True}
+        # Tunable periods for the oscillator sub-panes (standard defaults).
+        self._rsi_period = 14
+        self._macd_fast, self._macd_slow, self._macd_signal = 12, 26, 9
+        self._rsi_series = None   # cached for the crosshair readout
+        self._macd_series = None
         self._empty_text_item = None
         self._last_indicators: Optional[pd.DataFrame] = None
         self._last_display: Optional[pd.DataFrame] = None
+        self._legends = {}  # plot -> in-pane clickable legend widget
 
         self._build_ui()
 
@@ -189,9 +337,9 @@ class PGChartWidget(QWidget):
         toolbar.addWidget(self.tool_combo)
 
         self.overlay_btn = QToolButton()
-        self.overlay_btn.setText("Overlays ▾")
-        self.overlay_btn.setPopupMode(QToolButton.InstantPopup)
-        self._build_overlay_menu()
+        self.overlay_btn.setText("Indicators…")
+        self.overlay_btn.setToolTip("Add/remove chart indicators and change their periods")
+        self.overlay_btn.clicked.connect(self.open_indicators_dialog)
         toolbar.addWidget(self.overlay_btn)
 
         clear_btn = QToolButton()
@@ -264,20 +412,20 @@ class PGChartWidget(QWidget):
 
         self.show_empty_placeholder()
 
-    def _build_overlay_menu(self):
-        menu = QMenu(self)
-        for key in self._overlay_flags:
-            action = menu.addAction(key)
-            action.setCheckable(True)
-            action.setChecked(self._overlay_flags[key])
-            action.toggled.connect(lambda checked, k=key: self._toggle_overlay(k, checked))
-        menu.addSeparator()
-        for key in self._sub_panel_flags:
-            action = menu.addAction(f"Panel: {key}")
-            action.setCheckable(True)
-            action.setChecked(self._sub_panel_flags[key])
-            action.toggled.connect(lambda checked, k=key: self._toggle_subpanel(k, checked))
-        self.overlay_btn.setMenu(menu)
+    def open_indicators_dialog(self):
+        dlg = ChartIndicatorsDialog(
+            self._overlays, self._show_signals, self._sub_panel_flags,
+            self._rsi_period, (self._macd_fast, self._macd_slow, self._macd_signal), self)
+        if dlg.exec():
+            self._overlays = dlg.overlays()
+            self._show_signals = dlg.show_signals()
+            self._sub_panel_flags = dlg.sub_panels()
+            self._rsi_period = dlg.rsi_period()
+            self._macd_fast, self._macd_slow, self._macd_signal = dlg.macd_params()
+            for key, plot in (("MACD", self.macd_plot), ("RSI", self.rsi_plot), ("Volume", self.volume_plot)):
+                plot.setVisible(self._sub_panel_flags.get(key, True))
+            if self.symbol:
+                self.replot()
 
     # ------------------------------------------------------------------
     # Data loading / caching (kept same name/signature as before)
@@ -319,11 +467,6 @@ class PGChartWidget(QWidget):
     def _on_tool_changed(self, tool: str):
         self.active_tool = tool
         self._pending_point = None
-
-    def _toggle_overlay(self, key: str, checked: bool):
-        self._overlay_flags[key] = checked
-        if self.symbol:
-            self.replot()
 
     def _toggle_subpanel(self, key: str, checked: bool):
         self._sub_panel_flags[key] = checked
@@ -427,35 +570,59 @@ class PGChartWidget(QWidget):
             self.price_plot.removeItem(curve)
         self._overlay_curves = {}
 
-        def add_line(series: pd.Series, color: str, name: str, width: float = 1.2, dash=False):
-            pen = pg.mkPen(color, width=width, style=(Qt.DashLine if dash else Qt.SolidLine))
-            curve = self.price_plot.plot(x, series.to_numpy(), pen=pen, name=name)
-            self._overlay_curves[name] = curve
+        legend_entries = []  # (label, color) for the in-pane clickable legend
 
-        if self._overlay_flags["EMA"]:
-            add_line(ind[f"EMA{self.cfg.ema_fast}"], "#fbc531", f"EMA{self.cfg.ema_fast}")
-            add_line(ind[f"EMA{self.cfg.ema_slow}"], "#e84118", f"EMA{self.cfg.ema_slow}")
-        if self._overlay_flags["SMA"]:
-            add_line(ind["SMA20"], "#4cd137", "SMA20")
-            add_line(ind["SMA50"], "#00a8ff", "SMA50")
-            add_line(ind["SMA200"], "#9c88ff", "SMA200")
-        if self._overlay_flags["Bollinger"]:
-            add_line(ind["BB_UPPER"], "#74b9ff", "BB_UPPER", dash=True)
-            add_line(ind["BB_LOWER"], "#74b9ff", "BB_LOWER", dash=True)
-        if self._overlay_flags["VWAP"]:
-            add_line(vwap(self.df_raw), "#00cec9", "VWAP", width=1.6)
-        if self._overlay_flags["SuperTrend"]:
-            line, _direction = supertrend(self.df_raw)
-            add_line(line, "#ff9f43", "SuperTrend", width=1.6)
-        if self._overlay_flags["Ichimoku"]:
-            cloud = ichimoku(self.df_raw)
-            add_line(cloud["TENKAN"], "#e056fd", "Tenkan")
-            add_line(cloud["KIJUN"], "#badc58", "Kijun")
-        if self._overlay_flags["Pivots"]:
-            piv = pivot_points(self.df_raw)
-            add_line(piv["PP"], "#c7d0d8", "PP", dash=True)
-            add_line(piv["R1"], "#e5534b", "R1", dash=True)
-            add_line(piv["S1"], "#3fb950", "S1", dash=True)
+        def add_line(series: pd.Series, color: str, name: str, width: float = 1.4):
+            pen = pg.mkPen(color, width=width)
+            curve = self.price_plot.plot(x, np.asarray(series, dtype=float), pen=pen, name=name)
+            self._overlay_curves[name] = curve
+            legend_entries.append((name, color))
+
+        # Render each user-configured overlay (see CHART_OVERLAYS), cycling
+        # colors. Runs off self.df_raw so any period is computed on demand.
+        color_i = 0
+        for entry in self._overlays:
+            spec = CHART_OVERLAYS.get(entry.get("indicator"))
+            if spec is None:
+                continue
+            period = entry.get("period") or spec["period"]
+            try:
+                lines = spec["compute"](self.df_raw, period)
+            except Exception:
+                continue
+            for label, series in lines.items():
+                add_line(series, _OVERLAY_COLORS[color_i % len(_OVERLAY_COLORS)], label)
+                color_i += 1
+
+        self._make_legend(self.price_plot, legend_entries)
+
+    def _make_legend(self, plot, entries):
+        """Draw a clickable legend of indicators in the top-left of a pane.
+        Clicking any entry opens the Indicators dialog to edit them - the
+        legend IS the editing entry point, not just a label. Rebuilt on each
+        replot. Implemented as a child QWidget (not a scene item) so it stays
+        pinned to the corner regardless of pan/zoom."""
+        old = self._legends.get(plot)
+        if old is not None:
+            old.setParent(None); old.deleteLater()
+        if not entries:
+            self._legends[plot] = None
+            return
+        box = QWidget(plot)
+        box.setStyleSheet("background: rgba(17,21,28,160); border-radius: 3px;")
+        lay = QVBoxLayout(box); lay.setContentsMargins(6, 2, 6, 2); lay.setSpacing(0)
+        for text, color in entries:
+            btn = QPushButton(text); btn.setFlat(True); btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip("Click to edit chart indicators")
+            btn.setStyleSheet(
+                f"QPushButton {{ color: {color}; border: none; text-align: left; padding: 0 2px; font-size: 11px; }}"
+                " QPushButton:hover { text-decoration: underline; }")
+            btn.clicked.connect(self.open_indicators_dialog)
+            lay.addWidget(btn)
+        box.adjustSize()
+        box.move(46, 6)  # top-left, clear of the price y-axis labels
+        box.show(); box.raise_()
+        self._legends[plot] = box
 
     def _plot_signals(self, ind: pd.DataFrame, display: pd.DataFrame, x: np.ndarray):
         """BUY/SELL triangle markers: EMA fast/slow crossover confirmed by
@@ -463,7 +630,7 @@ class PGChartWidget(QWidget):
         (kept for continuity - this is what a "BUY"/"SELL" mark on this
         chart has always meant, not a new signal definition).
         """
-        if not self._overlay_flags["Signals"]:
+        if not self._show_signals:
             self.signal_scatter.setData([])
             return
         fast_col, slow_col = f"EMA{self.cfg.ema_fast}", f"EMA{self.cfg.ema_slow}"
@@ -518,20 +685,29 @@ class PGChartWidget(QWidget):
         # first replot, even though _on_mouse_moved keeps "moving" it.
         self.macd_plot.addItem(self._crosshair_lines[2], ignoreBounds=True)
         if not self._sub_panel_flags["MACD"]:
+            self._make_legend(self.macd_plot, [])
             return
-        self.macd_plot.plot(x, ind["MACD"].to_numpy(), pen=pg.mkPen("#4aa3ff", width=1.2))
-        self.macd_plot.plot(x, ind["MACD_SIGNAL"].to_numpy(), pen=pg.mkPen("#fbc531", width=1.2))
-        hist_colors = [BULL_COLOR if v >= 0 else BEAR_COLOR for v in ind["MACD_HIST"].fillna(0)]
-        self.macd_plot.addItem(pg.BarGraphItem(x=x, height=ind["MACD_HIST"].fillna(0).to_numpy(), width=BAR_WIDTH, brushes=hist_colors))
+        # Computed from the user-set fast/slow/signal, not the fixed columns.
+        line, sig, hist = macd_ind(self.df_raw["Close"], self._macd_fast, self._macd_slow, self._macd_signal)
+        self._macd_series = np.asarray(line, dtype=float)
+        self.macd_plot.plot(x, np.asarray(line, dtype=float), pen=pg.mkPen("#4aa3ff", width=1.2))
+        self.macd_plot.plot(x, np.asarray(sig, dtype=float), pen=pg.mkPen("#fbc531", width=1.2))
+        hist_colors = [BULL_COLOR if v >= 0 else BEAR_COLOR for v in hist.fillna(0)]
+        self.macd_plot.addItem(pg.BarGraphItem(x=x, height=hist.fillna(0).to_numpy(), width=BAR_WIDTH, brushes=hist_colors))
+        self._make_legend(self.macd_plot, [(f"MACD {self._macd_fast}/{self._macd_slow}/{self._macd_signal}", "#4aa3ff")])
 
     def _plot_rsi(self, ind: pd.DataFrame, x: np.ndarray):
         self.rsi_plot.clear()
         self.rsi_plot.addItem(self._crosshair_lines[3], ignoreBounds=True)  # see _plot_macd
         if not self._sub_panel_flags["RSI"]:
+            self._make_legend(self.rsi_plot, [])
             return
-        self.rsi_plot.plot(x, ind["RSI14"].to_numpy(), pen=pg.mkPen("#9c88ff", width=1.4))
+        series = rsi_ind(self.df_raw["Close"], self._rsi_period)
+        self._rsi_series = np.asarray(series, dtype=float)
+        self.rsi_plot.plot(x, self._rsi_series, pen=pg.mkPen("#9c88ff", width=1.4))
         self.rsi_plot.addLine(y=70, pen=pg.mkPen("#e5534b", style=Qt.DashLine))
         self.rsi_plot.addLine(y=30, pen=pg.mkPen("#3fb950", style=Qt.DashLine))
+        self._make_legend(self.rsi_plot, [(f"RSI {self._rsi_period}", "#9c88ff")])
 
     # ------------------------------------------------------------------
     # Crosshair
@@ -569,13 +745,17 @@ class PGChartWidget(QWidget):
         ind = self._last_indicators
         if ind is not None and idx < len(ind):
             ind_row = ind.iloc[idx]
-            if self._overlay_flags["EMA"]:
-                parts.append(f"EMA{self.cfg.ema_fast} {ind_row.get(f'EMA{self.cfg.ema_fast}', float('nan')):.2f}")
-                parts.append(f"EMA{self.cfg.ema_slow} {ind_row.get(f'EMA{self.cfg.ema_slow}', float('nan')):.2f}")
-            if self._sub_panel_flags["RSI"] and "RSI14" in ind.columns:
-                parts.append(f"RSI {ind_row['RSI14']:.1f}")
-            if self._sub_panel_flags["MACD"] and "MACD" in ind.columns:
-                parts.append(f"MACD {ind_row['MACD']:.3f}")
+            for e in self._overlays:
+                if e.get("indicator") in ("EMA", "SMA"):
+                    p = e.get("period") or CHART_OVERLAYS[e["indicator"]]["period"]
+                    col = f"{e['indicator']}{p}"
+                    val = ind_row.get(col)
+                    if val is not None and not pd.isna(val):
+                        parts.append(f"{e['indicator']} {p} {val:.2f}")
+            if self._sub_panel_flags["RSI"] and self._rsi_series is not None and idx < len(self._rsi_series):
+                parts.append(f"RSI {self._rsi_period} {self._rsi_series[idx]:.1f}")
+            if self._sub_panel_flags["MACD"] and self._macd_series is not None and idx < len(self._macd_series):
+                parts.append(f"MACD {self._macd_series[idx]:.3f}")
         self.crosshair_info.setText("   |   ".join(parts))
 
     def _on_mouse_clicked(self, event):
@@ -685,6 +865,8 @@ class PGChartWidget(QWidget):
         self.candle_item.set_data(pd.DataFrame())
         self.line_item.setData([], [])
         self.signal_scatter.setData([])
+        for plot in (self.price_plot, self.macd_plot, self.rsi_plot):
+            self._make_legend(plot, [])
         self.price_plot.clear()
         self.price_plot.addItem(self.candle_item)
         self.price_plot.addItem(self.signal_scatter)

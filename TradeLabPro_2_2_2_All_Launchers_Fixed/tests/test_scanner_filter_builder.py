@@ -47,14 +47,14 @@ def test_editing_row_widgets_reflects_in_get_custom_filters(scanner_panel):
     scanner_panel.add_filter_row()
     w = scanner_panel._custom_filter_widgets[0]
 
-    idx = w["field"].findData("rsi14")
+    idx = w["field"].findData("rsi")
     assert idx >= 0
     w["field"].setCurrentIndex(idx)
     w["op"].setCurrentText("Below")
     w["v1"].setValue(30)
 
     filters = scanner_panel.get_custom_filters()
-    assert filters[0]["field"] == "rsi14"
+    assert filters[0]["field"] == "rsi"
     assert filters[0]["operator"] == "Below"
     assert filters[0]["value1"] == 30
 
@@ -89,11 +89,11 @@ def test_set_custom_filters_replaces_existing_rows(scanner_panel):
     scanner_panel.add_filter_row()
     scanner_panel.set_custom_filters([
         {"field": "macd_hist", "operator": "Above", "value1": 0, "value2": None},
-        {"field": "adx14", "operator": "Above", "value1": 25, "value2": None},
+        {"field": "adx14", "operator": "Above", "value1": 25, "value2": None},  # legacy key, migrates to "adx"
     ])
     filters = scanner_panel.get_custom_filters()
     assert len(filters) == 2
-    assert [f["field"] for f in filters] == ["macd_hist", "adx14"]
+    assert [f["field"] for f in filters] == ["macd_hist", "adx"]
 
 
 def test_default_setup_clears_custom_filters(scanner_panel):
@@ -116,7 +116,8 @@ def test_custom_filters_round_trip_through_save_and_load(scanner_panel):
     scanner_panel.load_setup_by_name("Filter Test")
     filters = scanner_panel.get_custom_filters()
     assert len(filters) == 1
-    assert filters[0]["field"] == "rsi14"
+    assert filters[0]["field"] == "rsi"  # legacy "rsi14" migrated to rsi + period 14
+    assert filters[0]["period"] == 14
     assert filters[0]["value1"] == 70
 
 
@@ -124,4 +125,4 @@ def test_current_config_includes_custom_filters(scanner_panel):
     scanner_panel.set_custom_filters([{"field": "rsi14", "operator": "Above", "value1": 70, "value2": None}])
     cfg = scanner_panel.current_config()
     assert len(cfg.custom_filters) == 1
-    assert cfg.custom_filters[0]["field"] == "rsi14"
+    assert cfg.custom_filters[0]["field"] == "rsi"

@@ -157,7 +157,7 @@ class ScannerPanel(QWidget):
         self.strategy = QComboBox()
         for key, name in strategy_choices():
             self.strategy.addItem(name, key)
-        self.strategy.setToolTip("Which strategy scores/signals each symbol (SCN-030 multi-strategy scanning).")
+        self.strategy.setToolTip("Which strategy scores/signals each symbol (includes your no-code custom strategies).")
         self.min_price = QDoubleSpinBox(); self.min_price.setRange(0, 100000); self.min_price.setValue(5.0); self.min_price.setPrefix("$")
         self.max_price = QDoubleSpinBox(); self.max_price.setRange(0, 100000); self.max_price.setValue(10000.0); self.max_price.setPrefix("$")
         self.min_volume = QSpinBox(); self.min_volume.setRange(0, 100000000); self.min_volume.setValue(500000); self.min_volume.setSingleStep(100000)
@@ -527,49 +527,11 @@ class ScannerPanel(QWidget):
 
 
     def add_filter_row(self, condition=None):
-        from tradelab.core.filters import FILTER_FIELDS, OPERATORS, FilterCondition
-        condition = condition or FilterCondition(field=next(iter(FILTER_FIELDS)))
-
-        row = QWidget()
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-
-        field_combo = QComboBox()
-        for key, (label, _resolver) in FILTER_FIELDS.items():
-            field_combo.addItem(label, key)
-        idx = field_combo.findData(condition.field)
-        field_combo.setCurrentIndex(idx if idx >= 0 else 0)
-
-        op_combo = QComboBox()
-        op_combo.addItems(OPERATORS)
-        op_combo.setCurrentText(condition.operator)
-
-        value1_spin = QDoubleSpinBox()
-        value1_spin.setRange(-1_000_000_000, 1_000_000_000)
-        value1_spin.setDecimals(2)
-        value1_spin.setValue(condition.value1)
-
-        value2_spin = QDoubleSpinBox()
-        value2_spin.setRange(-1_000_000_000, 1_000_000_000)
-        value2_spin.setDecimals(2)
-        value2_spin.setValue(condition.value2 if condition.value2 is not None else condition.value1)
-        value2_spin.setVisible(condition.operator == "Between")
-        op_combo.currentTextChanged.connect(lambda text, v2=value2_spin: v2.setVisible(text == "Between"))
-
-        remove_btn = QToolButton()
-        remove_btn.setText("×")
-        remove_btn.setToolTip("Remove this filter")
-        remove_btn.setMaximumWidth(24)
-        remove_btn.clicked.connect(lambda: self.remove_filter_row(row))
-
-        row_layout.addWidget(field_combo, stretch=2)
-        row_layout.addWidget(op_combo, stretch=1)
-        row_layout.addWidget(value1_spin, stretch=1)
-        row_layout.addWidget(value2_spin, stretch=1)
-        row_layout.addWidget(remove_btn)
-
+        from tradelab.core.filters import FIELD_SPECS, FilterCondition
+        condition = condition or FilterCondition(field=next(iter(FIELD_SPECS)))
+        row, widgets = _build_condition_row(condition, None, self.remove_filter_row)
         self.custom_filter_rows_layout.addWidget(row)
-        self._custom_filter_widgets.append({"row": row, "field": field_combo, "op": op_combo, "v1": value1_spin, "v2": value2_spin})
+        self._custom_filter_widgets.append(widgets)
 
     def remove_filter_row(self, row_widget):
         self._custom_filter_widgets = [w for w in self._custom_filter_widgets if w["row"] is not row_widget]
@@ -577,18 +539,7 @@ class ScannerPanel(QWidget):
         row_widget.deleteLater()
 
     def get_custom_filters(self) -> list:
-        from tradelab.core.filters import FilterCondition
-        result = []
-        for w in self._custom_filter_widgets:
-            op = w["op"].currentText()
-            cond = FilterCondition(
-                field=w["field"].currentData(),
-                operator=op,
-                value1=w["v1"].value(),
-                value2=(w["v2"].value() if op == "Between" else None),
-            )
-            result.append(cond.to_dict())
-        return result
+        return [_row_to_condition(w).to_dict() for w in self._custom_filter_widgets]
 
     def set_custom_filters(self, filters: list):
         from tradelab.core.filters import FilterCondition
@@ -649,6 +600,19 @@ class ScannerPanel(QWidget):
     def set_strategy(self, key: str):
         idx = self.strategy.findData(key)
         self.strategy.setCurrentIndex(idx if idx >= 0 else 0)
+
+    def refresh_strategies(self):
+        """Repopulate the strategy dropdown from the registry (e.g. after a
+        custom strategy is saved/deleted in the Strategy Builder), keeping
+        the current selection if it still exists."""
+        current = self.strategy.currentData()
+        self.strategy.blockSignals(True)
+        self.strategy.clear()
+        for key, name in strategy_choices():
+            self.strategy.addItem(name, key)
+        idx = self.strategy.findData(current)
+        self.strategy.setCurrentIndex(idx if idx >= 0 else 0)
+        self.strategy.blockSignals(False)
 
     def _apply_setup_data(self, data: dict, name: str):
         self.setup_name.setEditText(name)
@@ -1522,44 +1486,240 @@ class MarketPanel(QWidget):
         self.refresh_btn.setEnabled(True)
 
 
+def _build_condition_row(condition, on_change, on_remove):
+    """Build one condition-editing row: field + (tunable) period + operator +
+    value(s) OR a second field + its period. Shared by the Scanner's custom
+    filters and the Strategy Builder so the two stay identical. Returns
+    (row_widget, widgets_dict)."""
+    from tradelab.core.filters import (field_choices, field_has_period,
+                                       field_default_period, OPERATORS, FIELD_OPERATORS)
+    row = QWidget(); h = QHBoxLayout(row); h.setContentsMargins(0, 0, 0, 0)
+    field = QComboBox()
+    for key, label in field_choices():
+        field.addItem(label, key)
+    fi = field.findData(condition.field); field.setCurrentIndex(fi if fi >= 0 else 0)
+    period = QSpinBox(); period.setRange(1, 500); period.setMaximumWidth(60)
+    period.setValue(int(condition.period or field_default_period(condition.field) or 14))
+    op = QComboBox(); op.addItems(OPERATORS); op.setCurrentText(condition.operator)
+    v1 = QDoubleSpinBox(); v1.setRange(-1e9, 1e9); v1.setDecimals(2); v1.setValue(condition.value1)
+    v2 = QDoubleSpinBox(); v2.setRange(-1e9, 1e9); v2.setDecimals(2)
+    v2.setValue(condition.value2 if condition.value2 is not None else condition.value1)
+    field2 = QComboBox()
+    for key, label in field_choices():
+        field2.addItem(label, key)
+    f2 = field2.findData(condition.field2); field2.setCurrentIndex(f2 if f2 >= 0 else 0)
+    period2 = QSpinBox(); period2.setRange(1, 500); period2.setMaximumWidth(60)
+    period2.setValue(int(condition.period2 or field_default_period(field2.currentData()) or 14))
+
+    def sync():
+        is_field = op.currentText() in FIELD_OPERATORS
+        period.setVisible(field_has_period(field.currentData()))
+        v1.setVisible(not is_field)
+        v2.setVisible(op.currentText() == "Between")
+        field2.setVisible(is_field)
+        period2.setVisible(is_field and field_has_period(field2.currentData()))
+
+    def on_field_change():
+        p = field_default_period(field.currentData())
+        if p:
+            period.setValue(p)  # pick a new indicator -> pre-fill its default period
+        sync()
+
+    def on_field2_change():
+        p = field_default_period(field2.currentData())
+        if p:
+            period2.setValue(p)
+        sync()
+
+    field.currentTextChanged.connect(on_field_change)
+    field2.currentTextChanged.connect(on_field2_change)
+    op.currentTextChanged.connect(sync)
+    sync()
+
+    rm = QToolButton(); rm.setText("×"); rm.setMaximumWidth(24); rm.clicked.connect(lambda: on_remove(row))
+    widgets = {"row": row, "field": field, "period": period, "op": op,
+               "v1": v1, "v2": v2, "field2": field2, "period2": period2}
+    if on_change:
+        for w in (field, period, op, v1, v2, field2, period2):
+            try: w.currentTextChanged.connect(lambda *_: on_change())
+            except Exception: pass
+            try: w.valueChanged.connect(lambda *_: on_change())
+            except Exception: pass
+    h.addWidget(field, 2); h.addWidget(period); h.addWidget(op, 1)
+    h.addWidget(v1, 1); h.addWidget(v2, 1); h.addWidget(field2, 2); h.addWidget(period2)
+    h.addWidget(rm)
+    return row, widgets
+
+
+def _row_to_condition(w):
+    from tradelab.core.filters import FilterCondition, FIELD_OPERATORS, field_has_period
+    op = w["op"].currentText()
+    is_field = op in FIELD_OPERATORS
+    return FilterCondition(
+        field=w["field"].currentData(),
+        period=(w["period"].value() if field_has_period(w["field"].currentData()) else None),
+        operator=op,
+        value1=w["v1"].value(),
+        value2=(w["v2"].value() if op == "Between" else None),
+        field2=(w["field2"].currentData() if is_field else None),
+        period2=(w["period2"].value() if is_field and field_has_period(w["field2"].currentData()) else None),
+    )
+
+
+class ConditionListWidget(QWidget):
+    """A reusable list of add/remove filter-condition rows (field + operator
+    + value[s]), shared by the Strategy Builder's BUY and SELL blocks. Each
+    row edits one FilterCondition (the same type the Scanner filter builder
+    and custom strategies use)."""
+    def __init__(self, on_change=None):
+        super().__init__()
+        self._on_change = on_change
+        self._rows = []
+        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout = QVBoxLayout(); self._rows_layout.setSpacing(4)
+        v.addLayout(self._rows_layout)
+        add = QPushButton("+ Add condition"); add.clicked.connect(lambda: self.add_row())
+        v.addWidget(add)
+
+    def add_row(self, condition=None):
+        from tradelab.core.filters import FIELD_SPECS, FilterCondition
+        condition = condition or FilterCondition(field=next(iter(FIELD_SPECS)))
+        row, widgets = _build_condition_row(condition, self._on_change, self.remove_row)
+        self._rows_layout.addWidget(row)
+        self._rows.append(widgets)
+        if self._on_change: self._on_change()
+
+    def remove_row(self, row):
+        self._rows = [r for r in self._rows if r["row"] is not row]
+        self._rows_layout.removeWidget(row); row.deleteLater()
+        if self._on_change: self._on_change()
+
+    def get_conditions(self):
+        return [_row_to_condition(r) for r in self._rows]
+
+    def set_conditions(self, conditions):
+        for r in list(self._rows):
+            self.remove_row(r["row"])
+        for c in conditions:
+            self.add_row(c)
+
+
 class StrategyBuilderPanel(QWidget):
-    def __init__(self):
-        super().__init__(); layout=QVBoxLayout(self)
-        layout.addWidget(QLabel("No-code Strategy Builder - Phase 2 foundation"))
-        form=QFormLayout()
-        self.name=QLineEdit("EMA 9/30 + MACD + Volume")
-        self.fast=QSpinBox(); self.fast.setRange(1,200); self.fast.setValue(9)
-        self.slow=QSpinBox(); self.slow.setRange(1,300); self.slow.setValue(30)
-        self.require_macd=QCheckBox("MACD line above signal for BUY"); self.require_macd.setChecked(True)
-        self.require_volume=QCheckBox("Volume above 20-day average"); self.require_volume.setChecked(False)
-        self.rsi_min=QSpinBox(); self.rsi_min.setRange(0,100); self.rsi_min.setValue(45)
-        self.rsi_max=QSpinBox(); self.rsi_max.setRange(0,100); self.rsi_max.setValue(70)
-        for lbl,w in [("Strategy name",self.name),("Fast EMA",self.fast),("Slow EMA",self.slow),("MACD confirmation",self.require_macd),("Volume confirmation",self.require_volume),("RSI min",self.rsi_min),("RSI max",self.rsi_max)]:
-            form.addRow(lbl,w)
-        layout.addLayout(form)
-        row=QHBoxLayout(); save=QPushButton("Save strategy preset"); save.clicked.connect(self.save_strategy); row.addWidget(save); row.addStretch(); layout.addLayout(row)
-        self.preview=QTextEdit(); self.preview.setReadOnly(True); layout.addWidget(self.preview); self.update_preview()
-        for w in [self.name,self.fast,self.slow,self.require_macd,self.require_volume,self.rsi_min,self.rsi_max]:
-            try: w.valueChanged.connect(self.update_preview)
-            except Exception:
-                try: w.textChanged.connect(self.update_preview)
-                except Exception: w.stateChanged.connect(self.update_preview)
-    def strategy_dict(self):
-        return {"name":self.name.text(),"ema_fast":self.fast.value(),"ema_slow":self.slow.value(),"require_macd":self.require_macd.isChecked(),"require_volume":self.require_volume.isChecked(),"rsi_min":self.rsi_min.value(),"rsi_max":self.rsi_max.value()}
+    """Phase 5 no-code Strategy Builder. Build a strategy from BUY/SELL
+    condition blocks, save/load/delete it, and it becomes a real runnable
+    strategy in the Scanner and Backtest dropdowns via the registry.
+    """
+    def __init__(self, on_strategies_changed=None):
+        super().__init__()
+        self._on_strategies_changed = on_strategies_changed
+        layout = QVBoxLayout(self)
+        layout.addWidget(_hint("Build your own strategy with no code: pick conditions for when to BUY and when to SELL. Saved strategies appear in the Scanner and Backtest strategy dropdowns and run just like the built-in ones."))
+
+        top = QHBoxLayout()
+        self.name = QComboBox(); self.name.setEditable(True); self.name.setInsertPolicy(QComboBox.NoInsert)
+        self.name.setEditText("My Strategy")
+        self.name.activated.connect(self._on_name_picked)
+        new_btn = QPushButton("New"); new_btn.clicked.connect(self.new_strategy)
+        save_btn = QPushButton("Save"); save_btn.clicked.connect(self.save_strategy)
+        delete_btn = QPushButton("Delete"); delete_btn.clicked.connect(self.delete_strategy)
+        top.addWidget(QLabel("Name")); top.addWidget(self.name, 1)
+        top.addWidget(new_btn); top.addWidget(save_btn); top.addWidget(delete_btn)
+        layout.addLayout(top)
+
+        layout.addWidget(QLabel("BUY when ALL of these are true:"))
+        self.buy_conditions = ConditionListWidget(on_change=self.update_preview)
+        layout.addWidget(self.buy_conditions)
+        layout.addWidget(QLabel("SELL when ALL of these are true:"))
+        self.sell_conditions = ConditionListWidget(on_change=self.update_preview)
+        layout.addWidget(self.sell_conditions)
+
+        self.preview = QTextEdit(); self.preview.setReadOnly(True); self.preview.setMaximumHeight(120)
+        layout.addWidget(QLabel("Plain-English preview:")); layout.addWidget(self.preview)
+        self.status = QLabel(""); self.status.setWordWrap(True); layout.addWidget(self.status)
+        layout.addStretch()
+
+        # Start with a sensible example so the panel isn't blank.
+        from tradelab.core.filters import FilterCondition
+        self.buy_conditions.set_conditions([FilterCondition(field="rsi14", operator="Below", value1=35)])
+        self.sell_conditions.set_conditions([FilterCondition(field="rsi14", operator="Above", value1=65)])
+        self.refresh_saved_list()
+        self.update_preview()
+
+    def refresh_saved_list(self):
+        from tradelab.strategies.custom import list_custom_strategies
+        current = self.name.currentText()
+        self.name.blockSignals(True)
+        self.name.clear(); self.name.addItems(list_custom_strategies())
+        self.name.setEditText(current)
+        self.name.blockSignals(False)
+
+    def _on_name_picked(self, index):
+        name = self.name.itemText(index)
+        if name:
+            self.load_strategy(name)
+
+    def _current_strategy(self):
+        from tradelab.strategies.custom import CustomStrategy
+        return CustomStrategy(self.name.currentText().strip() or "My Strategy",
+                              self.buy_conditions.get_conditions(),
+                              self.sell_conditions.get_conditions())
+
     def update_preview(self):
-        d=self.strategy_dict()
-        txt=f"BUY when EMA{d['ema_fast']} crosses above EMA{d['ema_slow']}"
-        if d['require_macd']: txt += "\nAND MACD > Signal"
-        if d['require_volume']: txt += "\nAND Volume > Volume average 20"
-        txt += f"\nAND RSI between {d['rsi_min']} and {d['rsi_max']}"
-        txt += f"\n\nSELL when EMA{d['ema_fast']} crosses below EMA{d['ema_slow']} or strategy exit triggers."
-        self.preview.setText(txt)
+        strat = self._current_strategy()
+        lines = []
+        if strat.buy_conditions:
+            lines.append("BUY when ALL of:")
+            lines += [f"   • {c.label()}" for c in strat.buy_conditions]
+        else:
+            lines.append("BUY: (no conditions — this strategy will never buy)")
+        lines.append("")
+        if strat.sell_conditions:
+            lines.append("SELL when ALL of:")
+            lines += [f"   • {c.label()}" for c in strat.sell_conditions]
+        else:
+            lines.append("SELL: (no conditions — position stays open until the data ends)")
+        self.preview.setText("\n".join(lines))
+
+    def new_strategy(self):
+        from tradelab.core.filters import FilterCondition
+        self.name.setEditText("My Strategy")
+        self.buy_conditions.set_conditions([FilterCondition(field="rsi14", operator="Below", value1=35)])
+        self.sell_conditions.set_conditions([FilterCondition(field="rsi14", operator="Above", value1=65)])
+        self.update_preview()
+        self.status.setText("New strategy started. Add conditions, then Save.")
+
     def save_strategy(self):
-        d=DATA_DIR/"strategies"; d.mkdir(exist_ok=True)
-        safe="".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in self.name.text()).strip() or "strategy"
-        path=d/f"{safe}.json"
-        path.write_text(json.dumps(self.strategy_dict(),indent=2),encoding="utf-8")
-        QMessageBox.information(self,"Strategy",f"Saved strategy preset:\n{path}")
+        strat = self._current_strategy()
+        if not strat.buy_conditions:
+            QMessageBox.warning(self, "Strategy", "Add at least one BUY condition before saving.")
+            return
+        path = strat.save()
+        self.refresh_saved_list()
+        self.status.setText(f"Saved strategy: {path.name}. It's now in the Scanner and Backtest strategy lists.")
+        if self._on_strategies_changed:
+            self._on_strategies_changed()
+
+    def load_strategy(self, name):
+        from tradelab.strategies.custom import load_custom_strategy
+        strat = load_custom_strategy(name)
+        if strat is None:
+            self.status.setText(f"Could not load strategy: {name}"); return
+        self.name.setEditText(strat.name)
+        self.buy_conditions.set_conditions(strat.buy_conditions)
+        self.sell_conditions.set_conditions(strat.sell_conditions)
+        self.update_preview()
+        self.status.setText(f"Loaded strategy: {name}")
+
+    def delete_strategy(self):
+        from tradelab.strategies.custom import delete_custom_strategy
+        name = self.name.currentText().strip()
+        if delete_custom_strategy(name):
+            self.refresh_saved_list()
+            self.status.setText(f"Deleted strategy: {name}")
+            if self._on_strategies_changed:
+                self._on_strategies_changed()
+        else:
+            self.status.setText(f"No saved strategy named '{name}' to delete.")
 
 
 def _fill_table(table, columns, rows):
@@ -1621,6 +1781,15 @@ class BacktestPanel(QWidget):
         cfg.period=self.period.currentText(); cfg.interval=self.interval.currentText()
         cfg.strategy=self.strategy.currentData()
         return cfg
+
+    def refresh_strategies(self):
+        current=self.strategy.currentData()
+        self.strategy.blockSignals(True); self.strategy.clear()
+        for key, name in strategy_choices():
+            self.strategy.addItem(name, key)
+        idx=self.strategy.findData(current)
+        self.strategy.setCurrentIndex(idx if idx>=0 else 0)
+        self.strategy.blockSignals(False)
 
     # -- Single --------------------------------------------------------
     def _build_single(self):
@@ -1861,8 +2030,11 @@ class MainWindow(QMainWindow):
         tabs.addTab(self.watch_panel, "Watchlists")
         tabs.addTab(self.portfolio_panel, "Portfolio")
         tabs.addTab(MarketPanel(), "Market")
-        tabs.addTab(BacktestPanel(self.chart, self.cfg), "Backtest")
-        tabs.addTab(StrategyBuilderPanel(), "Strategies")
+        self.backtest_panel = BacktestPanel(self.chart, self.cfg)
+        tabs.addTab(self.backtest_panel, "Backtest")
+        # When a custom strategy is saved/deleted in the builder, refresh the
+        # Scanner and Backtest strategy dropdowns so it appears immediately.
+        tabs.addTab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed), "Strategies")
         settings_text = QTextEdit(); settings_text.setReadOnly(True)
         settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")
         tabs.addTab(settings_text, "Settings")
@@ -1881,6 +2053,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(splitter)
         self.statusBar().showMessage(f"{APP_NAME} {APP_VERSION} ready")
         self.restore_window_state()
+
+    def _on_strategies_changed(self):
+        self.scanner_panel.refresh_strategies()
+        self.backtest_panel.refresh_strategies()
 
     def restore_window_state(self):
         try:
