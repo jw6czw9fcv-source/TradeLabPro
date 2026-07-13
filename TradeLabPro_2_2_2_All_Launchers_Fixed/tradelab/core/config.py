@@ -1,8 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "TradeLab Pro"
-APP_VERSION = '2.4.1 Chart workspace multi-tab UX'
+APP_VERSION = '2.5.0 Custom Technical Filter Builder'
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "tradelab.db"
@@ -30,3 +30,6 @@ class ScannerConfig:
     require_positive_macd: bool = False
     min_atr_percent: float = 0.0
     max_atr_percent: float = 100.0
+    # SCN-026: arbitrary additional conditions (list of FilterCondition.to_dict()),
+    # ANDed with everything above rather than replacing it - see tradelab/core/filters.py.
+    custom_filters: list = field(default_factory=list)

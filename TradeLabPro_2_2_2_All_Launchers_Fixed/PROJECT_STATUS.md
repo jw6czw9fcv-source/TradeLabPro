@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.4.1
+Current version: 2.5.0
 Current phase: Phase 2 - Scanner Professional (in progress)
+
+## Completed in 2.5.0 (Custom Technical Filter Builder, SCN-026)
+- `tradelab/core/filters.py`: IBKR-style arbitrary filter conditions across 16 technical fields (price, volume, relative volume, RSI, ATR%, ADX, MACD family, EMA fast/slow, SMA20/50/200, Bollinger bands, price-vs-SMA20%), each with Above/Below/Between + a value. ANDs with the existing fixed filters rather than replacing them.
+- Scanner UI: "Custom Filters" section with dynamic add/remove rows, wired through `ScannerConfig.custom_filters`, `scan_symbols()`, and the Setup save/load system.
+- Also verified BUG-005 (Stop Scanner) and BUG-006 (Canadian ticker coverage) live before starting this - both confirmed working, closed off the watch list (see below).
+- pytest regression suite now 114 tests, all passing.
 
 ## Completed in 2.4.1 (Chart workspace multi-tab UX)
 - Explicit chart switcher row (own row below the toolbar, one button per open chart) - fixes real confusion ("I don't see the second added chart") caused by the native QDockWidget tab bar being easy to miss.
@@ -52,12 +58,9 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 - Found and fixed a real bug in the offline synthetic-data fallback (array length could mismatch date index depending on pandas version).
 
 ## Open / Watch
-- BUG-005 Stop Scanner remains under user validation.
-- BUG-006 Canadian ticker coverage remains under user validation.
-- SCN-026 IBKR-style Technical Filter Builder planned, not yet started.
 - `app.py` (76KB) is still a UI monolith. Splitting it into `tradelab/ui/panels/` and `tradelab/ui/widgets/` is planned to start alongside Phase 2 (Scanner Pro), not yet done.
 - Strategy/plugin interface unification (formal `Strategy` base class + auto-discovery) not yet done — planned for Phase 2/5.
 - Dependency versions in requirements.txt were relaxed to `>=` floors in 2.2.2/2.2.3 after exact pins broke on Python 3.14 (no prebuilt wheels for pandas 2.2.3/numpy 1.26.4/matplotlib 3.9.2). Re-verify against your actual installed environment (`pip freeze`) before your next release regardless, since floors can still drift.
 
 ## Next
-- Continue Phase 2: Scanner Professional - SCN-026 (Technical Filter Builder), plus multi-strategy scanning, sector/market-cap breakdown, and confidence scoring tied to backtest stats.
+- All three original SCN-02x Phase 2 items (SCN-026, SCN-027, SCN-029) are now complete. Remaining Phase 2 scope from the roadmap: multi-strategy scanning, sector/market-cap breakdown, and confidence scoring tied to backtest stats. Otherwise Phase 2 is close to a natural stopping point - worth deciding whether to keep going deeper here or move to Phase 3 (Market Dashboard).

@@ -232,6 +232,25 @@ class ScannerPanel(QWidget):
             ("Require EMA trend", self.require_ema_trend),
             ("Require MACD bullish", self.require_positive_macd),
         ])
+
+        # SCN-026: IBKR-style custom filter builder. Complements the fixed
+        # sections above (ANDed with them) rather than replacing them -
+        # arbitrary conditions on any field in tradelab.core.filters.FILTER_FIELDS.
+        custom_filters_box = QGroupBox("Custom Filters")
+        custom_filters_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        cf_layout = QVBoxLayout(custom_filters_box)
+        cf_layout.setContentsMargins(10, 10, 10, 10)
+        cf_layout.setSpacing(6)
+        self.custom_filter_rows_layout = QVBoxLayout()
+        self.custom_filter_rows_layout.setSpacing(4)
+        self._custom_filter_widgets = []
+        cf_layout.addLayout(self.custom_filter_rows_layout)
+        add_filter_btn = QPushButton("+ Add Filter")
+        add_filter_btn.setToolTip("Add a condition on any technical field (price, RSI, MACD, EMA, ADX, Bollinger, etc.)")
+        add_filter_btn.clicked.connect(lambda: self.add_filter_row())
+        cf_layout.addWidget(add_filter_btn)
+        self.parameter_layout.addWidget(custom_filters_box)
+
         self.parameter_layout.addStretch()
         self.filters_visible = True
         self.setup_container = QWidget()
@@ -501,6 +520,77 @@ class ScannerPanel(QWidget):
             self.status.setText(f"Deleted setup: {path.name}")
 
 
+    def add_filter_row(self, condition=None):
+        from tradelab.core.filters import FILTER_FIELDS, OPERATORS, FilterCondition
+        condition = condition or FilterCondition(field=next(iter(FILTER_FIELDS)))
+
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+
+        field_combo = QComboBox()
+        for key, (label, _resolver) in FILTER_FIELDS.items():
+            field_combo.addItem(label, key)
+        idx = field_combo.findData(condition.field)
+        field_combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+        op_combo = QComboBox()
+        op_combo.addItems(OPERATORS)
+        op_combo.setCurrentText(condition.operator)
+
+        value1_spin = QDoubleSpinBox()
+        value1_spin.setRange(-1_000_000_000, 1_000_000_000)
+        value1_spin.setDecimals(2)
+        value1_spin.setValue(condition.value1)
+
+        value2_spin = QDoubleSpinBox()
+        value2_spin.setRange(-1_000_000_000, 1_000_000_000)
+        value2_spin.setDecimals(2)
+        value2_spin.setValue(condition.value2 if condition.value2 is not None else condition.value1)
+        value2_spin.setVisible(condition.operator == "Between")
+        op_combo.currentTextChanged.connect(lambda text, v2=value2_spin: v2.setVisible(text == "Between"))
+
+        remove_btn = QToolButton()
+        remove_btn.setText("×")
+        remove_btn.setToolTip("Remove this filter")
+        remove_btn.setMaximumWidth(24)
+        remove_btn.clicked.connect(lambda: self.remove_filter_row(row))
+
+        row_layout.addWidget(field_combo, stretch=2)
+        row_layout.addWidget(op_combo, stretch=1)
+        row_layout.addWidget(value1_spin, stretch=1)
+        row_layout.addWidget(value2_spin, stretch=1)
+        row_layout.addWidget(remove_btn)
+
+        self.custom_filter_rows_layout.addWidget(row)
+        self._custom_filter_widgets.append({"row": row, "field": field_combo, "op": op_combo, "v1": value1_spin, "v2": value2_spin})
+
+    def remove_filter_row(self, row_widget):
+        self._custom_filter_widgets = [w for w in self._custom_filter_widgets if w["row"] is not row_widget]
+        self.custom_filter_rows_layout.removeWidget(row_widget)
+        row_widget.deleteLater()
+
+    def get_custom_filters(self) -> list:
+        from tradelab.core.filters import FilterCondition
+        result = []
+        for w in self._custom_filter_widgets:
+            op = w["op"].currentText()
+            cond = FilterCondition(
+                field=w["field"].currentData(),
+                operator=op,
+                value1=w["v1"].value(),
+                value2=(w["v2"].value() if op == "Between" else None),
+            )
+            result.append(cond.to_dict())
+        return result
+
+    def set_custom_filters(self, filters: list):
+        from tradelab.core.filters import FilterCondition
+        for w in list(self._custom_filter_widgets):
+            self.remove_filter_row(w["row"])
+        for d in filters or []:
+            self.add_filter_row(FilterCondition.from_dict(d))
+
     def current_setup_dict(self):
         return {
             "scan_name": self.scan_name.text(),
@@ -523,6 +613,7 @@ class ScannerPanel(QWidget):
             "interval": self.interval.currentText(),
             "period": self.period.currentText(),
             "universes": [cb.property('universe_name') for cb in self.universe_checks if cb.isChecked()],
+            "custom_filters": self.get_custom_filters(),
         }
 
     def save_setup(self):
@@ -575,6 +666,7 @@ class ScannerPanel(QWidget):
         selected = set(data.get("universes", []))
         for cb in self.universe_checks:
             cb.setChecked(bool(set(cb.property('universe_names') or []) & selected) or cb.property('universe_name') in selected)
+        self.set_custom_filters(data.get("custom_filters", []))
 
     def default_setup(self):
         self.country.setCurrentText("All Exchanges")
@@ -597,6 +689,7 @@ class ScannerPanel(QWidget):
         for cb in self.universe_checks:
             name = cb.property('universe_name')
             cb.setChecked(bool(cb.property("universe_names")))
+        self.set_custom_filters([])
         self.setup_name.setEditText("Default Setup")
         self.status.setText("Default professional swing setup restored.")
 
@@ -967,6 +1060,7 @@ class ScannerPanel(QWidget):
         cfg.require_positive_macd = self.require_positive_macd.isChecked()
         cfg.interval = self.interval.currentText()
         cfg.period = self.period.currentText()
+        cfg.custom_filters = self.get_custom_filters()
         return cfg
 
     def scanner_error_popup(self, title: str, details: str):

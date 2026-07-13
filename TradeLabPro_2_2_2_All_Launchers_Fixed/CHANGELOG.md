@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.5.0 - Custom Technical Filter Builder (SCN-026)
+
+### Added
+- `tradelab/core/filters.py`: IBKR-style arbitrary filter conditions - pick any of 16 technical fields (price, volume, relative volume, RSI, ATR%, ADX, MACD/signal/histogram, fast/slow EMA, SMA20/50/200, Bollinger bands, price-vs-SMA20%), an operator (Above/Below/Between), and a value. Conditions AND together with each other and with the existing fixed Price/Volume/Technical/Signal filters - this is an additive layer, not a replacement.
+- `ScannerConfig.custom_filters`: list of serialized conditions, wired through `scan_symbols()`, the Setup save/load system (`current_setup_dict`/`_apply_setup_data`), and `current_config()`.
+- Scanner UI: a "Custom Filters" section with "+ Add Filter" - each row is a field dropdown, operator dropdown, value spinbox(es) (a second spinbox appears only for "Between"), and a remove button.
+
+### Verified
+- BUG-005 (Stop Scanner) and BUG-006 (Canadian ticker coverage) re-verified live before starting this work: `scan_symbols` stops exactly where `should_stop()` says to, and `refresh_exchange_cache()` pulled 1087 real Canadian symbols with zero source errors. Both closed off the watch list.
+- 114/114 pytest regression tests pass (22 new: `tests/test_filters.py` for the field/operator evaluation logic, `tests/test_scanner_filter_builder.py` for the row widgets and persistence round-trip).
+- End-to-end live scan test: an impossible custom condition (RSI < 1) correctly excluded every symbol; a trivial one (RSI < 100) let real scores through.
+
 ## 2.4.1 - Chart workspace multi-tab UX
 
 ### Added

@@ -1,6 +1,7 @@
 import pandas as pd
 
 from tradelab.core.config import ScannerConfig
+from tradelab.core.filters import FilterCondition, passes_custom_filters
 from tradelab.core.indicators import add_indicators
 from tradelab.data.market_data import get_history, get_quote_meta
 from tradelab.strategies.ema_macd import score_symbol
@@ -49,6 +50,7 @@ def scan_symbols(symbols: list[str], cfg: ScannerConfig, progress_callback=None,
     rows = []
     scan_list = symbols if int(cfg.max_symbols or 0) <= 0 else symbols[: int(cfg.max_symbols)]
     total = len(scan_list)
+    custom_conditions = [FilterCondition.from_dict(d) for d in (cfg.custom_filters or [])]
 
     for idx, symbol in enumerate(scan_list, start=1):
         if should_stop and should_stop():
@@ -98,6 +100,11 @@ def scan_symbols(symbols: list[str], cfg: ScannerConfig, progress_callback=None,
 
             ok, reason = _passes_professional_filters(indicators, cfg)
             if not ok:
+                if progress_callback:
+                    progress_callback(idx, total, symbol, len(rows))
+                continue
+
+            if custom_conditions and not passes_custom_filters(last, cfg, custom_conditions):
                 if progress_callback:
                     progress_callback(idx, total, symbol, len(rows))
                 continue
