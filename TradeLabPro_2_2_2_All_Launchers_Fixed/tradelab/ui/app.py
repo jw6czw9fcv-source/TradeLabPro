@@ -1562,37 +1562,241 @@ class StrategyBuilderPanel(QWidget):
         QMessageBox.information(self,"Strategy",f"Saved strategy preset:\n{path}")
 
 
+def _fill_table(table, columns, rows):
+    """Populate a QTableWidget from a list of dicts (or (k,v) pairs)."""
+    table.clear()
+    table.setColumnCount(len(columns))
+    table.setHorizontalHeaderLabels(columns)
+    table.setRowCount(len(rows))
+    for r, row in enumerate(rows):
+        for c, key in enumerate(columns):
+            val = row.get(key, "") if isinstance(row, dict) else row[c]
+            table.setItem(r, c, QTableWidgetItem(str(val)))
+    table.resizeColumnsToContents()
+
+
+def _hint(text):
+    """A muted, wrapped one-line explanation shown above a control, so the
+    Backtest tab explains itself in plain language rather than assuming the
+    user already knows what a walk-forward or profit factor is."""
+    lbl = QLabel(text)
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet("color:#8b98a5; font-style:italic;")
+    return lbl
+
+
 class BacktestPanel(QWidget):
+    """Backtesting Lab (Phase 4): single-symbol, multi-symbol, parameter
+    optimization, and walk-forward - all strategy-agnostic via the engine
+    in tradelab/core/backtest.py.
+    """
     def __init__(self, chart: ChartWidget, cfg: ScannerConfig):
         super().__init__(); self.chart=chart; self.cfg=cfg
         layout=QVBoxLayout(self)
-        row=QHBoxLayout()
-        self.symbol=QLineEdit("AAPL")
+
+        common=QHBoxLayout()
+        self.strategy=QComboBox()
+        for key, name in strategy_choices():
+            self.strategy.addItem(name, key)
         self.period=QComboBox(); self.period.addItems(["6mo","1y","2y","5y","10y","max"]); self.period.setCurrentText("5y")
         self.interval=QComboBox(); self.interval.addItems(["1d","1wk","1mo"]); self.interval.setCurrentText("1d")
-        run=QPushButton("Run backtest"); run.clicked.connect(self.run_backtest)
-        row.addWidget(QLabel("Symbol")); row.addWidget(self.symbol); row.addWidget(QLabel("Period")); row.addWidget(self.period); row.addWidget(QLabel("Interval")); row.addWidget(self.interval); row.addWidget(run)
-        layout.addLayout(row)
-        self.metrics=QTableWidget(0,2); self.metrics.setHorizontalHeaderLabels(["Metric","Value"]); layout.addWidget(self.metrics)
-        self.trades=QTableWidget(0,5); self.trades.setHorizontalHeaderLabels(["Entry Date","Exit Date","Entry","Exit","Return %"]); layout.addWidget(self.trades)
-        self.status=QLabel("Backtest uses current EMA/MACD strategy. This is for research only, not financial advice."); self.status.setWordWrap(True); layout.addWidget(self.status)
-    def run_backtest(self):
-        cfg=ScannerConfig(); cfg.period=self.period.currentText(); cfg.interval=self.interval.currentText()
-        res=backtest_ema_macd(self.symbol.text().strip().upper(), cfg)
-        items=list(res.metrics.items())
-        self.metrics.setRowCount(len(items))
-        for r,(k,v) in enumerate(items):
-            self.metrics.setItem(r,0,QTableWidgetItem(str(k))); self.metrics.setItem(r,1,QTableWidgetItem(str(v)))
-        df=res.trades
-        self.trades.setRowCount(len(df))
-        for r,(_,row) in enumerate(df.iterrows()):
-            for c,key in enumerate(["Entry Date","Exit Date","Entry","Exit","Return %"]): self.trades.setItem(r,c,QTableWidgetItem(str(row.get(key,""))))
-        self.metrics.resizeColumnsToContents(); self.trades.resizeColumnsToContents()
+        common.addWidget(QLabel("Strategy")); common.addWidget(self.strategy)
+        common.addWidget(QLabel("Period")); common.addWidget(self.period)
+        common.addWidget(QLabel("Interval")); common.addWidget(self.interval); common.addStretch()
+        layout.addLayout(common)
+        layout.addWidget(_hint("Backtesting replays past prices and pretends to follow the strategy's buy/sell signals, to check whether it would have made money. Nothing here places real trades."))
+
+        self.tabs=QTabWidget()
+        self.tabs.addTab(self._build_single(), "Single")
+        self.tabs.addTab(self._build_multi(), "Multi-Symbol")
+        self.tabs.addTab(self._build_optimize(), "Optimize")
+        self.tabs.addTab(self._build_walk_forward(), "Walk-Forward")
+        layout.addWidget(self.tabs)
+
+        self.status=QLabel("Research only, not financial advice."); self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+
+    def _base_cfg(self):
+        cfg=ScannerConfig()
+        cfg.period=self.period.currentText(); cfg.interval=self.interval.currentText()
+        cfg.strategy=self.strategy.currentData()
+        return cfg
+
+    # -- Single --------------------------------------------------------
+    def _build_single(self):
+        w=QWidget(); v=QVBoxLayout(w)
+        v.addWidget(_hint("Tests the strategy on ONE stock. The plain-English verdict below the table tells you if it would have made money and how bumpy the ride was."))
+        row=QHBoxLayout()
+        self.single_symbol=QLineEdit("AAPL")
+        run=QPushButton("Run backtest"); run.clicked.connect(self.run_single)
+        row.addWidget(QLabel("Symbol")); row.addWidget(self.single_symbol); row.addWidget(run); row.addStretch()
+        v.addLayout(row)
+        self.single_verdict=QLabel(""); self.single_verdict.setWordWrap(True); self.single_verdict.setStyleSheet("font-weight:bold;")
+        v.addWidget(self.single_verdict)
+        self.metrics=QTableWidget(0,2); self.metrics.setHorizontalHeaderLabels(["Metric","Value"]); v.addWidget(self.metrics)
+        self.trades=QTableWidget(0,5); self.trades.setHorizontalHeaderLabels(["Entry Date","Exit Date","Entry","Exit","Return %"]); v.addWidget(self.trades)
+        return w
+
+    def run_single(self):
+        from tradelab.core.backtest import backtest_symbol
+        cfg=self._base_cfg(); sym=self.single_symbol.text().strip().upper()
+        self.status.setText(f"Backtesting {sym}...")
+        res=backtest_symbol(sym, cfg)
+        _fill_table(self.metrics, ["Metric","Value"], [{"Metric":k,"Value":v} for k,v in res.metrics.items()])
+        _fill_table(self.trades, ["Entry Date","Exit Date","Entry","Exit","Return %"],
+                    res.trades.to_dict("records") if not res.trades.empty else [])
+        self._set_single_verdict(sym, res.metrics)
         try:
-            dfhist=get_history(self.symbol.text().strip().upper(), cfg.period, cfg.interval)
-            self.chart.plot(self.symbol.text().strip().upper(), dfhist, cfg)
+            self.chart.plot(sym, get_history(sym, cfg.period, cfg.interval), cfg)
         except Exception: pass
-        self.status.setText(f"Backtest complete: {len(df)} trade rows.")
+        self.status.setText(f"Backtest complete: {len(res.trades)} trade rows.")
+
+    def _set_single_verdict(self, sym, m):
+        if m.get("Error") or not m.get("Closed trades"):
+            self.single_verdict.setText(f"{sym}: not enough completed trades to judge over this period.")
+            self.single_verdict.setStyleSheet("font-weight:bold; color:#8b98a5;")
+            return
+        total=m.get("Total return %",0); win=m.get("Win rate %",0); dd=m.get("Max drawdown %",0); n=m.get("Closed trades",0)
+        if total>0:
+            word, colour = ("made money", "#3fb950")
+        else:
+            word, colour = ("lost money", "#e5534b")
+        self.single_verdict.setText(
+            f"{sym}: this strategy would have {word} ({total:+.1f}%) over the period, "
+            f"winning {win:.0f}% of its {n} trades. Worst dip along the way: -{dd:.1f}%.")
+        self.single_verdict.setStyleSheet(f"font-weight:bold; color:{colour};")
+
+    # -- Multi-symbol --------------------------------------------------
+    def _build_multi(self):
+        w=QWidget(); v=QVBoxLayout(w)
+        v.addWidget(_hint("Tests the strategy on MANY stocks at once. If it only works on one lucky name it isn't reliable — look at the overall verdict to see if it works in general."))
+        row=QHBoxLayout()
+        self.multi_symbols=QLineEdit("AAPL, MSFT, GOOG, AMZN, NVDA")
+        run=QPushButton("Run"); run.clicked.connect(self.run_multi)
+        row.addWidget(QLabel("Symbols")); row.addWidget(self.multi_symbols, 1); row.addWidget(run)
+        v.addLayout(row)
+        self.multi_verdict=QLabel(""); self.multi_verdict.setWordWrap(True); self.multi_verdict.setStyleSheet("font-weight:bold;")
+        v.addWidget(self.multi_verdict)
+        self.multi_table=QTableWidget(0,6); self.multi_table.setHorizontalHeaderLabels(["Symbol","Trades","Win rate %","Total return %","Profit factor","Max drawdown %"]); v.addWidget(self.multi_table, 1)
+        self.multi_agg=QLabel(""); self.multi_agg.setWordWrap(True); self.multi_agg.setStyleSheet("color:#8b98a5;"); v.addWidget(self.multi_agg)
+        return w
+
+    def run_multi(self):
+        from tradelab.core.backtest import backtest_multi
+        cfg=self._base_cfg()
+        syms=[s.strip().upper() for s in self.multi_symbols.text().replace(";",",").split(",") if s.strip()]
+        if not syms:
+            self.status.setText("Enter at least one symbol."); return
+        self.status.setText(f"Backtesting {len(syms)} symbols...")
+        result=backtest_multi(syms, cfg)
+        _fill_table(self.multi_table, ["Symbol","Trades","Win rate %","Total return %","Profit factor","Max drawdown %"],
+                    result["per_symbol"].to_dict("records"))
+        agg=result["aggregate"]
+        self.multi_agg.setText("Details:  "+"   |   ".join(f"{k}: {v}" for k,v in agg.items()))
+        self._set_multi_verdict(agg)
+        self.status.setText(f"Multi-symbol backtest complete: {agg['Symbols tested']} symbols.")
+
+    def _set_multi_verdict(self, agg):
+        n=agg.get("Total closed trades",0); win=agg.get("Overall win rate %",0); avg=agg.get("Avg trade return %",0)
+        if not n:
+            self.multi_verdict.setText("No completed trades across these symbols in this period.");
+            self.multi_verdict.setStyleSheet("font-weight:bold; color:#8b98a5;"); return
+        if win>=55 and avg>0:
+            verdict, colour = ("looks solid across the board", "#3fb950")
+        elif win>=45 and avg>0:
+            verdict, colour = ("is mixed but slightly positive", "#e3b341")
+        else:
+            verdict, colour = ("does not hold up across these names", "#e5534b")
+        self.multi_verdict.setText(
+            f"Across {agg.get('Symbols tested',0)} stocks, this strategy {verdict}: "
+            f"it won {win:.0f}% of {n} trades, averaging {avg:+.2f}% per trade.")
+        self.multi_verdict.setStyleSheet(f"font-weight:bold; color:{colour};")
+
+    # -- Optimize ------------------------------------------------------
+    def _build_optimize(self):
+        w=QWidget(); v=QVBoxLayout(w)
+        v.addWidget(_hint("Tries different values for ONE setting and ranks them best-first. The top row is the value that performed best — but a single standout spike is often luck; prefer a value whose neighbours also did well."))
+        row=QHBoxLayout()
+        self.opt_symbol=QLineEdit("AAPL")
+        self.opt_param=QComboBox(); self.opt_param.addItems(["ema_slow","ema_fast","min_score","macd_slow"])
+        self.opt_values=QLineEdit("20, 30, 40, 50")
+        run=QPushButton("Optimize"); run.clicked.connect(self.run_optimize)
+        row.addWidget(QLabel("Symbol")); row.addWidget(self.opt_symbol)
+        row.addWidget(QLabel("Parameter")); row.addWidget(self.opt_param)
+        row.addWidget(QLabel("Values")); row.addWidget(self.opt_values, 1); row.addWidget(run)
+        v.addLayout(row)
+        self.opt_verdict=QLabel(""); self.opt_verdict.setWordWrap(True); self.opt_verdict.setStyleSheet("font-weight:bold;")
+        v.addWidget(self.opt_verdict)
+        self.opt_table=QTableWidget(0,6); v.addWidget(self.opt_table, 1)
+        return w
+
+    def run_optimize(self):
+        from tradelab.core.backtest import optimize
+        cfg=self._base_cfg(); sym=self.opt_symbol.text().strip().upper()
+        param=self.opt_param.currentText()
+        raw=[x.strip() for x in self.opt_values.text().replace(";",",").split(",") if x.strip()]
+        try:
+            values=[int(x) if x.lstrip("-").isdigit() else float(x) for x in raw]
+        except ValueError:
+            self.status.setText("Values must be numbers."); return
+        if not values:
+            self.status.setText("Enter at least one value to test."); return
+        self.status.setText(f"Optimizing {param} over {len(values)} values...")
+        df=optimize(sym, cfg, param, values)
+        cols=list(df.columns) if not df.empty else [param]
+        _fill_table(self.opt_table, cols, df.to_dict("records") if not df.empty else [])
+        if df.empty:
+            self.opt_verdict.setText("Not enough data to test these values.")
+            self.opt_verdict.setStyleSheet("font-weight:bold; color:#8b98a5;")
+        else:
+            best=df.iloc[0]
+            self.opt_verdict.setText(
+                f"Best {param} = {best[param]} (total return {best.get('Total return %',0):+.1f}%, "
+                f"win rate {best.get('Win rate %',0):.0f}%). It's at the top of the table.")
+            self.opt_verdict.setStyleSheet("font-weight:bold; color:#3fb950;")
+        self.status.setText("Optimization complete.")
+
+    # -- Walk-forward --------------------------------------------------
+    def _build_walk_forward(self):
+        w=QWidget(); v=QVBoxLayout(w)
+        v.addWidget(_hint("Splits the history into separate time periods and tests each one. This is the honesty check: a strategy that only worked in one lucky period is probably overfit. High consistency = trustworthy."))
+        row=QHBoxLayout()
+        self.wf_symbol=QLineEdit("AAPL")
+        self.wf_splits=QSpinBox(); self.wf_splits.setRange(2,10); self.wf_splits.setValue(4)
+        run=QPushButton("Run walk-forward"); run.clicked.connect(self.run_walk_forward)
+        row.addWidget(QLabel("Symbol")); row.addWidget(self.wf_symbol)
+        row.addWidget(QLabel("Windows")); row.addWidget(self.wf_splits); row.addWidget(run); row.addStretch()
+        v.addLayout(row)
+        self.wf_verdict=QLabel(""); self.wf_verdict.setWordWrap(True); self.wf_verdict.setStyleSheet("font-weight:bold;")
+        v.addWidget(self.wf_verdict)
+        self.wf_table=QTableWidget(0,6); self.wf_table.setHorizontalHeaderLabels(["Window","From","To","Trades","Win rate %","Total return %"]); v.addWidget(self.wf_table, 1)
+        self.wf_summary=QLabel(""); self.wf_summary.setWordWrap(True); self.wf_summary.setStyleSheet("color:#8b98a5;"); v.addWidget(self.wf_summary)
+        return w
+
+    def run_walk_forward(self):
+        from tradelab.core.backtest import walk_forward
+        cfg=self._base_cfg(); sym=self.wf_symbol.text().strip().upper()
+        self.status.setText(f"Running walk-forward on {sym}...")
+        result=walk_forward(sym, cfg, n_splits=self.wf_splits.value())
+        wins=result["windows"]
+        _fill_table(self.wf_table, ["Window","From","To","Trades","Win rate %","Total return %"],
+                    wins.to_dict("records") if not wins.empty else [])
+        if wins.empty:
+            self.wf_verdict.setText("Not enough data for the requested number of windows — try fewer windows or a longer period.")
+            self.wf_verdict.setStyleSheet("font-weight:bold; color:#8b98a5;")
+            self.wf_summary.setText("")
+        else:
+            n=len(wins); profitable=int(round(result['consistency']/100*n)); c=result['consistency']
+            if c>=75:
+                word, colour = ("reliable", "#3fb950")
+            elif c>=50:
+                word, colour = ("somewhat reliable", "#e3b341")
+            else:
+                word, colour = ("unreliable (likely overfit)", "#e5534b")
+            self.wf_verdict.setText(f"This strategy made money in {profitable} of {n} time periods ({c:.0f}%) — {word}.")
+            self.wf_verdict.setStyleSheet(f"font-weight:bold; color:{colour};")
+            self.wf_summary.setText("A robust strategy is profitable across most windows, not just one.")
+        self.status.setText("Walk-forward complete.")
 
 
 class ReplayPanel(QWidget):
@@ -1657,6 +1861,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self.watch_panel, "Watchlists")
         tabs.addTab(self.portfolio_panel, "Portfolio")
         tabs.addTab(MarketPanel(), "Market")
+        tabs.addTab(BacktestPanel(self.chart, self.cfg), "Backtest")
         tabs.addTab(StrategyBuilderPanel(), "Strategies")
         settings_text = QTextEdit(); settings_text.setReadOnly(True)
         settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")

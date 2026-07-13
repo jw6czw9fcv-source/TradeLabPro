@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.8.0 - Backtesting Lab (Phase 4)
+
+The Backtest panel existed but wasn't even registered as a tab (dead code) and was single-symbol, single-strategy (hardcoded EMA/MACD). Rebuilt into a proper lab and wired in as a "Backtest" tab.
+
+### Added
+- `tradelab/core/backtest.py`: strategy-agnostic engine (works with any strategy in the SCN-030 registry via its signal_series). Single-symbol simulation plus the three things the roadmap calls for: multi-symbol aggregation, single-parameter optimization (sweep + rank), and walk-forward (sequential out-of-sample windows + a consistency score). Qt-free and network-optional, unit-testable offline. Adds a Max drawdown % metric throughout.
+- Backtest tab UI with 4 sub-tabs (Single / Multi-Symbol / Optimize / Walk-Forward), a shared Strategy/Period/Interval row, and — because backtesting is an abstract concept — **plain-language self-explanation**: an italic hint under each sub-tab describing what it does, and a bold colour-coded verdict after each run that interprets the raw numbers ("this strategy made money (+45%)…", "made money in 3 of 4 time periods (75%) — reliable", etc.).
+
+### Fixed
+- Backtest data prep did a blanket `dropna()`, discarding the first ~199 bars purely for SMA200's warmup even though no strategy signal uses SMA200 - crippling shorter backtests and walk-forward windows. Now drops only rows where the actual signal inputs (EMA/MACD/RSI, ~35 bars) are still warming up.
+
+### Verified
+- 225/225 pytest regression tests pass (32 new: `tests/test_backtest.py` for the engine incl. drawdown/optimize/walk-forward, `tests/test_backtest_panel.py` for the 4 sub-tabs and plain-language verdicts).
+
 ## 2.7.0 - Market Dashboard (Phase 3)
 
 Starts Phase 3. The Market tab was a placeholder (a regime-symbol table whose own status line said "breadth is planned in the next phase"); this fills it in.

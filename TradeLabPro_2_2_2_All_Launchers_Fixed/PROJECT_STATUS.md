@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.7.0
-Current phase: Phase 3 - Market Dashboard (started)
+Current version: 2.8.0
+Current phase: Phase 4 - Backtesting Lab (started)
+
+## Completed in 2.8.0 (Backtesting Lab, Phase 4)
+- `tradelab/core/backtest.py`: strategy-agnostic engine - single-symbol simulation, multi-symbol aggregation, single-parameter optimization, and walk-forward analysis with a consistency score. Adds Max drawdown %. Qt-free, offline-testable.
+- Backtest tab rebuilt from dead code into 4 sub-tabs (Single / Multi-Symbol / Optimize / Walk-Forward) and registered as a tab. Includes plain-language hints + colour-coded verdicts that interpret the numbers for the user (backtesting is abstract; the tab now explains itself).
+- Fixed a real bug: backtest prep did a blanket dropna() that threw away ~199 bars just for SMA200 warmup no signal uses; now drops only actual signal-input warmup (~35 bars).
+- pytest regression suite now 225 tests, all passing.
 
 ## Completed in 2.7.0 (Market Dashboard, Phase 3)
 - `tradelab/core/market.py`: Qt-free dashboard logic - 11 SPDR sector ETFs, per-symbol trend analysis (last / % change / above 50- & 200-day SMA), sector-breadth counts, and a transparent `market_condition()` "is it a good day to trade" 0-100 read with reasons.
