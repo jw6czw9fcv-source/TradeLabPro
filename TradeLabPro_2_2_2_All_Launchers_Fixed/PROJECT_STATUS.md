@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.6.0
+Current version: 2.6.1
 Current phase: Phase 2 - Scanner Professional (feature-complete per the original roadmap bullet)
+
+## Completed in 2.6.1 (Junk-symbol filter fix)
+- Fixed non-ticker junk (e.g. "41") appearing in scan results: `is_tradeable_symbol()` now requires at least one letter, rejecting purely-numeric strings from bad feed lines while keeping every real ticker. 26-case regression test in `tests/test_universe.py`.
+- pytest regression suite now 187 tests, all passing.
 
 ## Completed in 2.6.0 (Sector/market-cap context, multi-strategy scanning, confidence scoring, SCN-030)
 Completes the last roadmap bullet for Phase 2 - all three pieces in one release:

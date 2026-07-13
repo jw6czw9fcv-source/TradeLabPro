@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.6.1 - Junk-symbol filter fix
+
+### Fixed
+- Non-ticker junk like "41" could appear as a scan result row. `is_tradeable_symbol()` accepted any `[A-Z0-9.-]+` string, so a purely-numeric value from a bad exchange-feed line passed as a valid ticker. Now requires at least one letter (a real ticker always has one), which rejects `41`/`123`/`0` while keeping every real symbol including dotted Canadian tickers (`RY.TO`), class shares (`BRK.B`), and letter+digit tickers. Re-run "Refresh exchanges" to re-pull the lists through the corrected filter.
+
+### Verified
+- 187/187 pytest regression tests pass (26 new: `tests/test_universe.py`).
+
 ## 2.6.0 - Sector/market-cap context, multi-strategy scanning, confidence scoring (SCN-030)
 
 Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector/market-cap context, transparent confidence scoring tied to backtest stats" - all three pieces in one release.

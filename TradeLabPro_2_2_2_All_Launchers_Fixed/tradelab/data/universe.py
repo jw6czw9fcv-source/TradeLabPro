@@ -81,7 +81,12 @@ def is_tradeable_symbol(symbol: str) -> bool:
     # Skip many rights/warrants/units from full feeds; user can still import them manually if wanted.
     if any(symbol.endswith(f'-{x}') for x in ['W','WS','WT','R','U']):
         return False
-    return bool(re.fullmatch(r'[A-Z0-9.-]+', symbol))
+    if not re.fullmatch(r'[A-Z0-9.-]+', symbol):
+        return False
+    # A real ticker always contains at least one letter. A purely numeric
+    # string like "41" is junk from a bad feed line (e.g. a stray column
+    # value parsed as a symbol), never a tradeable symbol.
+    return bool(re.search(r'[A-Z]', symbol))
 
 
 def _exchange_country(name: str):
