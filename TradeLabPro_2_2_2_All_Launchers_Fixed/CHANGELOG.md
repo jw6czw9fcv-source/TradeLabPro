@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.7.0 - Market Dashboard (Phase 3)
+
+Starts Phase 3. The Market tab was a placeholder (a regime-symbol table whose own status line said "breadth is planned in the next phase"); this fills it in.
+
+### Added
+- `tradelab/core/market.py`: Qt-free, offline-testable dashboard logic - the 11 SPDR sector ETFs, per-symbol trend analysis (last / % change / above 50- & 200-day SMA), sector-breadth counts, and a transparent `market_condition()` "is it a good day to trade" read.
+- Market tab UI:
+  - **"Is it a good day to trade?"** macro read - a colour-coded headline (green Favorable / amber Neutral / red Caution) with a 0-100 score and the plain-English list of reasons that produced it (SPY vs its 50/200-day averages, VIX level, sector participation). Same no-black-box philosophy as the scanner's confidence score.
+  - **Sector breadth** table across all 11 SPDR sector ETFs (daily % change + above/below 50-day average).
+  - Breadth summary in the status line (e.g. "8/11 sectors up today, 9/11 above their 50-day average").
+- The existing regime-symbol table (VIX/SPY/QQQ/…) now also feeds the macro read.
+
+### Verified
+- 201/201 pytest regression tests pass (14 new: `tests/test_market.py` for the logic, `tests/test_market_panel.py` for the UI incl. graceful handling of a failing symbol).
+- Rendered the panel offscreen to confirm layout; refresh runs end-to-end.
+
 ## 2.6.1 - Junk-symbol filter fix
 
 ### Fixed

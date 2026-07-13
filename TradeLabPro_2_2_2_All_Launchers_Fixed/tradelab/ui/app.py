@@ -1441,9 +1441,29 @@ class MarketPanel(QWidget):
         self.refresh_btn.clicked.connect(self.refresh_market)
         top.addWidget(QLabel("Market Dashboard")); top.addStretch(); top.addWidget(self.refresh_btn)
         layout.addLayout(top)
+
+        # Phase 3: "is it a good day to trade" macro read - a big, plain
+        # headline plus the transparent reasons that produced it.
+        self.read_box=QGroupBox("Is it a good day to trade?")
+        read_layout=QVBoxLayout(self.read_box)
+        self.read_headline=QLabel("Refresh to compute the market read.")
+        self.read_headline.setStyleSheet("font-size:16px; font-weight:bold;")
+        self.read_reasons=QLabel("")
+        self.read_reasons.setWordWrap(True)
+        self.read_reasons.setStyleSheet("color:#b8b8b8;")
+        read_layout.addWidget(self.read_headline)
+        read_layout.addWidget(self.read_reasons)
+        layout.addWidget(self.read_box)
+
+        layout.addWidget(QLabel("Regime symbols"))
         self.table=QTableWidget(0,5); self.table.setHorizontalHeaderLabels(["Item","Symbol","Last","Change %","Purpose"])
         layout.addWidget(self.table)
-        self.status=QLabel("Refresh to update market regime symbols. Data uses yfinance when available.")
+
+        layout.addWidget(QLabel("Sector breadth (SPDR sector ETFs)"))
+        self.sector_table=QTableWidget(0,4); self.sector_table.setHorizontalHeaderLabels(["Sector","ETF","Change %","vs 50-day"])
+        layout.addWidget(self.sector_table)
+
+        self.status=QLabel("Refresh to update the dashboard. Data uses yfinance when available.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.rows=[('VIX','^VIX','Market fear / volatility'),('S&P 500','SPY','US market regime'),('NASDAQ 100','QQQ','Growth/technology regime'),('Russell 2000','IWM','Small-cap risk appetite'),('TSX','^GSPTSE','Canada market regime'),('USD/CAD','CAD=X','Currency for Canada exposure'),('Gold','GC=F','Risk/inflation proxy'),('Oil','CL=F','Energy/cyclical proxy'),('US 10Y','^TNX','Rates pressure')]
@@ -1454,21 +1474,51 @@ class MarketPanel(QWidget):
             vals=[name,sym,"","",purpose]
             for c,v in enumerate(vals): self.table.setItem(r,c,QTableWidgetItem(str(v)))
         self.table.resizeColumnsToContents()
+        from tradelab.core.market import SECTOR_ETFS
+        self.sector_table.setRowCount(len(SECTOR_ETFS))
+        for r,(name,sym) in enumerate(SECTOR_ETFS):
+            for c,v in enumerate([name,sym,"",""]): self.sector_table.setItem(r,c,QTableWidgetItem(str(v)))
+        self.sector_table.resizeColumnsToContents()
     def refresh_market(self):
+        from tradelab.core.market import SECTOR_ETFS, analyze_trend, sector_breadth, market_condition
         self.refresh_btn.setEnabled(False)
+        regime_trends={}
         for r,(name,sym,purpose) in enumerate(self.rows):
             try:
-                df=get_history(sym,"5d","1d")
-                last=float(df["Close"].iloc[-1])
-                prev=float(df["Close"].iloc[-2]) if len(df)>1 else last
-                ch=(last-prev)/prev*100 if prev else 0
-                self.table.setItem(r,2,QTableWidgetItem(f"{last:.2f}"))
-                self.table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%"))
+                df=get_history(sym,"1y","1d")
+                trend=analyze_trend(df)
+                regime_trends[sym]=trend
+                last=trend["last"]; ch=trend["change_pct"]
+                self.table.setItem(r,2,QTableWidgetItem(f"{last:.2f}" if last is not None else "—"))
+                self.table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
             except Exception as exc:
                 self.table.setItem(r,2,QTableWidgetItem("ERR"))
                 self.table.setItem(r,3,QTableWidgetItem(str(exc)[:40]))
         self.table.resizeColumnsToContents()
-        self.status.setText("Market dashboard refreshed. Economic calendar and breadth are planned in the next phase.")
+
+        sector_trends={}
+        for r,(name,sym) in enumerate(SECTOR_ETFS):
+            try:
+                trend=analyze_trend(get_history(sym,"1y","1d"))
+                sector_trends[name]=trend
+                ch=trend["change_pct"]
+                self.sector_table.setItem(r,2,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
+                above=trend["above_sma50"]
+                self.sector_table.setItem(r,3,QTableWidgetItem("Above" if above else ("Below" if above is False else "—")))
+            except Exception as exc:
+                self.sector_table.setItem(r,2,QTableWidgetItem("ERR"))
+                self.sector_table.setItem(r,3,QTableWidgetItem(str(exc)[:20]))
+        self.sector_table.resizeColumnsToContents()
+
+        breadth=sector_breadth(sector_trends)
+        spy_trend=regime_trends.get("SPY",{})
+        vix_last=(regime_trends.get("^VIX") or {}).get("last")
+        read=market_condition(spy_trend, vix_last, breadth)
+        colour={"Favorable":"#3fb950","Neutral / mixed":"#e3b341","Caution":"#e5534b"}.get(read["label"],"#c7d0d8")
+        self.read_headline.setText(f"{read['label']}  ·  {read['score']}/100")
+        self.read_headline.setStyleSheet(f"font-size:16px; font-weight:bold; color:{colour};")
+        self.read_reasons.setText("  •  ".join(read["reasons"]) if read["reasons"] else "Not enough data for a confident read.")
+        self.status.setText(f"Dashboard refreshed. Breadth: {breadth['advancing']}/{breadth['total']} sectors up today, {breadth['above_sma50']}/{breadth['measured_sma50']} above their 50-day average.")
         self.refresh_btn.setEnabled(True)
 
 

@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.6.1
-Current phase: Phase 2 - Scanner Professional (feature-complete per the original roadmap bullet)
+Current version: 2.7.0
+Current phase: Phase 3 - Market Dashboard (started)
+
+## Completed in 2.7.0 (Market Dashboard, Phase 3)
+- `tradelab/core/market.py`: Qt-free dashboard logic - 11 SPDR sector ETFs, per-symbol trend analysis (last / % change / above 50- & 200-day SMA), sector-breadth counts, and a transparent `market_condition()` "is it a good day to trade" 0-100 read with reasons.
+- Market tab UI rebuilt from a placeholder into: a colour-coded macro read headline + reasons, a sector-breadth table across all 11 sector ETFs, and a breadth summary line, on top of the existing regime-symbol table (which now feeds the read).
+- pytest regression suite now 201 tests, all passing.
 
 ## Completed in 2.6.1 (Junk-symbol filter fix)
 - Fixed non-ticker junk (e.g. "41") appearing in scan results: `is_tradeable_symbol()` now requires at least one letter, rejecting purely-numeric strings from bad feed lines while keeping every real ticker. 26-case regression test in `tests/test_universe.py`.
