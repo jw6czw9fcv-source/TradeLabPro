@@ -18,6 +18,7 @@ from tradelab.data.database import Database
 from tradelab.data.universe import list_symbols, available_universes, refresh_exchange_cache, import_universe_file, universe_metadata
 from tradelab.data.market_data import get_history
 from tradelab.core.scanner import scan_symbols
+from tradelab.strategies import strategy_choices
 from tradelab.ui.chart_widget import ChartWorkspace, ChartWidget
 from tradelab.ui import colors
 from tradelab.core.backtester import backtest_ema_macd
@@ -153,6 +154,10 @@ class ScannerPanel(QWidget):
         controls_layout.addWidget(self.parameter_scroll)
         self.scan_name = QLineEdit("My Scan")
         self.country = QComboBox(); self.country.addItems(["All Exchanges", "All USA", "All Canada", "My Lists"])
+        self.strategy = QComboBox()
+        for key, name in strategy_choices():
+            self.strategy.addItem(name, key)
+        self.strategy.setToolTip("Which strategy scores/signals each symbol (SCN-030 multi-strategy scanning).")
         self.min_price = QDoubleSpinBox(); self.min_price.setRange(0, 100000); self.min_price.setValue(5.0); self.min_price.setPrefix("$")
         self.max_price = QDoubleSpinBox(); self.max_price.setRange(0, 100000); self.max_price.setValue(10000.0); self.max_price.setPrefix("$")
         self.min_volume = QSpinBox(); self.min_volume.setRange(0, 100000000); self.min_volume.setValue(500000); self.min_volume.setSingleStep(100000)
@@ -170,7 +175,7 @@ class ScannerPanel(QWidget):
         self.interval = QComboBox(); self.interval.addItems(["1m","2m","5m","15m","30m","60m","90m","1h","1d","5d","1wk","1mo"]); self.interval.setCurrentText("1d")
         self.period = QComboBox(); self.period.addItems(["1d","5d","1mo","3mo","6mo","1y","2y","5y","10y","max"]); self.period.setCurrentText("1y")
         for widget in [
-            self.scan_name, self.country, self.min_price, self.max_price, self.min_volume, self.min_cap,
+            self.scan_name, self.country, self.strategy, self.min_price, self.max_price, self.min_volume, self.min_cap,
             self.max_symbols, self.min_score, self.min_rel_volume, self.min_rsi, self.max_rsi,
             self.min_atr_percent, self.max_atr_percent, self.interval, self.period,
             self.require_ema_trend, self.require_positive_macd,
@@ -210,6 +215,7 @@ class ScannerPanel(QWidget):
         add_parameter_section("General", [
             ("Scan name", self.scan_name),
             ("Exchange preset", self.country),
+            ("Strategy", self.strategy),
             ("Interval", self.interval),
             ("Period", self.period),
             ("Maximum symbols (0 = all)", self.max_symbols),
@@ -383,10 +389,10 @@ class ScannerPanel(QWidget):
         stats_layout.addRow("ETA", self.stat_eta)
         layout.addWidget(self.scan_stats_box)
 
-        self.table = QTableWidget(0, 11)
+        self.table = QTableWidget(0, 15)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.table.setHorizontalHeaderLabels(["Symbol", "Signal", "Score", "Price", "Volume", "RelVol", "Market Cap", "RSI", "ATR%", "EMA", "MACD"])
+        self.table.setHorizontalHeaderLabels(["Symbol", "Signal", "Score", "Conf%", "Sample", "Price", "Volume", "RelVol", "Market Cap", "Cap", "Sector", "RSI", "ATR%", "EMA", "MACD"])
         self.table.setSortingEnabled(True)
         self.table.setMinimumHeight(520)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -612,6 +618,7 @@ class ScannerPanel(QWidget):
             "require_positive_macd": self.require_positive_macd.isChecked(),
             "interval": self.interval.currentText(),
             "period": self.period.currentText(),
+            "strategy": self.strategy.currentData(),
             "universes": [cb.property('universe_name') for cb in self.universe_checks if cb.isChecked()],
             "custom_filters": self.get_custom_filters(),
         }
@@ -639,6 +646,10 @@ class ScannerPanel(QWidget):
         self._apply_setup_data(json.loads(path.read_text(encoding="utf-8")), name)
         self.status.setText(f"Preset loaded: {name}")
 
+    def set_strategy(self, key: str):
+        idx = self.strategy.findData(key)
+        self.strategy.setCurrentIndex(idx if idx >= 0 else 0)
+
     def _apply_setup_data(self, data: dict, name: str):
         self.setup_name.setEditText(name)
         self.scan_name.setText(data.get("scan_name", "My Scan"))
@@ -662,6 +673,7 @@ class ScannerPanel(QWidget):
         self.require_positive_macd.setChecked(bool(data.get("require_positive_macd", False)))
         self.interval.setCurrentText(data.get("interval", "1d"))
         self.period.setCurrentText(data.get("period", "1y"))
+        self.set_strategy(data.get("strategy", "ema_macd"))
         self.rebuild_universe_checks()
         selected = set(data.get("universes", []))
         for cb in self.universe_checks:
@@ -686,6 +698,7 @@ class ScannerPanel(QWidget):
         self.require_positive_macd.setChecked(False)
         self.interval.setCurrentText("1d")
         self.period.setCurrentText("1y")
+        self.set_strategy("ema_macd")
         for cb in self.universe_checks:
             name = cb.property('universe_name')
             cb.setChecked(bool(cb.property("universe_names")))
@@ -1060,6 +1073,7 @@ class ScannerPanel(QWidget):
         cfg.require_positive_macd = self.require_positive_macd.isChecked()
         cfg.interval = self.interval.currentText()
         cfg.period = self.period.currentText()
+        cfg.strategy = self.strategy.currentData()
         cfg.custom_filters = self.get_custom_filters()
         return cfg
 
@@ -1164,10 +1178,14 @@ class ScannerPanel(QWidget):
             symbol = row.get("Symbol", "")
             signal = row.get("Signal", "")
             score = row.get("Score", 0)
+            confidence = row.get("Confidence %")
+            sample_n = row.get("Sample N", 0)
             price = row.get("Price", 0)
             volume = row.get("Volume", 0)
             rel_vol = row.get("RelVol", 0)
             market_cap = row.get("Market Cap", 0)
+            cap_bucket = row.get("Cap", "")
+            sector = row.get("Sector", "")
             rsi14 = row.get("RSI14", 0)
             atr_pct = row.get("ATR%", 0)
             ema_trend = row.get("EMA Trend", "")
@@ -1175,14 +1193,19 @@ class ScannerPanel(QWidget):
             self.table.setItem(r, 0, table_item(symbol))
             self.table.setItem(r, 1, table_item(signal))
             self.table.setItem(r, 2, table_item(score, numeric=True, display=f"{float(score or 0):.0f}" if str(score) != "" else ""))
-            self.table.setItem(r, 3, table_item(price, numeric=True, display=f"{float(price or 0):.2f}" if str(price) != "" else ""))
-            self.table.setItem(r, 4, table_item(volume, numeric=True, display=fmt_large(volume)))
-            self.table.setItem(r, 5, table_item(rel_vol, numeric=True, display=f"{float(rel_vol or 0):.2f}" if str(rel_vol) != "" else ""))
-            self.table.setItem(r, 6, table_item(market_cap, numeric=True, display=fmt_large(market_cap)))
-            self.table.setItem(r, 7, table_item(rsi14, numeric=True, display=f"{float(rsi14 or 0):.1f}" if str(rsi14) != "" else ""))
-            self.table.setItem(r, 8, table_item(atr_pct, numeric=True, display=f"{float(atr_pct or 0):.2f}%" if str(atr_pct) != "" else ""))
-            self.table.setItem(r, 9, table_item(ema_trend))
-            self.table.setItem(r, 10, table_item(macd_state))
+            has_confidence = pd.notna(confidence)
+            self.table.setItem(r, 3, table_item(confidence if has_confidence else "", numeric=True, display=f"{float(confidence):.0f}%" if has_confidence else "—"))
+            self.table.setItem(r, 4, table_item(sample_n, numeric=True, display=str(int(sample_n or 0))))
+            self.table.setItem(r, 5, table_item(price, numeric=True, display=f"{float(price or 0):.2f}" if str(price) != "" else ""))
+            self.table.setItem(r, 6, table_item(volume, numeric=True, display=fmt_large(volume)))
+            self.table.setItem(r, 7, table_item(rel_vol, numeric=True, display=f"{float(rel_vol or 0):.2f}" if str(rel_vol) != "" else ""))
+            self.table.setItem(r, 8, table_item(market_cap, numeric=True, display=fmt_large(market_cap)))
+            self.table.setItem(r, 9, table_item(cap_bucket))
+            self.table.setItem(r, 10, table_item(sector))
+            self.table.setItem(r, 11, table_item(rsi14, numeric=True, display=f"{float(rsi14 or 0):.1f}" if str(rsi14) != "" else ""))
+            self.table.setItem(r, 12, table_item(atr_pct, numeric=True, display=f"{float(atr_pct or 0):.2f}%" if str(atr_pct) != "" else ""))
+            self.table.setItem(r, 13, table_item(ema_trend))
+            self.table.setItem(r, 14, table_item(macd_state))
 
             is_error = str(signal).upper() == "ERROR"
             if is_error:
@@ -1203,9 +1226,9 @@ class ScannerPanel(QWidget):
 
             for col, color in (
                 (1, colors.signal_color(signal)),
-                (7, colors.rsi_zone_color(rsi14)),
-                (9, colors.trend_color(ema_trend)),
-                (10, colors.trend_color(macd_state)),
+                (11, colors.rsi_zone_color(rsi14)),
+                (13, colors.trend_color(ema_trend)),
+                (14, colors.trend_color(macd_state)),
             ):
                 if color is None:
                     continue
@@ -1213,9 +1236,21 @@ class ScannerPanel(QWidget):
                 if it:
                     it.setForeground(color)
         self.table.setSortingEnabled(True)
-        self.result_status.setText(f"Results: {len(df)}")
+        self.result_status.setText(f"Results: {len(df)}{self._sector_breakdown_text(df)}")
         if len(df) <= 200:
             self.table.resizeColumnsToContents()
+
+    def _sector_breakdown_text(self, df: pd.DataFrame) -> str:
+        if df.empty or "Sector" not in df.columns:
+            return ""
+        counts = df.loc[df["Sector"].astype(bool), "Sector"].value_counts()
+        if counts.empty:
+            return ""
+        top = "  |  ".join(f"{sector}: {count}" for sector, count in counts.head(5).items())
+        more = len(counts) - 5
+        if more > 0:
+            top += f"  |  +{more} more sector{'s' if more != 1 else ''}"
+        return f"   —   {top}"
 
     def export_results(self):
         if self.results.empty:
@@ -1244,14 +1279,14 @@ class ScannerPanel(QWidget):
         return symbols
 
     def selected_price_for_row(self, row):
-        item = self.table.item(row, 3)
+        item = self.table.item(row, 5)
         try: return float(item.text()) if item else 0.0
         except Exception: return 0.0
 
     def selected_price(self):
         row = self.table.currentRow()
         if row < 0: return 0.0
-        item = self.table.item(row, 3)
+        item = self.table.item(row, 5)
         try: return float(item.text()) if item else 0.0
         except Exception: return 0.0
 

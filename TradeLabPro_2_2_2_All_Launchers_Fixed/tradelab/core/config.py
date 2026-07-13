@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "TradeLab Pro"
-APP_VERSION = '2.5.0 Custom Technical Filter Builder'
+APP_VERSION = '2.6.0 Multi-strategy scanning + confidence scoring'
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "tradelab.db"
@@ -33,3 +33,8 @@ class ScannerConfig:
     # SCN-026: arbitrary additional conditions (list of FilterCondition.to_dict()),
     # ANDed with everything above rather than replacing it - see tradelab/core/filters.py.
     custom_filters: list = field(default_factory=list)
+    # SCN-030: which strategy scores/signals each symbol - key into
+    # tradelab.strategies.STRATEGIES. Kept as a plain string default here
+    # (not imported from tradelab.strategies) to avoid a needless import
+    # coupling between config and the strategies package.
+    strategy: str = "ema_macd"

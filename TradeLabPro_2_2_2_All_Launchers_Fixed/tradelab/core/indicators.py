@@ -102,6 +102,36 @@ def signal_series(df: pd.DataFrame, ema_fast: int = 9, ema_slow: int = 30) -> pd
     return out
 
 
+def rsi_reversion_signal(df: pd.DataFrame, rsi_low: float = 30.0, rsi_high: float = 70.0) -> str:
+    """Mean-reversion counterpart to crossover_signal(): BUY on a bounce out
+    of oversold, SELL on a rollover out of overbought, rather than trend
+    continuation. Second strategy for SCN-030 multi-strategy scanning.
+    """
+    if len(df) < 3 or "RSI14" not in df:
+        return "HOLD"
+    prev_rsi, last_rsi = df["RSI14"].iloc[-2], df["RSI14"].iloc[-1]
+    if pd.isna(prev_rsi) or pd.isna(last_rsi):
+        return "HOLD"
+    if prev_rsi <= rsi_low and last_rsi > rsi_low:
+        return "BUY"
+    if prev_rsi >= rsi_high and last_rsi < rsi_high:
+        return "SELL"
+    if last_rsi < rsi_low:
+        return "WATCH"
+    return "HOLD"
+
+
+def rsi_reversion_signal_series(df: pd.DataFrame, rsi_low: float = 30.0, rsi_high: float = 70.0) -> pd.Series:
+    rsi14 = df["RSI14"]
+    prev = rsi14.shift(1)
+    buy = (prev <= rsi_low) & (rsi14 > rsi_low)
+    sell = (prev >= rsi_high) & (rsi14 < rsi_high)
+    out = pd.Series("", index=df.index)
+    out[buy] = "BUY"
+    out[sell] = "SELL"
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Chart Engine (Phase 1) additions: overlays used by the new PyQtGraph chart.
 # Kept as pure functions on plain Series/DataFrames so they're independently

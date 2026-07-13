@@ -100,3 +100,31 @@ def test_new_setup_names_it_new_setup_not_default(scanner_panel):
     """
     scanner_panel.new_setup()
     assert scanner_panel.setup_name.currentText() == "New Setup"
+
+
+def test_strategy_defaults_to_ema_macd(scanner_panel):
+    assert scanner_panel.strategy.currentData() == "ema_macd"
+
+
+def test_current_config_includes_selected_strategy(scanner_panel):
+    scanner_panel.set_strategy("rsi_reversion")
+    cfg = scanner_panel.current_config()
+    assert cfg.strategy == "rsi_reversion"
+
+
+def test_strategy_round_trips_through_save_and_load(scanner_panel):
+    scanner_panel.setup_name.setEditText("Reversion Setup")
+    scanner_panel.set_strategy("rsi_reversion")
+    scanner_panel.save_setup()
+
+    scanner_panel.set_strategy("ema_macd")  # simulate switching away
+    assert scanner_panel.strategy.currentData() == "ema_macd"
+
+    scanner_panel.load_setup_by_name("Reversion Setup")
+    assert scanner_panel.strategy.currentData() == "rsi_reversion"
+
+
+def test_default_setup_resets_strategy_to_ema_macd(scanner_panel):
+    scanner_panel.set_strategy("rsi_reversion")
+    scanner_panel.default_setup()
+    assert scanner_panel.strategy.currentData() == "ema_macd"

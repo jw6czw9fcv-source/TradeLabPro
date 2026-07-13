@@ -1,4 +1,15 @@
 from tradelab.core.indicators import add_indicators, crossover_signal
+from tradelab.core.indicators import signal_series as _ema_signal_series
+
+NAME = "EMA/MACD Trend"
+
+
+def signal_series(df, cfg):
+    """Vectorized per-bar signal history, for confidence scoring (see
+    tradelab/core/confidence.py) and backtesting - not used for the live
+    score/signal on the latest bar, that's score_symbol() below.
+    """
+    return _ema_signal_series(df, cfg.ema_fast, cfg.ema_slow)
 
 
 def score_symbol(df, cfg) -> dict:

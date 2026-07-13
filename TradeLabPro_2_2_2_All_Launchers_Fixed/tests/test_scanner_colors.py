@@ -113,23 +113,67 @@ def test_populate_table_applies_color_standard(scanner_panel):
     # The table has sorting enabled and may restore a persisted sort order
     # (restore_scanner_layout reads QSettings), so row 0 isn't necessarily
     # AAA - look each row up by its Symbol cell instead of assuming order.
-    rows_by_symbol = {table.item(r, 0).text(): r for r in range(table.rowCount())}
+    # Columns are also looked up by header label rather than a hardcoded
+    # index, since the scanner table gains new columns fairly often (Cap/
+    # Sector/Confidence were all added after this test was first written)
+    # and a positional index silently drifts every time that happens.
+    col = {table.horizontalHeaderItem(c).text(): c for c in range(table.columnCount())}
+    rows_by_symbol = {table.item(r, col["Symbol"]).text(): r for r in range(table.rowCount())}
 
     buy_row = rows_by_symbol["AAA"]
-    buy_row_bg = table.item(buy_row, 0).background().color().name()
+    buy_row_bg = table.item(buy_row, col["Symbol"]).background().color().name()
     assert buy_row_bg == colors.score_row_color(90).name()
-    assert table.item(buy_row, 1).foreground().color().name() == colors.BULLISH.name()  # Signal=BUY
-    assert table.item(buy_row, 7).foreground().color().name() == colors.BEARISH.name()  # RSI 80 overbought
-    assert table.item(buy_row, 9).foreground().color().name() == colors.BULLISH.name()  # EMA Trend=Bull
+    assert table.item(buy_row, col["Signal"]).foreground().color().name() == colors.BULLISH.name()  # Signal=BUY
+    assert table.item(buy_row, col["RSI"]).foreground().color().name() == colors.BEARISH.name()  # RSI 80 overbought
+    assert table.item(buy_row, col["EMA"]).foreground().color().name() == colors.BULLISH.name()  # EMA Trend=Bull
 
     sell_row = rows_by_symbol["BBB"]
-    sell_row_bg = table.item(sell_row, 0).background().color().name()
+    sell_row_bg = table.item(sell_row, col["Symbol"]).background().color().name()
     assert sell_row_bg == colors.score_row_color(40).name()
-    assert table.item(sell_row, 1).foreground().color().name() == colors.BEARISH.name()  # Signal=SELL
-    assert table.item(sell_row, 7).foreground().color().name() == colors.BULLISH.name()  # RSI 20 oversold
+    assert table.item(sell_row, col["Signal"]).foreground().color().name() == colors.BEARISH.name()  # Signal=SELL
+    assert table.item(sell_row, col["RSI"]).foreground().color().name() == colors.BULLISH.name()  # RSI 20 oversold
 
     error_row = rows_by_symbol["CCC"]
-    error_row_bg = table.item(error_row, 0).background().color().name()
+    error_row_bg = table.item(error_row, col["Symbol"]).background().color().name()
     assert error_row_bg == colors.score_row_color(0, is_error=True).name()
     assert error_row_bg != colors.score_row_color(0, is_error=False).name()
-    assert table.item(error_row, 0).toolTip() == "boom"
+    assert table.item(error_row, col["Symbol"]).toolTip() == "boom"
+
+
+def test_result_status_shows_sector_breakdown(scanner_panel):
+    scanner_panel.results = pd.DataFrame([
+        {"Symbol": "AAA", "Signal": "BUY", "Score": 90, "Sector": "Technology"},
+        {"Symbol": "BBB", "Signal": "BUY", "Score": 80, "Sector": "Technology"},
+        {"Symbol": "CCC", "Signal": "BUY", "Score": 70, "Sector": "Energy"},
+        {"Symbol": "DDD", "Signal": "ERROR", "Score": 0, "Sector": ""},  # excluded, no real sector
+    ])
+    scanner_panel.populate_table()
+    text = scanner_panel.result_status.text()
+    assert text.startswith("Results: 4")
+    assert "Technology: 2" in text
+    assert "Energy: 1" in text
+
+
+def test_result_status_omits_breakdown_when_no_sector_data(scanner_panel):
+    scanner_panel.results = pd.DataFrame([{"Symbol": "AAA", "Signal": "BUY", "Score": 90}])
+    scanner_panel.populate_table()
+    assert scanner_panel.result_status.text() == "Results: 1"
+
+
+def test_populate_table_shows_confidence_and_sample_columns(scanner_panel):
+    scanner_panel.results = pd.DataFrame([
+        {"Symbol": "AAA", "Signal": "BUY", "Score": 90, "Confidence %": 66.7, "Sample N": 3},
+        {"Symbol": "BBB", "Signal": "BUY", "Score": 80, "Confidence %": None, "Sample N": 0},
+    ])
+    scanner_panel.populate_table()
+    table = scanner_panel.table
+    col = {table.horizontalHeaderItem(c).text(): c for c in range(table.columnCount())}
+    rows_by_symbol = {table.item(r, col["Symbol"]).text(): r for r in range(table.rowCount())}
+
+    aaa_row = rows_by_symbol["AAA"]
+    assert table.item(aaa_row, col["Conf%"]).text() == "67%"
+    assert table.item(aaa_row, col["Sample"]).text() == "3"
+
+    bbb_row = rows_by_symbol["BBB"]
+    assert table.item(bbb_row, col["Conf%"]).text() == "—"  # no historical BUY signals to measure
+    assert table.item(bbb_row, col["Sample"]).text() == "0"

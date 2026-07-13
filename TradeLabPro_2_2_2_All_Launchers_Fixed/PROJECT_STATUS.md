@@ -1,7 +1,16 @@
 # TradeLab Pro Project Status
 
-Current version: 2.5.0
-Current phase: Phase 2 - Scanner Professional (in progress)
+Current version: 2.6.0
+Current phase: Phase 2 - Scanner Professional (feature-complete per the original roadmap bullet)
+
+## Completed in 2.6.0 (Sector/market-cap context, multi-strategy scanning, confidence scoring, SCN-030)
+Completes the last roadmap bullet for Phase 2 - all three pieces in one release:
+- Fixed a real bug: `get_quote_meta()` was a complete stub returning a fake market cap seeded from `hash(symbol)` - never real data. Now fetches real market cap + sector + industry via yfinance, cached in-process.
+- Sector/market-cap context: new "Cap" (Mega/Large/Mid/Small/Micro) and "Sector" scan result columns, plus a sector breakdown in the results status line.
+- Multi-strategy scanning: added RSI Mean-Reversion (`tradelab/strategies/rsi_reversion.py`) alongside the original EMA/MACD Trend strategy, with a registry (`tradelab/strategies/__init__.py`) and a Scanner "Strategy" dropdown to pick between them. Persists through Setup save/load.
+- Confidence scoring tied to backtest stats (`tradelab/core/confidence.py`): "Conf%"/"Sample" columns showing what fraction of the selected strategy's historical BUY signals on this symbol were profitable 10 bars later - reuses the already-computed indicators, no separate backtest pass, deliberately distinct from the existing heuristic Score.
+- Found and fixed a real bug while writing tests: a `Confidence %` column mixing numbers and `None` gets coerced to `NaN` by pandas, which an `is not None` check doesn't catch - rendered `"nan%"` instead of `"—"`.
+- pytest regression suite now 161 tests, all passing.
 
 ## Completed in 2.5.0 (Custom Technical Filter Builder, SCN-026)
 - `tradelab/core/filters.py`: IBKR-style arbitrary filter conditions across 16 technical fields (price, volume, relative volume, RSI, ATR%, ADX, MACD family, EMA fast/slow, SMA20/50/200, Bollinger bands, price-vs-SMA20%), each with Above/Below/Between + a value. ANDs with the existing fixed filters rather than replacing them.
@@ -63,4 +72,4 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 - Dependency versions in requirements.txt were relaxed to `>=` floors in 2.2.2/2.2.3 after exact pins broke on Python 3.14 (no prebuilt wheels for pandas 2.2.3/numpy 1.26.4/matplotlib 3.9.2). Re-verify against your actual installed environment (`pip freeze`) before your next release regardless, since floors can still drift.
 
 ## Next
-- All three original SCN-02x Phase 2 items (SCN-026, SCN-027, SCN-029) are now complete. Remaining Phase 2 scope from the roadmap: multi-strategy scanning, sector/market-cap breakdown, and confidence scoring tied to backtest stats. Otherwise Phase 2 is close to a natural stopping point - worth deciding whether to keep going deeper here or move to Phase 3 (Market Dashboard).
+- Everything on the Phase 2 - Scanner Professional roadmap bullet is now done (SCN-026, SCN-027, SCN-029, SCN-030). Worth deciding whether to keep pushing deeper here (e.g. a formal Strategy plugin interface, more strategies, richer backtest-derived confidence) or move to Phase 3 (Market Dashboard).

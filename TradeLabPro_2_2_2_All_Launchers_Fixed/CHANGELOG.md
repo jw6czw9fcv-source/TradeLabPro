@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.6.0 - Sector/market-cap context, multi-strategy scanning, confidence scoring (SCN-030)
+
+Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector/market-cap context, transparent confidence scoring tied to backtest stats" - all three pieces in one release.
+
+### Fixed
+- `get_quote_meta()` was a complete stub returning a fake market cap seeded from `hash(symbol)` - the "Minimum market cap" filter has never actually filtered on real data since Phase 1. Now fetches real market cap + sector + industry via yfinance, cached in-process per symbol.
+
+### Added
+- **Sector/market-cap context**: new "Cap" (Mega/Large/Mid/Small/Micro bucket) and "Sector" scan result columns, plus a sector breakdown in the results status line (e.g. `Results: 12 — Technology: 5 | Healthcare: 3 | ...`).
+- **Multi-strategy scanning**: a second real strategy, RSI Mean-Reversion (`tradelab/strategies/rsi_reversion.py`) - BUY on a bounce out of oversold, SELL on a rollover out of overbought, as opposed to EMA/MACD's trend-following logic. A small registry (`tradelab/strategies/__init__.py`) lets the Scanner's new "Strategy" dropdown pick between them; persists through Setup save/load like everything else.
+- **Confidence scoring tied to backtest stats** (`tradelab/core/confidence.py`): new "Conf%"/"Sample" columns - of the selected strategy's historical BUY signals on this symbol's already-fetched price window, what fraction were profitable 10 bars later. Reuses the indicators DataFrame scan_symbols() already computed, so it stays fast enough to run inline during a scan instead of requiring a separate backtest pass. This is deliberately a different, more transparent number than the existing heuristic point-based Score.
+
+### Verified
+- 161/161 pytest regression tests pass (29 new, across indicators/strategies/confidence/scanner/UI wiring).
+- Live end-to-end: real market caps and sectors confirmed (AAPL/MSFT→Technology, XOM→Energy, JNJ→Healthcare); both strategies produce different signals/scores/confidence on the same symbols; full path verified through the actual ScannerPanel UI, not just the core engine.
+- Found and fixed a real bug during test-writing: a `Confidence %` column mixing real numbers and `None` across rows gets coerced to `NaN` by pandas (not `None`), which an `is not None` check doesn't catch - rendered as `"nan%"` in the table instead of `"—"`.
+
 ## 2.5.0 - Custom Technical Filter Builder (SCN-026)
 
 ### Added

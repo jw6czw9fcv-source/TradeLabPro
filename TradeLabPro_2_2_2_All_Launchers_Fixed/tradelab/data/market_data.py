@@ -43,7 +43,53 @@ def get_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.Dat
     return synthetic_ohlcv(symbol)
 
 
+_quote_meta_cache: dict = {}
+
+
 def get_quote_meta(symbol: str) -> dict:
-    # Fallback metadata. yfinance info can be slow, so Phase 1 keeps this lightweight.
-    market_cap_seed = 3_000_000_000 + (abs(hash(symbol)) % 300_000_000_000)
-    return {"market_cap": float(market_cap_seed)}
+    """Real market cap + sector/industry via yfinance, cached in-process so
+    a symbol is only fetched once per run regardless of how many scans hit
+    it. Was previously a stub returning a fake market cap seeded from
+    hash(symbol) - the "Minimum market cap" filter was never actually
+    filtering on real data.
+    """
+    cached = _quote_meta_cache.get(symbol)
+    if cached is not None:
+        return cached
+
+    meta = {"market_cap": 0.0, "sector": "Unknown", "industry": "Unknown"}
+    if yf is not None:
+        try:
+            info = yf.Ticker(symbol).info
+            market_cap = info.get("marketCap")
+            if market_cap:
+                meta["market_cap"] = float(market_cap)
+            meta["sector"] = info.get("sector") or "Unknown"
+            meta["industry"] = info.get("industry") or "Unknown"
+        except Exception:
+            pass
+
+    if not meta["market_cap"]:
+        # Offline/error fallback so the scanner stays usable without
+        # network access, same philosophy as synthetic_ohlcv() above -
+        # deterministic per symbol rather than a hard failure.
+        meta["market_cap"] = float(3_000_000_000 + (abs(hash(symbol)) % 300_000_000_000))
+
+    _quote_meta_cache[symbol] = meta
+    return meta
+
+
+_CAP_BUCKETS = [
+    (200_000_000_000, "Mega"),
+    (10_000_000_000, "Large"),
+    (2_000_000_000, "Mid"),
+    (300_000_000, "Small"),
+    (0, "Micro"),
+]
+
+
+def market_cap_bucket(market_cap: float) -> str:
+    for threshold, label in _CAP_BUCKETS:
+        if market_cap >= threshold:
+            return label
+    return "Micro"

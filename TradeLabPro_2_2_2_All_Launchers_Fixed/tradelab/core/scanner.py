@@ -1,10 +1,11 @@
 import pandas as pd
 
 from tradelab.core.config import ScannerConfig
+from tradelab.core.confidence import historical_confidence
 from tradelab.core.filters import FilterCondition, passes_custom_filters
 from tradelab.core.indicators import add_indicators
-from tradelab.data.market_data import get_history, get_quote_meta
-from tradelab.strategies.ema_macd import score_symbol
+from tradelab.data.market_data import get_history, get_quote_meta, market_cap_bucket
+from tradelab.strategies import strategy_module
 
 
 def _safe_float(value, default=0.0):
@@ -51,6 +52,7 @@ def scan_symbols(symbols: list[str], cfg: ScannerConfig, progress_callback=None,
     scan_list = symbols if int(cfg.max_symbols or 0) <= 0 else symbols[: int(cfg.max_symbols)]
     total = len(scan_list)
     custom_conditions = [FilterCondition.from_dict(d) for d in (cfg.custom_filters or [])]
+    strategy = strategy_module(cfg.strategy)
 
     for idx, symbol in enumerate(scan_list, start=1):
         if should_stop and should_stop():
@@ -109,20 +111,26 @@ def scan_symbols(symbols: list[str], cfg: ScannerConfig, progress_callback=None,
                     progress_callback(idx, total, symbol, len(rows))
                 continue
 
-            result = score_symbol(indicators, cfg)
+            result = strategy.score_symbol(indicators, cfg)
             if result["score"] < cfg.min_score:
                 if progress_callback:
                     progress_callback(idx, total, symbol, len(rows))
                 continue
 
+            confidence = historical_confidence(indicators, strategy, cfg)
+
             rows.append({
                 "Symbol": symbol,
                 "Signal": result["signal"],
                 "Score": result["score"],
+                "Confidence %": confidence["confidence"],
+                "Sample N": confidence["sample_size"],
                 "Price": round(price, 2),
                 "Volume": int(volume),
                 "RelVol": round(rel_vol, 2),
                 "Market Cap": int(market_cap),
+                "Cap": market_cap_bucket(market_cap),
+                "Sector": meta.get("sector", "Unknown"),
                 "RSI14": round(rsi14, 1),
                 "ATR%": round(atr_pct, 2),
                 "EMA Trend": "Bull" if ema_fast > ema_slow else "Bear",
@@ -133,10 +141,14 @@ def scan_symbols(symbols: list[str], cfg: ScannerConfig, progress_callback=None,
                 "Symbol": symbol,
                 "Signal": "ERROR",
                 "Score": 0,
+                "Confidence %": None,
+                "Sample N": 0,
                 "Price": 0,
                 "Volume": 0,
                 "RelVol": 0,
                 "Market Cap": 0,
+                "Cap": "",
+                "Sector": "",
                 "RSI14": 0,
                 "ATR%": 0,
                 "EMA Trend": "",
@@ -146,5 +158,5 @@ def scan_symbols(symbols: list[str], cfg: ScannerConfig, progress_callback=None,
         if progress_callback:
             progress_callback(idx, total, symbol, len(rows))
 
-    columns = ["Symbol", "Signal", "Score", "Price", "Volume", "RelVol", "Market Cap", "RSI14", "ATR%", "EMA Trend", "MACD"]
+    columns = ["Symbol", "Signal", "Score", "Confidence %", "Sample N", "Price", "Volume", "RelVol", "Market Cap", "Cap", "Sector", "RSI14", "ATR%", "EMA Trend", "MACD"]
     return pd.DataFrame(rows).sort_values("Score", ascending=False) if rows else pd.DataFrame(columns=columns)

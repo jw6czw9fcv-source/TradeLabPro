@@ -4,7 +4,7 @@ import pandas as pd
 from tradelab.core.indicators import (
     add_indicators, ema, sma, rsi, atr, macd, bollinger, adx,
     vwap, pivot_points, supertrend, ichimoku, volume_profile, heikin_ashi,
-    crossover_signal, signal_series,
+    crossover_signal, signal_series, rsi_reversion_signal, rsi_reversion_signal_series,
 )
 
 
@@ -113,3 +113,42 @@ def test_heikin_ashi_high_low_contain_open_close(ohlcv_df):
     ha = heikin_ashi(ohlcv_df)
     assert (ha["High"] >= ha["Open"]).all() and (ha["High"] >= ha["Close"]).all()
     assert (ha["Low"] <= ha["Open"]).all() and (ha["Low"] <= ha["Close"]).all()
+
+
+def _rsi_frame(values):
+    return pd.DataFrame({"RSI14": values})
+
+
+def test_rsi_reversion_signal_buy_on_bounce_out_of_oversold():
+    df = _rsi_frame([50, 40, 28, 32])  # prev(28) <= 30, last(32) > 30
+    assert rsi_reversion_signal(df) == "BUY"
+
+
+def test_rsi_reversion_signal_sell_on_rollover_out_of_overbought():
+    df = _rsi_frame([50, 60, 72, 68])  # prev(72) >= 70, last(68) < 70
+    assert rsi_reversion_signal(df) == "SELL"
+
+
+def test_rsi_reversion_signal_watch_while_still_oversold():
+    df = _rsi_frame([50, 40, 25, 20])  # last < 30, no bounce yet
+    assert rsi_reversion_signal(df) == "WATCH"
+
+
+def test_rsi_reversion_signal_hold_in_neutral_zone():
+    df = _rsi_frame([50, 52, 48, 50])
+    assert rsi_reversion_signal(df) == "HOLD"
+
+
+def test_rsi_reversion_signal_hold_on_short_or_nan_data():
+    assert rsi_reversion_signal(_rsi_frame([50])) == "HOLD"
+    assert rsi_reversion_signal(_rsi_frame([float("nan"), float("nan"), 32])) == "HOLD"
+
+
+def test_rsi_reversion_signal_series_matches_scalar_signal_at_each_bar():
+    values = [50, 40, 28, 32, 55, 72, 68, 50]
+    df = _rsi_frame(values)
+    series = rsi_reversion_signal_series(df)
+    for i in range(2, len(values)):
+        scalar = rsi_reversion_signal(df.iloc[: i + 1])
+        if scalar in ("BUY", "SELL"):
+            assert series.iloc[i] == scalar
