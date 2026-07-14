@@ -22,6 +22,12 @@ def qapp():
     yield app
 
 
+@pytest.fixture(autouse=True)
+def _offline_quote_meta(monkeypatch):
+    monkeypatch.setattr("tradelab.ui.widgets.pg_chart_widget.get_quote_meta",
+                        lambda s: {"name": s, "market_cap": 0.0, "sector": "X", "industry": "Y"})
+
+
 def test_chart_widget_constructs_empty(qapp):
     from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
     widget = PGChartWidget()

@@ -3,7 +3,7 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
-2.10.0 - Plugin SDK (Phase 6)
+2.10.1 - Company name on chart
 
 ## Run
 1. Run `install_requirements.bat` if needed.

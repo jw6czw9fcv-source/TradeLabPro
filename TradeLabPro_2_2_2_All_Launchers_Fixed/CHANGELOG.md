@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.1 - Company name on chart + sub-pane safeguard
+
+### Added
+- The full company name is now shown above the indicator legend in the price pane (e.g. `AAPL — Apple Inc.`), fetched via `get_quote_meta` on plot. Falls back to just the ticker when the name is unavailable.
+- Sub-pane safeguard in the Indicators dialog: the on/off toggles are relabelled "Show Volume / Show RSI / Show MACD" and visually separated (a stretch) from their period fields so a pane can't be turned off by accident while adjusting a period. A new "Show all sub-panes" button restores every hidden pane in one click.
+
+### Verified
+- 280/280 pytest regression tests pass (new: company-name header test and the "Show all sub-panes" safeguard test).
+
 ## 2.10.0 - Plugin SDK (Phase 6)
 
 The Plugins tab was dead code (it only listed filenames and wasn't even registered as a tab). Turned it into a real, formal plugin system with auto-discovery.

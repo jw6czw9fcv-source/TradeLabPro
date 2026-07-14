@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.10.0
+Current version: 2.10.1
 Current phase: Phase 6 - Plugin SDK (done)
+
+## Completed in 2.10.1 (Company name on chart + sub-pane safeguard)
+- Price pane now shows the full company name above the indicator legend (`AAPL — Apple Inc.`), via `get_quote_meta`; falls back to the ticker.
+- Indicators dialog sub-pane safeguard: "Show Volume/RSI/MACD" toggles separated from their period fields, plus a "Show all sub-panes" one-click restore, so panes can't be lost by accident.
+- pytest regression suite now 280 tests, all passing.
 
 ## Completed in 2.10.0 (Plugin SDK, Phase 6)
 - `tradelab/core/plugins.py`: auto-discovers `.py` files in `plugins/` that define `PLUGIN_NAME` + `compute(df)`, registering each as an indicator field (`plugin:<name>`) usable in Scanner filters and the Strategy Builder. Errors are surfaced, never fatal. Runs at startup and via the Plugins tab's Reload.

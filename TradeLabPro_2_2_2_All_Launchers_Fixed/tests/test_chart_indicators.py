@@ -16,6 +16,14 @@ def qapp():
     yield app
 
 
+@pytest.fixture(autouse=True)
+def _offline_quote_meta(monkeypatch):
+    # The chart fetches the company name via get_quote_meta on plot(); keep
+    # it offline/deterministic (name = the ticker) so tests stay fast.
+    monkeypatch.setattr("tradelab.ui.widgets.pg_chart_widget.get_quote_meta",
+                        lambda s: {"name": s, "market_cap": 0.0, "sector": "X", "industry": "Y"})
+
+
 def _df(n=300):
     rng = np.random.default_rng(2)
     close = 100 * np.exp(np.cumsum(rng.normal(0.0005, 0.015, n)))
@@ -75,6 +83,19 @@ def test_no_period_indicator_reports_none_period(qapp):
     from tradelab.ui.widgets.pg_chart_widget import ChartIndicatorsDialog
     dlg = ChartIndicatorsDialog([{"indicator": "VWAP", "period": None}], True, {})
     assert dlg.overlays()[0]["period"] is None
+
+
+def test_price_legend_shows_full_company_name_as_header(qapp, monkeypatch):
+    from PySide6.QtWidgets import QLabel
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    from tradelab.core.config import ScannerConfig
+    monkeypatch.setattr("tradelab.ui.widgets.pg_chart_widget.get_quote_meta",
+                        lambda s: {"name": "Apple Inc.", "market_cap": 0.0, "sector": "Tech", "industry": "X"})
+    w = PGChartWidget()
+    w.plot("AAPL", _df(), ScannerConfig())
+    legend = w._legends[w.price_plot]
+    headers = [lbl.text() for lbl in legend.findChildren(QLabel)]
+    assert any("Apple Inc." in h and "AAPL" in h for h in headers)
 
 
 def test_price_legend_shows_one_entry_per_overlay_line(qapp):
@@ -161,3 +182,13 @@ def test_chart_indicators_dialog_returns_subpane_periods(qapp):
                                 rsi_period=21, macd_params=(8, 21, 5))
     assert dlg.rsi_period() == 21
     assert dlg.macd_params() == (8, 21, 5)
+
+
+def test_show_all_panes_button_re_enables_every_hidden_subpane(qapp):
+    # Safeguard: even if the user turned panes off (by accident), one click
+    # of "Show all sub-panes" restores them all.
+    from tradelab.ui.widgets.pg_chart_widget import ChartIndicatorsDialog
+    dlg = ChartIndicatorsDialog([], True, {"Volume": False, "MACD": False, "RSI": False})
+    assert dlg.sub_panels() == {"Volume": False, "MACD": False, "RSI": False}
+    dlg._show_all_panes()
+    assert dlg.sub_panels() == {"Volume": True, "MACD": True, "RSI": True}

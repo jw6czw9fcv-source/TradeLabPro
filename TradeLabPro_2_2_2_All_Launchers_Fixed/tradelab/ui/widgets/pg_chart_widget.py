@@ -33,7 +33,7 @@ from tradelab.core.indicators import (
     vwap, pivot_points, supertrend, ichimoku, heikin_ashi,
 )
 from tradelab.core.drawings import Drawing, fib_levels, serialize, deserialize
-from tradelab.data.market_data import get_history
+from tradelab.data.market_data import get_history, get_quote_meta
 from tradelab.data.database import Database
 from tradelab.core.logging_config import get_logger
 
@@ -179,32 +179,43 @@ class ChartIndicatorsDialog(QDialog):
         self._signals_cb.setChecked(show_signals)
         layout.addWidget(self._signals_cb)
 
-        layout.addWidget(QLabel("Sub-panes (toggle on/off and set their periods):"))
+        layout.addWidget(QLabel("Sub-panes — the 'Show' box turns the pane on/off; the period fields are separate:"))
         self._panel_cbs = {}
-        # Volume: just a toggle. RSI: toggle + period. MACD: toggle + fast/slow/signal.
+        # A stretch separates the Show checkbox (far left) from the period
+        # fields (far right) so you don't hit the on/off toggle by accident
+        # while adjusting a period.
         vol_row = QHBoxLayout()
-        self._panel_cbs["Volume"] = QCheckBox("Volume"); self._panel_cbs["Volume"].setChecked(sub_panels.get("Volume", True))
+        self._panel_cbs["Volume"] = QCheckBox("Show Volume"); self._panel_cbs["Volume"].setChecked(sub_panels.get("Volume", True))
         vol_row.addWidget(self._panel_cbs["Volume"]); vol_row.addStretch()
         layout.addLayout(vol_row)
 
         rsi_row = QHBoxLayout()
-        self._panel_cbs["RSI"] = QCheckBox("RSI"); self._panel_cbs["RSI"].setChecked(sub_panels.get("RSI", True))
+        self._panel_cbs["RSI"] = QCheckBox("Show RSI"); self._panel_cbs["RSI"].setChecked(sub_panels.get("RSI", True))
         self._rsi_spin = QSpinBox(); self._rsi_spin.setRange(1, 200); self._rsi_spin.setValue(int(rsi_period)); self._rsi_spin.setMaximumWidth(70)
-        rsi_row.addWidget(self._panel_cbs["RSI"]); rsi_row.addWidget(QLabel("period")); rsi_row.addWidget(self._rsi_spin); rsi_row.addStretch()
+        rsi_row.addWidget(self._panel_cbs["RSI"]); rsi_row.addStretch(); rsi_row.addWidget(QLabel("period")); rsi_row.addWidget(self._rsi_spin)
         layout.addLayout(rsi_row)
 
         macd_row = QHBoxLayout()
-        self._panel_cbs["MACD"] = QCheckBox("MACD"); self._panel_cbs["MACD"].setChecked(sub_panels.get("MACD", True))
+        self._panel_cbs["MACD"] = QCheckBox("Show MACD"); self._panel_cbs["MACD"].setChecked(sub_panels.get("MACD", True))
         self._macd_fast = QSpinBox(); self._macd_fast.setRange(1, 200); self._macd_fast.setValue(int(macd_params[0])); self._macd_fast.setMaximumWidth(60)
         self._macd_slow = QSpinBox(); self._macd_slow.setRange(1, 300); self._macd_slow.setValue(int(macd_params[1])); self._macd_slow.setMaximumWidth(60)
         self._macd_signal = QSpinBox(); self._macd_signal.setRange(1, 100); self._macd_signal.setValue(int(macd_params[2])); self._macd_signal.setMaximumWidth(60)
-        macd_row.addWidget(self._panel_cbs["MACD"]); macd_row.addWidget(QLabel("fast/slow/signal"))
-        macd_row.addWidget(self._macd_fast); macd_row.addWidget(self._macd_slow); macd_row.addWidget(self._macd_signal); macd_row.addStretch()
+        macd_row.addWidget(self._panel_cbs["MACD"]); macd_row.addStretch(); macd_row.addWidget(QLabel("fast/slow/signal"))
+        macd_row.addWidget(self._macd_fast); macd_row.addWidget(self._macd_slow); macd_row.addWidget(self._macd_signal)
         layout.addLayout(macd_row)
+
+        # One-click recovery if panes were turned off (accidentally or not).
+        show_all = QPushButton("Show all sub-panes")
+        show_all.clicked.connect(self._show_all_panes)
+        layout.addWidget(show_all)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _show_all_panes(self):
+        for cb in self._panel_cbs.values():
+            cb.setChecked(True)
 
     def rsi_period(self):
         return self._rsi_spin.value()
@@ -286,6 +297,7 @@ class PGChartWidget(QWidget):
         self._macd_fast, self._macd_slow, self._macd_signal = 12, 26, 9
         self._rsi_series = None   # cached for the crosshair readout
         self._macd_series = None
+        self._company_name = ""   # full name shown above the price legend
         self._empty_text_item = None
         self._last_indicators: Optional[pd.DataFrame] = None
         self._last_display: Optional[pd.DataFrame] = None
@@ -484,6 +496,12 @@ class PGChartWidget(QWidget):
         self.df_raw = df if df is not None else pd.DataFrame()
         self.symbol_edit.setText(self.symbol)
         self.status_label.setText(f"{self.symbol} · {len(self.df_raw)} bars")
+        # Full company name for the price-pane header (cached per symbol;
+        # falls back to the ticker itself if unavailable).
+        try:
+            self._company_name = get_quote_meta(self.symbol).get("name", self.symbol)
+        except Exception:
+            self._company_name = self.symbol
         # cfg may come from elsewhere (e.g. a Scanner result) with a
         # different period/interval than what the toolbar shows - keep the
         # combos in sync without re-triggering their change handlers.
@@ -594,23 +612,29 @@ class PGChartWidget(QWidget):
                 add_line(series, _OVERLAY_COLORS[color_i % len(_OVERLAY_COLORS)], label)
                 color_i += 1
 
-        self._make_legend(self.price_plot, legend_entries)
+        # Company name header sits above the indicator legend on the price pane.
+        header = f"{self.symbol} — {self._company_name}" if self._company_name and self._company_name != self.symbol else self.symbol
+        self._make_legend(self.price_plot, legend_entries, header=header)
 
-    def _make_legend(self, plot, entries):
-        """Draw a clickable legend of indicators in the top-left of a pane.
-        Clicking any entry opens the Indicators dialog to edit them - the
-        legend IS the editing entry point, not just a label. Rebuilt on each
-        replot. Implemented as a child QWidget (not a scene item) so it stays
-        pinned to the corner regardless of pan/zoom."""
+    def _make_legend(self, plot, entries, header=None):
+        """Draw a legend in the top-left of a pane: an optional bold header
+        (used for the company name on the price pane) plus a clickable list of
+        indicators. Clicking any indicator entry opens the Indicators dialog -
+        the legend IS the editing entry point. Rebuilt on each replot; a child
+        QWidget (not a scene item) so it stays pinned regardless of pan/zoom."""
         old = self._legends.get(plot)
         if old is not None:
             old.setParent(None); old.deleteLater()
-        if not entries:
+        if not entries and not header:
             self._legends[plot] = None
             return
         box = QWidget(plot)
         box.setStyleSheet("background: rgba(17,21,28,160); border-radius: 3px;")
         lay = QVBoxLayout(box); lay.setContentsMargins(6, 2, 6, 2); lay.setSpacing(0)
+        if header:
+            hdr = QLabel(header)
+            hdr.setStyleSheet("color: #e6e9ec; font-weight: bold; font-size: 12px; padding: 0 2px;")
+            lay.addWidget(hdr)
         for text, color in entries:
             btn = QPushButton(text); btn.setFlat(True); btn.setCursor(Qt.PointingHandCursor)
             btn.setToolTip("Click to edit chart indicators")
