@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.9.0
-Current phase: Phase 5 - Strategy Builder (started)
+Current version: 2.10.0
+Current phase: Phase 6 - Plugin SDK (done)
+
+## Completed in 2.10.0 (Plugin SDK, Phase 6)
+- `tradelab/core/plugins.py`: auto-discovers `.py` files in `plugins/` that define `PLUGIN_NAME` + `compute(df)`, registering each as an indicator field (`plugin:<name>`) usable in Scanner filters and the Strategy Builder. Errors are surfaced, never fatal. Runs at startup and via the Plugins tab's Reload.
+- Bundled `plugins/sample_hl_range.py` template; Plugins tab rebuilt to show loaded/errored plugins.
+- pytest regression suite now 278 tests, all passing.
 
 ## Completed in 2.9.0 (No-code Strategy Builder + configurable indicators, Phase 5)
 - No-code Strategy Builder: BUY/SELL condition blocks -> saveable custom strategies (`tradelab/strategies/custom.py`, persisted in data/strategies/) that run in the Scanner and Backtest like built-ins.

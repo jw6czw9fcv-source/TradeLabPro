@@ -2003,14 +2003,36 @@ class CoachPanel(QWidget):
 
 
 class PluginPanel(QWidget):
-    def __init__(self):
-        super().__init__(); layout=QVBoxLayout(self)
-        layout.addWidget(QLabel("Plugin System - Phase 3 foundation"))
-        self.text=QTextEdit(); self.text.setReadOnly(True); layout.addWidget(self.text); self.refresh()
+    """Phase 6 Plugin SDK panel: shows discovered indicator plugins (loaded
+    OK or errored) and a Reload button. Loaded plugins become fields in the
+    Scanner filters and Strategy Builder automatically."""
+    def __init__(self, on_plugins_changed=None):
+        super().__init__()
+        self._on_plugins_changed = on_plugins_changed
+        layout = QVBoxLayout(self)
+        layout.addWidget(_hint("Drop a .py file in the plugins/ folder that defines PLUGIN_NAME and compute(df) -> Series. It becomes usable as a field in Custom Filters and the Strategy Builder. See plugins/sample_hl_range.py for a template."))
+        row = QHBoxLayout()
+        reload_btn = QPushButton("Reload plugins"); reload_btn.clicked.connect(self.refresh)
+        row.addWidget(reload_btn); row.addStretch()
+        layout.addLayout(row)
+        self.text = QTextEdit(); self.text.setReadOnly(True); layout.addWidget(self.text)
+        self.refresh()
+
     def refresh(self):
-        plug_dir=Path(__file__).resolve().parents[1]/"plugins"
-        files=sorted([p.name for p in plug_dir.glob("*.py") if p.name != "__init__.py"])
-        self.text.setText("Plugins folder:\n"+str(plug_dir)+"\n\nDetected plugins:\n"+"\n".join(files)+"\n\nFuture: custom indicators, custom strategies, custom scanners.")
+        from tradelab.core import plugins
+        result = plugins.discover_plugins()
+        lines = [f"Plugins folder:  {plugins.PLUGINS_DIR}", ""]
+        if result["loaded"]:
+            lines.append("Loaded plugins (usable as indicator fields):")
+            lines += [f"  ✓ {name}" for name in result["loaded"]]
+        else:
+            lines.append("No plugins loaded yet.")
+        if result["errors"]:
+            lines += ["", "Could not load (fix and Reload):"]
+            lines += [f"  ✗ {f}: {msg}" for f, msg in result["errors"].items()]
+        self.text.setText("\n".join(lines))
+        if self._on_plugins_changed:
+            self._on_plugins_changed()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -2020,6 +2042,10 @@ class MainWindow(QMainWindow):
         self._settings = QSettings("TradeLabPro", "TradeLabPro")
         self.db = Database()
         self.cfg = ScannerConfig()
+        # Discover indicator plugins before building panels, so their field
+        # dropdowns include any plugin-provided indicators.
+        from tradelab.core import plugins
+        plugins.discover_plugins()
         splitter = QSplitter(Qt.Horizontal)
         tabs = QTabWidget()
         self.chart = ChartWorkspace()
@@ -2035,6 +2061,7 @@ class MainWindow(QMainWindow):
         # When a custom strategy is saved/deleted in the builder, refresh the
         # Scanner and Backtest strategy dropdowns so it appears immediately.
         tabs.addTab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed), "Strategies")
+        tabs.addTab(PluginPanel(on_plugins_changed=self._on_plugins_changed), "Plugins")
         settings_text = QTextEdit(); settings_text.setReadOnly(True)
         settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")
         tabs.addTab(settings_text, "Settings")
@@ -2057,6 +2084,14 @@ class MainWindow(QMainWindow):
     def _on_strategies_changed(self):
         self.scanner_panel.refresh_strategies()
         self.backtest_panel.refresh_strategies()
+
+    def _on_plugins_changed(self):
+        # Plugin indicators became new condition fields - rebuild the custom
+        # filter rows so the field dropdowns pick them up.
+        try:
+            self.scanner_panel.set_custom_filters(self.scanner_panel.get_custom_filters())
+        except Exception:
+            pass
 
     def restore_window_state(self):
         try:

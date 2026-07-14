@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.10.0 - Plugin SDK (Phase 6)
+
+The Plugins tab was dead code (it only listed filenames and wasn't even registered as a tab). Turned it into a real, formal plugin system with auto-discovery.
+
+### Added
+- `tradelab/core/plugins.py`: drop a `.py` file in the top-level `plugins/` folder defining `PLUGIN_NAME` and `compute(df) -> Series`, and it's auto-discovered and registered as an indicator field (keyed `plugin:<name>`) in `filters.FIELD_SPECS` - so it's immediately usable in the Scanner's Custom Filters and the no-code Strategy Builder with no other wiring. Bad plugins (import error, missing `PLUGIN_NAME`/`compute`) are recorded and shown, never crashing the app. Discovery runs at startup (before panels build) and on demand.
+- `plugins/sample_hl_range.py`: a working template plugin ("High-Low Range %") users can copy.
+- Plugins tab rebuilt: lists loaded (✓) and errored (✗ + reason) plugins with a Reload button; reloading refreshes the condition-field dropdowns.
+
+### Verified
+- 278/278 pytest regression tests pass (9 new: `tests/test_plugins.py` covering discovery, field registration, condition evaluation with a plugin field, error handling, re-discovery, and the panel).
+- Manually tested: the sample plugin loads and appears as a selectable field in Custom Filters.
+
 ## 2.9.0 - No-code Strategy Builder + configurable indicators (Phase 5)
 
 Phase 5, plus a major push toward TradingView/IBKR-level flexibility: indicators are now parameterized and editable everywhere from the UI, with no code.
