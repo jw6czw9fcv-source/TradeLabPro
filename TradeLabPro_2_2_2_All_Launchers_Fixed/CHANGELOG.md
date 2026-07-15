@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.11.0 - AI Assistant (Phase 7, option b: LLM-backed)
+
+The roadmap's Phase 7 "AI Assistant" shipped as a real natural-language assistant (not just the offline rules-based coach). It explains scans, charts and setups in plain English by calling Anthropic's Messages API with the user's own key.
+
+### Added
+- `tradelab/core/ai_assistant.py`: a Qt-free, transport-injectable LLM client. Builds a compact indicator-snapshot context from a symbol (reusing the offline coach's scoring), sends chat turns to the Claude Messages API, and parses the reply. Model is configurable (default `claude-sonnet-5`; Opus 4.8 and Haiku 4.5 also selectable).
+- New **AI Assist** tab: chat UI with a masked API-key field + model picker (saved locally in QSettings), a "Load symbol context" button, and a threaded worker (`QThread`) so the window never freezes during a call.
+- **Graceful degradation**: with no API key set, the assistant answers from the offline rules-based Trade Coach — the feature is always usable at zero cost.
+
+### Safety
+- The system prompt hard-constrains the model to educational/explanatory output only: no buy/sell/hold calls, no recommendation-style price targets, honest about uncertainty, and it must not invent data. This is reinforced by an in-UI disclaimer. The user supplies (and pays for) their own API key; no credentials ship with the app.
+
+### Verified
+- 295/295 pytest regression tests pass (15 new across `tests/test_ai_assistant.py` and `tests/test_ai_assistant_panel.py`), all with an injected fake transport — no network access in tests.
+
 ## 2.10.1 - Company name on chart + sub-pane safeguard
 
 ### Added

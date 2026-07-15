@@ -2002,6 +2002,171 @@ class CoachPanel(QWidget):
         self.text.setText("\n".join(lines))
 
 
+class _AIWorker(QThread):
+    """Runs a blocking LLM call off the UI thread so the window never freezes
+    while waiting on the network."""
+    done = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, messages, api_key, model, context):
+        super().__init__()
+        self._messages = messages
+        self._api_key = api_key
+        self._model = model
+        self._context = context
+
+    def run(self):
+        from tradelab.core import ai_assistant
+        try:
+            reply = ai_assistant.ask(self._messages, self._api_key,
+                                     model=self._model, context=self._context)
+            self.done.emit(reply)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+class AIAssistantPanel(QWidget):
+    """Phase 7 (option b): LLM-backed AI assistant. Chat-style panel that
+    explains scans/charts/setups in plain language using the user's own
+    Anthropic API key. Falls back to the offline Trade Coach with no key."""
+
+    def __init__(self):
+        super().__init__()
+        self._settings = QSettings("TradeLabPro", "TradeLabPro")
+        self._history = []          # [{"role","content"}] chat turns for the API
+        self._context = None        # optional symbol indicator snapshot
+        self._worker = None
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(_hint(
+            "Natural-language assistant. It explains indicators, scores and setups "
+            "in plain English. Educational only - NOT financial advice. Uses your own "
+            "Anthropic API key (per-use cost billed to you); with no key it falls back "
+            "to the offline rules-based Trade Coach."))
+
+        # --- API key + model config ---
+        from tradelab.core import ai_assistant
+        cfg_row = QHBoxLayout()
+        self.key_edit = QLineEdit(); self.key_edit.setEchoMode(QLineEdit.Password)
+        self.key_edit.setPlaceholderText("Anthropic API key (sk-ant-...) - stored locally on this machine")
+        saved_key = self._settings.value("AIAssistant/api_key", "", type=str)
+        if saved_key:
+            self.key_edit.setText(saved_key)
+        self.model_combo = QComboBox(); self.model_combo.addItems(ai_assistant.MODELS)
+        self.model_combo.setCurrentText(self._settings.value("AIAssistant/model", ai_assistant.DEFAULT_MODEL, type=str))
+        save_btn = QPushButton("Save"); save_btn.clicked.connect(self._save_config)
+        cfg_row.addWidget(QLabel("API key")); cfg_row.addWidget(self.key_edit, 1)
+        cfg_row.addWidget(QLabel("Model")); cfg_row.addWidget(self.model_combo)
+        cfg_row.addWidget(save_btn)
+        layout.addLayout(cfg_row)
+        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        layout.addWidget(self.status)
+
+        # --- symbol context loader ---
+        ctx_row = QHBoxLayout()
+        self.symbol = QLineEdit("AAPL"); self.symbol.setMaximumWidth(120)
+        self.period = QComboBox(); self.period.addItems(["6mo", "1y", "2y"]); self.period.setCurrentText("1y")
+        load_btn = QPushButton("Load symbol context"); load_btn.clicked.connect(self._load_context)
+        ctx_row.addWidget(QLabel("Symbol")); ctx_row.addWidget(self.symbol)
+        ctx_row.addWidget(QLabel("Period")); ctx_row.addWidget(self.period)
+        ctx_row.addWidget(load_btn); ctx_row.addStretch()
+        layout.addLayout(ctx_row)
+
+        # --- conversation ---
+        self.log = QTextEdit(); self.log.setReadOnly(True); layout.addWidget(self.log, 1)
+        ask_row = QHBoxLayout()
+        self.prompt = QLineEdit(); self.prompt.setPlaceholderText("Ask about a symbol, indicator or setup...")
+        self.prompt.returnPressed.connect(self._send)
+        self.send_btn = QPushButton("Send"); self.send_btn.clicked.connect(self._send)
+        clear_btn = QPushButton("Clear"); clear_btn.clicked.connect(self._clear)
+        ask_row.addWidget(self.prompt, 1); ask_row.addWidget(self.send_btn); ask_row.addWidget(clear_btn)
+        layout.addLayout(ask_row)
+
+        self._refresh_status()
+
+    # -- config --
+    def _current_key(self):
+        from tradelab.core import ai_assistant
+        return self.key_edit.text().strip() or ai_assistant.api_key_from_env()
+
+    def _save_config(self):
+        self._settings.setValue("AIAssistant/api_key", self.key_edit.text().strip())
+        self._settings.setValue("AIAssistant/model", self.model_combo.currentText())
+        self._refresh_status()
+        self.status.setText(self.status.text() + "  (saved)")
+
+    def _refresh_status(self):
+        from tradelab.core import ai_assistant
+        if ai_assistant.is_configured(self._current_key()):
+            src = "settings" if self.key_edit.text().strip() else "ANTHROPIC_API_KEY"
+            self.status.setText(f"AI mode: on ({self.model_combo.currentText()}, key from {src}).")
+        else:
+            self.status.setText("AI mode: off (no key) - answers use the offline Trade Coach.")
+
+    # -- context --
+    def _load_context(self):
+        from tradelab.core import ai_assistant
+        sym = self.symbol.text().strip().upper()
+        if not sym:
+            return
+        cfg = ScannerConfig(); cfg.period = self.period.currentText(); cfg.interval = "1d"
+        try:
+            df = get_history(sym, cfg.period, cfg.interval)
+            self._context = ai_assistant.build_symbol_context(sym, df, cfg)
+            self._append("System", f"Loaded context for {sym}. Ask a question about it below.")
+        except Exception as e:
+            self._append("System", f"Could not load {sym}: {e}")
+
+    # -- chat --
+    def _append(self, who, text):
+        self.log.append(f"<b>{who}:</b> {text.replace(chr(10), '<br>')}<br>")
+
+    def _clear(self):
+        self._history = []
+        self.log.clear()
+
+    def _send(self):
+        q = self.prompt.text().strip()
+        if not q:
+            return
+        self.prompt.clear()
+        self._append("You", q)
+        from tradelab.core import ai_assistant
+        key = self._current_key()
+        if not ai_assistant.is_configured(key):
+            # Offline fallback: rules-based coach for the loaded symbol.
+            sym = self.symbol.text().strip().upper()
+            cfg = ScannerConfig(); cfg.period = self.period.currentText(); cfg.interval = "1d"
+            try:
+                df = get_history(sym, cfg.period, cfg.interval)
+                self._append("Coach", ai_assistant.offline_answer(sym, df, cfg))
+            except Exception as e:
+                self._append("Coach", f"Offline coach could not load {sym}: {e}")
+            return
+        self._history.append({"role": "user", "content": q})
+        self.send_btn.setEnabled(False); self.prompt.setEnabled(False)
+        self.status.setText("Thinking...")
+        self._worker = _AIWorker(list(self._history), key,
+                                 self.model_combo.currentText(), self._context)
+        self._worker.done.connect(self._on_reply)
+        self._worker.failed.connect(self._on_error)
+        self._worker.start()
+
+    def _on_reply(self, reply):
+        self._history.append({"role": "assistant", "content": reply})
+        self._append("AI", reply)
+        self.send_btn.setEnabled(True); self.prompt.setEnabled(True)
+        self._refresh_status()
+
+    def _on_error(self, msg):
+        # Drop the failed user turn so history stays valid for the next try.
+        if self._history and self._history[-1]["role"] == "user":
+            self._history.pop()
+        self._append("System", f"AI error: {msg}")
+        self.send_btn.setEnabled(True); self.prompt.setEnabled(True)
+        self._refresh_status()
+
+
 class PluginPanel(QWidget):
     """Phase 6 Plugin SDK panel: shows discovered indicator plugins (loaded
     OK or errored) and a Reload button. Loaded plugins become fields in the
@@ -2062,6 +2227,7 @@ class MainWindow(QMainWindow):
         # Scanner and Backtest strategy dropdowns so it appears immediately.
         tabs.addTab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed), "Strategies")
         tabs.addTab(PluginPanel(on_plugins_changed=self._on_plugins_changed), "Plugins")
+        tabs.addTab(AIAssistantPanel(), "AI Assist")
         settings_text = QTextEdit(); settings_text.setReadOnly(True)
         settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")
         tabs.addTab(settings_text, "Settings")

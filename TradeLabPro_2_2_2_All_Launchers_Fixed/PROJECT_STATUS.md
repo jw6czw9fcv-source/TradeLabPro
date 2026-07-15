@@ -1,7 +1,14 @@
 # TradeLab Pro Project Status
 
-Current version: 2.10.1
-Current phase: Phase 6 - Plugin SDK (done)
+Current version: 2.11.0
+Current phase: Phase 7 - AI Assistant (done)
+
+## Completed in 2.11.0 (AI Assistant, Phase 7 - option b: LLM-backed)
+- `tradelab/core/ai_assistant.py`: Qt-free, transport-injectable client for Anthropic's Messages API. Builds an indicator-snapshot context per symbol, sends chat turns, parses replies. Default model `claude-sonnet-5` (Opus 4.8 / Haiku 4.5 selectable).
+- New "AI Assist" tab: chat UI, masked API-key field + model picker (saved in QSettings), symbol-context loader, threaded worker so the UI never freezes.
+- No key set -> falls back to the offline rules-based Trade Coach (zero cost, always usable).
+- Safety: system prompt forbids buy/sell/hold advice and recommendation-style targets; educational only; user brings their own paid API key. In-UI disclaimer.
+- pytest regression suite now 295 tests, all passing (network-free via injected fake transport).
 
 ## Completed in 2.10.1 (Company name on chart + sub-pane safeguard)
 - Price pane now shows the full company name above the indicator legend (`AAPL — Apple Inc.`), via `get_quote_meta`; falls back to the ticker.
