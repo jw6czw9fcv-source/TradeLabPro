@@ -612,16 +612,41 @@ class PGChartWidget(QWidget):
                 add_line(series, _OVERLAY_COLORS[color_i % len(_OVERLAY_COLORS)], label)
                 color_i += 1
 
-        # Company name header sits above the indicator legend on the price pane.
+        # Company name header sits above the indicator legend on the price pane,
+        # with the latest price + daily change on a sub-line beneath it.
         header = f"{self.symbol} — {self._company_name}" if self._company_name and self._company_name != self.symbol else self.symbol
-        self._make_legend(self.price_plot, legend_entries, header=header)
+        price_line, price_color = self._price_line()
+        self._make_legend(self.price_plot, legend_entries, header=header,
+                          subheader=price_line, subheader_color=price_color)
 
-    def _make_legend(self, plot, entries, header=None):
+    def _price_line(self):
+        """Latest close + day-over-day change for the price-pane header, e.g.
+        '$212.45   +1.32 (+0.63%)'. Colour is green up / red down. Returns
+        (text, color) or (None, None) when there isn't enough data."""
+        try:
+            closes = self.df_raw["Close"]
+            last = float(closes.iloc[-1])
+        except Exception:
+            return None, None
+        text = f"${last:,.2f}"
+        color = "#e6e9ec"
+        if len(closes) >= 2:
+            prev = float(closes.iloc[-2])
+            if prev:
+                change = last - prev
+                pct = change / prev * 100.0
+                sign = "+" if change >= 0 else ""
+                text += f"   {sign}{change:,.2f} ({sign}{pct:.2f}%)"
+                color = "#26a65b" if change >= 0 else "#e5484d"
+        return text, color
+
+    def _make_legend(self, plot, entries, header=None, subheader=None, subheader_color=None):
         """Draw a legend in the top-left of a pane: an optional bold header
-        (used for the company name on the price pane) plus a clickable list of
-        indicators. Clicking any indicator entry opens the Indicators dialog -
-        the legend IS the editing entry point. Rebuilt on each replot; a child
-        QWidget (not a scene item) so it stays pinned regardless of pan/zoom."""
+        (used for the company name on the price pane), an optional sub-line
+        (the latest price + change), plus a clickable list of indicators.
+        Clicking any indicator entry opens the Indicators dialog - the legend
+        IS the editing entry point. Rebuilt on each replot; a child QWidget
+        (not a scene item) so it stays pinned regardless of pan/zoom."""
         old = self._legends.get(plot)
         if old is not None:
             old.setParent(None); old.deleteLater()
@@ -635,6 +660,11 @@ class PGChartWidget(QWidget):
             hdr = QLabel(header)
             hdr.setStyleSheet("color: #e6e9ec; font-weight: bold; font-size: 12px; padding: 0 2px;")
             lay.addWidget(hdr)
+        if subheader:
+            sub = QLabel(subheader)
+            sub.setStyleSheet(f"color: {subheader_color or '#e6e9ec'}; font-weight: bold; "
+                              "font-size: 13px; padding: 0 2px;")
+            lay.addWidget(sub)
         for text, color in entries:
             btn = QPushButton(text); btn.setFlat(True); btn.setCursor(Qt.PointingHandCursor)
             btn.setToolTip("Click to edit chart indicators")

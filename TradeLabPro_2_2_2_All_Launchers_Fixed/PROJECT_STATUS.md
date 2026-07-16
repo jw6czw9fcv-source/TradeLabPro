@@ -1,7 +1,14 @@
 # TradeLab Pro Project Status
 
-Current version: 2.11.0
-Current phase: Phase 7 - AI Assistant (done)
+Current version: 2.12.0
+Current phase: Phase 8 - Paper Trading (done)
+
+## Completed in 2.12.0 (Paper Trading, Phase 8)
+- `tradelab/core/broker.py`: Qt-free broker abstraction + `PaperBroker` simulator — cash, long/short positions with weighted-average cost, realized/unrealized P&L, market + resting-limit order book, commission, JSON persistence (`data/paper_account.json`, gitignored). Price source is injectable (offline-testable).
+- New "Paper Trading" tab: simulated-account banner, order entry, live account summary, positions/orders tables, mark-to-market refresh, reset.
+- AI Assist tab: added a persistent "no live market data" disclaimer.
+- Live trading intentionally out of scope — simulation only; no orders routed, no funds moved.
+- pytest regression suite now 312 tests, all passing (network-free).
 
 ## Completed in 2.11.0 (AI Assistant, Phase 7 - option b: LLM-backed)
 - `tradelab/core/ai_assistant.py`: Qt-free, transport-injectable client for Anthropic's Messages API. Builds an indicator-snapshot context per symbol, sends chat turns, parses replies. Default model `claude-sonnet-5` (Opus 4.8 / Haiku 4.5 selectable).

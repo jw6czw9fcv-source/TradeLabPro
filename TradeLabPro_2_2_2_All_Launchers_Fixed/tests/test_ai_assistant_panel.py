@@ -35,6 +35,15 @@ def test_panel_constructs_and_reports_off_without_key(qapp, monkeypatch):
     assert "off" in panel.status.text().lower()
 
 
+def test_panel_shows_no_live_data_disclaimer(qapp):
+    from PySide6.QtWidgets import QLabel
+    from tradelab.ui.app import AIAssistantPanel
+    panel = AIAssistantPanel()
+    texts = " ".join(lbl.text() for lbl in panel.findChildren(QLabel))
+    assert "No live market data" in texts
+    assert "not financial advice" in texts.lower()
+
+
 def test_panel_reports_on_with_a_key(qapp):
     from tradelab.ui.app import AIAssistantPanel
     panel = AIAssistantPanel()

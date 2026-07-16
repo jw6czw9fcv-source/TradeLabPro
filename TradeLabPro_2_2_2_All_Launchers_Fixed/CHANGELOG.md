@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.12.0 - Paper Trading (Phase 8)
+
+Phase 8 delivers the safe, genuinely useful half of "IBKR-grade" connectivity: a broker abstraction plus a fully-simulated paper-trading account. **No real money moves and no live orders are ever routed** — everything fills against a local ledger. The abstraction is built so a real broker *paper-account* adapter can drop in later behind the same API.
+
+### Added
+- `tradelab/core/broker.py`: a Qt-free, price-source-injectable broker layer. `Broker` abstract interface + `PaperBroker` — a self-contained simulator with cash, long/short positions (weighted-average cost, realized + unrealized P&L), a market/limit order book (limits rest until a crossing price), commission support, and JSON persistence (`data/paper_account.json`, gitignored).
+- New **Paper Trading** tab: a prominent simulated-account banner, order entry (symbol / side / qty / market-or-limit), a live account summary (cash, equity, realized/unrealized/total P&L), positions and orders tables, mark-to-market refresh, and account reset.
+- AI Assist tab now carries a persistent "no live market data" disclaimer clarifying it reasons over TradeLabPro's indicator snapshot plus training knowledge, not real-time prices/news.
+
+### Safety
+- Live trading is intentionally out of scope: this layer simulates only. It never sends orders to a broker or moves funds.
+
+### Verified
+- 312/312 pytest regression tests pass (16 new across `tests/test_broker.py` and `tests/test_paper_trading_panel.py`), all network-free via injected prices.
+
 ## 2.11.0 - AI Assistant (Phase 7, option b: LLM-backed)
 
 The roadmap's Phase 7 "AI Assistant" shipped as a real natural-language assistant (not just the offline rules-based coach). It explains scans, charts and setups in plain English by calling Anthropic's Messages API with the user's own key.

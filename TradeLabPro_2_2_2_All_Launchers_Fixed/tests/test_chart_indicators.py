@@ -98,6 +98,20 @@ def test_price_legend_shows_full_company_name_as_header(qapp, monkeypatch):
     assert any("Apple Inc." in h and "AAPL" in h for h in headers)
 
 
+def test_price_legend_shows_latest_price_and_change(qapp):
+    from PySide6.QtWidgets import QLabel
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    from tradelab.core.config import ScannerConfig
+    w = PGChartWidget()
+    df = _df()
+    w.plot("TEST", df, ScannerConfig())
+    last = df["Close"].iloc[-1]
+    labels = [lbl.text() for lbl in w._legends[w.price_plot].findChildren(QLabel)]
+    joined = " ".join(labels)
+    assert f"${last:,.2f}" in joined
+    assert "%" in joined  # daily change percent is shown
+
+
 def test_price_legend_shows_one_entry_per_overlay_line(qapp):
     from PySide6.QtWidgets import QPushButton
     from tradelab.ui.widgets.pg_chart_widget import PGChartWidget

@@ -2044,6 +2044,18 @@ class AIAssistantPanel(QWidget):
             "Anthropic API key (per-use cost billed to you); with no key it falls back "
             "to the offline rules-based Trade Coach."))
 
+        # Persistent data-scope disclaimer: the assistant reasons only over the
+        # indicator snapshot this app computes plus the model's training
+        # knowledge - it has no live market feed, prices, or news.
+        disclaimer = QLabel(
+            "⚠ No live market data. Answers are based on the indicators "
+            "TradeLabPro computes for the loaded symbol plus the model's general "
+            "knowledge (not real-time). It cannot give current prices, today's "
+            "news, or earnings dates. Educational only — not financial advice.")
+        disclaimer.setWordWrap(True)
+        disclaimer.setStyleSheet("color:#c9a227; font-size:11px;")
+        layout.addWidget(disclaimer)
+
         # --- API key + model config ---
         from tradelab.core import ai_assistant
         cfg_row = QHBoxLayout()
@@ -2167,6 +2179,126 @@ class AIAssistantPanel(QWidget):
         self._refresh_status()
 
 
+class PaperTradingPanel(QWidget):
+    """Phase 8: paper-trading desk. A fully simulated account (local ledger,
+    no real money, no live order routing) with order entry, positions, and
+    live P&L. Backed by tradelab.core.broker.PaperBroker."""
+
+    def __init__(self):
+        super().__init__()
+        from tradelab.core.broker import PaperBroker, BUY, SELL, MARKET, LIMIT
+        self._BUY, self._SELL = BUY, SELL
+        self._MARKET, self._LIMIT = MARKET, LIMIT
+        self.broker = PaperBroker(starting_cash=100_000.0,
+                                  persist_path=DATA_DIR / "paper_account.json")
+        layout = QVBoxLayout(self)
+
+        banner = QLabel("PAPER TRADING — simulated account. No real money, no live "
+                        "orders are ever placed. For practice and testing only.")
+        banner.setWordWrap(True)
+        banner.setStyleSheet("background:#3a2f00; color:#ffd24a; padding:6px; "
+                             "border-radius:4px; font-weight:bold;")
+        layout.addWidget(banner)
+
+        # --- account summary ---
+        self._summary = QLabel(); self._summary.setStyleSheet("font-size:12px;")
+        layout.addWidget(self._summary)
+
+        # --- order entry ---
+        entry = QHBoxLayout()
+        self.o_symbol = QLineEdit("AAPL"); self.o_symbol.setMaximumWidth(90)
+        self.o_side = QComboBox(); self.o_side.addItems([BUY, SELL])
+        self.o_qty = QSpinBox(); self.o_qty.setRange(1, 1_000_000); self.o_qty.setValue(10)
+        self.o_type = QComboBox(); self.o_type.addItems([MARKET, LIMIT])
+        self.o_limit = QDoubleSpinBox(); self.o_limit.setRange(0.0, 1_000_000.0)
+        self.o_limit.setDecimals(2); self.o_limit.setMaximumWidth(100); self.o_limit.setEnabled(False)
+        self.o_type.currentTextChanged.connect(
+            lambda t: self.o_limit.setEnabled(t == self._LIMIT))
+        place = QPushButton("Place paper order"); place.clicked.connect(self._place)
+        for w in (QLabel("Symbol"), self.o_symbol, QLabel("Side"), self.o_side,
+                  QLabel("Qty"), self.o_qty, QLabel("Type"), self.o_type,
+                  QLabel("Limit"), self.o_limit, place):
+            entry.addWidget(w)
+        entry.addStretch()
+        layout.addLayout(entry)
+
+        # --- actions ---
+        actions = QHBoxLayout()
+        refresh = QPushButton("Refresh (mark-to-market + fill limits)")
+        refresh.clicked.connect(self.refresh)
+        reset = QPushButton("Reset account"); reset.clicked.connect(self._reset)
+        actions.addWidget(refresh); actions.addWidget(reset); actions.addStretch()
+        layout.addLayout(actions)
+
+        # --- positions table ---
+        layout.addWidget(QLabel("Positions"))
+        self.pos_table = QTableWidget(0, 6)
+        self.pos_table.setHorizontalHeaderLabels(
+            ["Symbol", "Qty", "Avg price", "Last", "Mkt value", "Unrealized P&L"])
+        self.pos_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        layout.addWidget(self.pos_table)
+
+        # --- orders table ---
+        layout.addWidget(QLabel("Orders"))
+        self.ord_table = QTableWidget(0, 8)
+        self.ord_table.setHorizontalHeaderLabels(
+            ["ID", "Symbol", "Side", "Qty", "Type", "Limit", "Status", "Fill price"])
+        self.ord_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        layout.addWidget(self.ord_table)
+
+        self.refresh()
+
+    def _place(self):
+        from tradelab.core.broker import BrokerError
+        sym = self.o_symbol.text().strip().upper()
+        limit = self.o_limit.value() if self.o_type.currentText() == self._LIMIT else None
+        try:
+            order = self.broker.place_order(sym, self.o_side.currentText(),
+                                            self.o_qty.value(), self.o_type.currentText(),
+                                            limit_price=limit)
+        except BrokerError as e:
+            QMessageBox.warning(self, "Order rejected", str(e)); return
+        if order.status == "REJECTED":
+            QMessageBox.warning(self, "Order rejected", order.note or "Could not fill.")
+        self.refresh()
+
+    def _reset(self):
+        if QMessageBox.question(self, "Reset paper account",
+                                "Wipe all positions, orders and P&L back to the starting "
+                                "cash? This cannot be undone.") == QMessageBox.Yes:
+            self.broker.reset()
+            self.refresh()
+
+    def refresh(self):
+        self.broker.poll()  # fill any resting limit orders at the current price
+        s = self.broker.account_summary()
+        self._summary.setText(
+            f"Cash ${s['cash']:,.2f}   |   Positions ${s['positions_value']:,.2f}   |   "
+            f"Equity ${s['equity']:,.2f}   |   Realized P&L ${s['realized_pnl']:,.2f}   |   "
+            f"Unrealized P&L ${s['unrealized_pnl']:,.2f}   |   Total P&L ${s['total_pnl']:,.2f}")
+
+        positions = self.broker.positions()
+        self.pos_table.setRowCount(len(positions))
+        for r, p in enumerate(positions):
+            try:
+                last = self.broker.price(p.symbol)
+            except Exception:
+                last = p.avg_price
+            cells = [p.symbol, f"{p.qty:g}", f"{p.avg_price:.2f}", f"{last:.2f}",
+                     f"{p.market_value(last):,.2f}", f"{p.unrealized_pnl(last):,.2f}"]
+            for c, val in enumerate(cells):
+                self.pos_table.setItem(r, c, QTableWidgetItem(val))
+
+        orders = list(reversed(self.broker.orders()))
+        self.ord_table.setRowCount(len(orders))
+        for r, o in enumerate(orders):
+            cells = [str(o.id), o.symbol, o.side, f"{o.qty:g}", o.order_type,
+                     f"{o.limit_price:.2f}" if o.limit_price else "-", o.status,
+                     f"{o.filled_price:.2f}" if o.filled_price else "-"]
+            for c, val in enumerate(cells):
+                self.ord_table.setItem(r, c, QTableWidgetItem(val))
+
+
 class PluginPanel(QWidget):
     """Phase 6 Plugin SDK panel: shows discovered indicator plugins (loaded
     OK or errored) and a Reload button. Loaded plugins become fields in the
@@ -2227,6 +2359,7 @@ class MainWindow(QMainWindow):
         # Scanner and Backtest strategy dropdowns so it appears immediately.
         tabs.addTab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed), "Strategies")
         tabs.addTab(PluginPanel(on_plugins_changed=self._on_plugins_changed), "Plugins")
+        tabs.addTab(PaperTradingPanel(), "Paper Trading")
         tabs.addTab(AIAssistantPanel(), "AI Assist")
         settings_text = QTextEdit(); settings_text.setReadOnly(True)
         settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")
