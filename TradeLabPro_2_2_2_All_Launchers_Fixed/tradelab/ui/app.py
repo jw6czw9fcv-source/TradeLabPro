@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 import pandas as pd
 from PySide6.QtCore import Qt, QThread, Signal, QSettings, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QImage, QTextCursor
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QSpinBox, QDoubleSpinBox, QComboBox,
@@ -2332,6 +2332,66 @@ class PluginPanel(QWidget):
         if self._on_plugins_changed:
             self._on_plugins_changed()
 
+class ManualBrowser(QTextBrowser):
+    """User-manual viewer whose embedded screenshots scale to the current
+    window width and re-scale on resize/maximize, so images 'follow' the
+    window instead of staying at their fixed native pixel size."""
+
+    def __init__(self, base_dir):
+        super().__init__()
+        self.setOpenExternalLinks(True)
+        self._base_dir = Path(base_dir)
+        # Resolve the manual's relative image paths (images/*.png).
+        self.setSearchPaths([str(self._base_dir)])
+        self._native = {}  # src name -> (width, height) in native pixels
+
+    def load_markdown(self, md):
+        self.setMarkdown(md)
+        self._rescale_images()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._rescale_images()
+
+    def _native_size(self, name):
+        if name not in self._native:
+            img = QImage(str(self._base_dir / name))
+            self._native[name] = (img.width(), img.height()) if not img.isNull() else (0, 0)
+        return self._native[name]
+
+    def _rescale_images(self):
+        """Set every embedded image to the available content width (aspect
+        preserved). Collect positions first, then apply, so editing the
+        document doesn't invalidate the iterator mid-walk."""
+        avail = self.viewport().width() - 24  # leave room for scrollbar/margins
+        if avail < 50:
+            return
+        doc = self.document()
+        positions = []
+        block = doc.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                if frag.isValid() and frag.charFormat().isImageFormat():
+                    positions.append(frag.position())
+                it += 1
+            block = block.next()
+        for pos in positions:
+            cur = QTextCursor(doc)
+            cur.setPosition(pos)
+            cur.setPosition(pos + 1, QTextCursor.KeepAnchor)
+            fmt = cur.charFormat()
+            if not fmt.isImageFormat():
+                continue
+            imgfmt = fmt.toImageFormat()
+            nw, nh = self._native_size(imgfmt.name())
+            if nw > 0 and nh > 0:
+                imgfmt.setWidth(avail)
+                imgfmt.setHeight(avail * nh / nw)
+                cur.setCharFormat(imgfmt)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -2405,15 +2465,15 @@ class MainWindow(QMainWindow):
         manual_path = ROOT_DIR / "docs" / "USER_MANUAL.md"
         dlg = QDialog(self)
         dlg.setWindowTitle(f"{APP_NAME} - User Manual")
+        # Standard window title-bar controls: minimize and maximize/restore
+        # next to the close [X], like any normal window.
+        dlg.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint
+                           | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
         dlg.resize(900, 720)
         layout = QVBoxLayout(dlg)
-        viewer = QTextBrowser()
-        viewer.setOpenExternalLinks(True)
-        # Let relative image paths (images/*.png) in the manual resolve so the
-        # embedded screenshots render inside the in-app viewer too.
-        viewer.setSearchPaths([str(manual_path.parent)])
+        viewer = ManualBrowser(manual_path.parent)
         try:
-            viewer.setMarkdown(manual_path.read_text(encoding="utf-8"))
+            viewer.load_markdown(manual_path.read_text(encoding="utf-8"))
         except Exception as e:
             viewer.setPlainText(
                 f"Could not load the user manual from:\n{manual_path}\n\n{e}")

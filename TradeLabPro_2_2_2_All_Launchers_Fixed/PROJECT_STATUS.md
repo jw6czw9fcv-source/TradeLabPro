@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.12.2
+Current version: 2.12.3
 Current phase: Phase 8 - Paper Trading (done)
+
+## Completed in 2.12.3 (Manual window polish)
+- Help > User Manual window: standard minimize + maximize/restore title-bar buttons.
+- Manual screenshots scale to the window width and re-scale on resize (ManualBrowser).
+- pytest regression suite now 318 tests, all passing.
 
 ## Completed in 2.12.2 (User manual screenshots)
 - 7 real screenshots (captured via Qt widget.grab(), against a throwaway temp DB) embedded in docs/USER_MANUAL.md.

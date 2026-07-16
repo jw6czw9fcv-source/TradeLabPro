@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.12.3 - Manual window polish
+
+### Changed
+- The in-app **Help → User Manual** window now has standard title-bar controls — **minimize** and **maximize/restore** next to the close [X] — like a normal window (was a plain dialog with only a close button).
+- Embedded screenshots in the manual viewer now **scale to the window width** and re-scale on resize/maximize (new `ManualBrowser`), instead of staying at their fixed native size.
+
+### Verified
+- 318/318 pytest tests pass (2 new in `tests/test_help_menu.py`: window buttons present, images scale to width).
+
 ## 2.12.2 - User manual screenshots
 
 ### Added
