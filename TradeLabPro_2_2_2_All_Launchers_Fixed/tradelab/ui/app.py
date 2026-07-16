@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 import pandas as pd
 from PySide6.QtCore import Qt, QThread, Signal, QSettings, QTimer
-from PySide6.QtGui import QAction, QImage, QTextCursor
+from PySide6.QtGui import QAction, QImage, QTextCursor, QColor
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QSpinBox, QDoubleSpinBox, QComboBox,
@@ -2332,6 +2332,59 @@ class PluginPanel(QWidget):
         if self._on_plugins_changed:
             self._on_plugins_changed()
 
+def _scale_doc_images(doc, target_width, native_size_fn):
+    """Set every image fragment in a QTextDocument to `target_width` wide,
+    preserving aspect via native_size_fn(name) -> (native_w, native_h).
+    Positions are collected first so editing doesn't invalidate the walk.
+    Shared by the on-screen viewer and the PDF export."""
+    positions = []
+    block = doc.begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.charFormat().isImageFormat():
+                positions.append(frag.position())
+            it += 1
+        block = block.next()
+    for pos in positions:
+        cur = QTextCursor(doc)
+        cur.setPosition(pos)
+        cur.setPosition(pos + 1, QTextCursor.KeepAnchor)
+        fmt = cur.charFormat()
+        if not fmt.isImageFormat():
+            continue
+        imgfmt = fmt.toImageFormat()
+        nw, nh = native_size_fn(imgfmt.name())
+        if nw > 0 and nh > 0:
+            imgfmt.setWidth(target_width)
+            imgfmt.setHeight(target_width * nh / nw)
+            cur.setCharFormat(imgfmt)
+
+
+def _recolor_doc_links(doc, color="#000000"):
+    """Render every link in a QTextDocument in `color` (default black) instead
+    of Qt's default light-blue hyperlink colour. Shared by the on-screen viewer
+    and the PDF export so both match."""
+    positions = []
+    block = doc.begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.charFormat().isAnchor():
+                positions.append((frag.position(), frag.length()))
+            it += 1
+        block = block.next()
+    for pos, length in positions:
+        cur = QTextCursor(doc)
+        cur.setPosition(pos)
+        cur.setPosition(pos + length, QTextCursor.KeepAnchor)
+        fmt = cur.charFormat()
+        fmt.setForeground(QColor(color))
+        cur.setCharFormat(fmt)
+
+
 class ManualBrowser(QTextBrowser):
     """User-manual viewer whose embedded screenshots scale with the window
     AND with Ctrl+wheel zoom, so images 'follow' both when you resize/maximize
@@ -2354,6 +2407,8 @@ class ManualBrowser(QTextBrowser):
         if self.font().pointSizeF() <= 0:
             f = self.font(); f.setPointSizeF(11.0); self.setFont(f)
         self._base_pt = self.font().pointSizeF()
+        # NOTE: links keep Qt's default (light-blue) colour in the on-screen
+        # viewer. Only the PDF export recolours links to black.
         self._rescale_images()
 
     def wheelEvent(self, event):
@@ -2387,36 +2442,11 @@ class ManualBrowser(QTextBrowser):
 
     def _rescale_images(self):
         """Size every embedded image to the content width scaled by the current
-        zoom factor (aspect preserved). Collect positions first, then apply, so
-        editing the document doesn't invalidate the iterator mid-walk."""
+        zoom factor (aspect preserved)."""
         avail = self.viewport().width() - 24  # leave room for scrollbar/margins
         if avail < 50:
             return
-        target = avail * self._zoom_factor()
-        doc = self.document()
-        positions = []
-        block = doc.begin()
-        while block.isValid():
-            it = block.begin()
-            while not it.atEnd():
-                frag = it.fragment()
-                if frag.isValid() and frag.charFormat().isImageFormat():
-                    positions.append(frag.position())
-                it += 1
-            block = block.next()
-        for pos in positions:
-            cur = QTextCursor(doc)
-            cur.setPosition(pos)
-            cur.setPosition(pos + 1, QTextCursor.KeepAnchor)
-            fmt = cur.charFormat()
-            if not fmt.isImageFormat():
-                continue
-            imgfmt = fmt.toImageFormat()
-            nw, nh = self._native_size(imgfmt.name())
-            if nw > 0 and nh > 0:
-                imgfmt.setWidth(target)
-                imgfmt.setHeight(target * nh / nw)
-                cur.setCharFormat(imgfmt)
+        _scale_doc_images(self.document(), avail * self._zoom_factor(), self._native_size)
 
 
 class MainWindow(QMainWindow):
@@ -2498,6 +2528,16 @@ class MainWindow(QMainWindow):
                            | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
         dlg.resize(900, 720)
         layout = QVBoxLayout(dlg)
+
+        # Top shortcut row: open the manual as a PDF in the system viewer.
+        toolbar = QHBoxLayout()
+        pdf_btn = QPushButton("📄  Open as PDF")
+        pdf_btn.setToolTip("Export the manual to a PDF and open it in your default viewer")
+        pdf_btn.clicked.connect(lambda: self._export_manual_pdf(manual_path))
+        toolbar.addWidget(pdf_btn)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
         viewer = ManualBrowser(manual_path.parent)
         try:
             viewer.load_markdown(manual_path.read_text(encoding="utf-8"))
@@ -2506,6 +2546,55 @@ class MainWindow(QMainWindow):
                 f"Could not load the user manual from:\n{manual_path}\n\n{e}")
         layout.addWidget(viewer)
         dlg.exec()
+
+    def _export_manual_pdf(self, manual_path):
+        """Render the manual (text + screenshots) to a PDF and open it in the
+        system's default viewer. Images are pre-loaded as document resources so
+        they embed reliably, and sized to the printable page width."""
+        import tempfile, os
+        from PySide6.QtCore import QUrl, QSizeF
+        from PySide6.QtGui import QTextDocument, QDesktopServices, QPageSize
+        try:
+            from PySide6.QtPrintSupport import QPrinter
+        except Exception:
+            QMessageBox.warning(self, "PDF export unavailable",
+                                "Qt print support is not installed in this environment.")
+            return
+        try:
+            out = os.path.join(tempfile.gettempdir(), "TradeLab_Pro_User_Manual.pdf")
+            printer = QPrinter()
+            printer.setOutputFormat(QPrinter.PdfFormat)
+            printer.setOutputFileName(out)
+            printer.setPageSize(QPageSize(QPageSize.A4))
+
+            doc = QTextDocument()
+            base = manual_path.parent
+            doc.setBaseUrl(QUrl.fromLocalFile(str(base).replace("\\", "/") + "/"))
+            # Embed each screenshot as a document resource keyed by its markdown
+            # path so it renders even without a live search-path resolver.
+            img_dir = base / "images"
+            if img_dir.is_dir():
+                for p in img_dir.glob("*.png"):
+                    doc.addResource(QTextDocument.ImageResource,
+                                    QUrl("images/" + p.name), QImage(str(p)))
+            doc.setMarkdown(manual_path.read_text(encoding="utf-8"))
+            _recolor_doc_links(doc)  # black links (incl. the TOC) in the PDF too
+
+            cache = {}
+            def native(name):
+                if name not in cache:
+                    im = QImage(str(base / name))
+                    cache[name] = (im.width(), im.height()) if not im.isNull() else (0, 0)
+                return cache[name]
+
+            page = printer.pageRect(QPrinter.Point)
+            _scale_doc_images(doc, page.width(), native)
+            doc.setPageSize(QSizeF(page.width(), page.height()))
+            doc.print_(printer)
+
+            QDesktopServices.openUrl(QUrl.fromLocalFile(out))
+        except Exception as e:
+            QMessageBox.warning(self, "PDF export failed", str(e))
 
     def show_version(self):
         """Version / About dialog."""

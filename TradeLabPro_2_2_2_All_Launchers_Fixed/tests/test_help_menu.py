@@ -1,4 +1,5 @@
 """Headless smoke tests for the Help menu (User Manual viewer + Version dialog)."""
+import os
 import pytest
 
 pytest.importorskip("PySide6")
@@ -54,6 +55,33 @@ def test_user_manual_action_opens_a_viewer_with_the_manual(qapp, monkeypatch):
     assert "Could not load" not in text
 
 
+def test_manual_window_has_open_as_pdf_button(qapp, monkeypatch):
+    from PySide6.QtWidgets import QPushButton
+    from tradelab.ui import app as appmod
+    captured = {}
+    monkeypatch.setattr(appmod.QDialog, "exec",
+                        lambda self: captured.update(dialog=self) or 0)
+    win = _main_window(qapp)
+    win.show_user_manual()
+    buttons = [b.text() for b in captured["dialog"].findChildren(QPushButton)]
+    assert any("PDF" in t for t in buttons)
+
+
+def test_export_manual_pdf_writes_a_valid_pdf(qapp, monkeypatch):
+    import PySide6.QtGui as QtGui
+    from tradelab.core.config import ROOT_DIR
+    opened = {}
+    monkeypatch.setattr(QtGui.QDesktopServices, "openUrl",
+                        staticmethod(lambda url: opened.update(path=url.toLocalFile()) or True))
+    win = _main_window(qapp)
+    win._export_manual_pdf(ROOT_DIR / "docs" / "USER_MANUAL.md")
+    path = opened.get("path")
+    assert path and os.path.exists(path)
+    with open(path, "rb") as f:
+        assert f.read(5) == b"%PDF-"
+    assert os.path.getsize(path) > 10_000  # non-trivial (embeds screenshots)
+
+
 def test_manual_window_has_minimize_and_maximize_buttons(qapp, monkeypatch):
     from PySide6.QtCore import Qt
     from tradelab.ui import app as appmod
@@ -95,6 +123,28 @@ def test_manual_screenshots_scale_to_the_window_width(qapp):
     assert widths, "no embedded images found in the manual"
     avail = browser.viewport().width() - 24
     assert abs(widths[0] - avail) < 2  # scaled to the content width
+
+
+def test_recolor_doc_links_helper_makes_links_black(qapp):
+    # The PDF export recolours links to black via this helper (the on-screen
+    # viewer keeps Qt's default link colour), so test the helper directly.
+    from PySide6.QtGui import QTextDocument
+    from tradelab.ui.app import _recolor_doc_links
+    doc = QTextDocument()
+    doc.setMarkdown("See [the scanner](#scanner) and [charts](#charts).")
+    _recolor_doc_links(doc)
+    found = []
+    block = doc.begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.charFormat().isAnchor():
+                c = frag.charFormat().foreground().color()
+                found.append((c.red(), c.green(), c.blue()))
+            it += 1
+        block = block.next()
+    assert found and all(rgb == (0, 0, 0) for rgb in found)
 
 
 def _first_image_width(browser):

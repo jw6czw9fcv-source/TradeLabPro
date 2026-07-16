@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.12.4
+Current version: 2.12.5
 Current phase: Phase 8 - Paper Trading (done)
+
+## Completed in 2.12.5 (Manual: Open as PDF)
+- "Open as PDF" button at the top of Help > User Manual: renders the manual (text + screenshots) to an A4 PDF and opens it in the system viewer.
+- PDF links (incl. TOC) render black; on-screen viewer keeps default link colour.
+- pytest regression suite now 322 tests, all passing.
 
 ## Completed in 2.12.4 (Manual zoom follows screenshots)
 - Help > User Manual: Ctrl+wheel now zooms text and embedded screenshots together (was text-only).

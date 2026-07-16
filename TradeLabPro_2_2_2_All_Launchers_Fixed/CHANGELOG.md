@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.12.5 - Manual: Open as PDF
+
+### Added
+- **📄 Open as PDF** button at the top of the in-app **Help → User Manual** window. It renders the manual (text + all screenshots) to an A4 PDF and opens it in the system's default viewer. Images are embedded as document resources and scaled to the page width.
+
+### Changed
+- Links in the exported **PDF** (including the Table of Contents) render in **black**. The on-screen viewer keeps Qt's default link colour.
+
+### Verified
+- 322/322 pytest tests pass (new: PDF button present, PDF export writes a valid `%PDF`, shared link-recolor helper).
+
 ## 2.12.4 - Manual zoom follows screenshots
 
 ### Fixed
