@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.12.1
+Current version: 2.12.2
 Current phase: Phase 8 - Paper Trading (done)
+
+## Completed in 2.12.2 (User manual screenshots)
+- 7 real screenshots (captured via Qt widget.grab(), against a throwaway temp DB) embedded in docs/USER_MANUAL.md.
+- In-app Help > User Manual viewer resolves relative image paths so screenshots render in-app too.
+- Shareable HTML manual (Artifact) embeds the same screenshots as base64 data URIs.
 
 ## Completed in 2.12.1 (Help menu)
 - Help menu with an in-app User Manual viewer (renders docs/USER_MANUAL.md, F1) and a Version/About dialog.

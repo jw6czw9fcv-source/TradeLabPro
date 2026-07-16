@@ -2409,6 +2409,9 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(dlg)
         viewer = QTextBrowser()
         viewer.setOpenExternalLinks(True)
+        # Let relative image paths (images/*.png) in the manual resolve so the
+        # embedded screenshots render inside the in-app viewer too.
+        viewer.setSearchPaths([str(manual_path.parent)])
         try:
             viewer.setMarkdown(manual_path.read_text(encoding="utf-8"))
         except Exception as e:

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.12.2 - User manual screenshots
+
+### Added
+- Seven real screenshots (captured via Qt `widget.grab()`) embedded in `docs/USER_MANUAL.md`: Scanner, Charts, Backtest, Strategy builder, Plugins, Paper Trading, and AI Assist.
+- The in-app **Help → User Manual** viewer now resolves the manual's relative image paths (`setSearchPaths`), so the screenshots render inside the app as well as on GitHub.
+
+### Notes
+- Screenshots were captured against a throwaway temporary database, so no real user data appears in them.
+- The shareable HTML manual (Artifact) embeds the same screenshots as base64 data URIs.
+
 ## 2.12.1 - Help menu
 
 ### Added

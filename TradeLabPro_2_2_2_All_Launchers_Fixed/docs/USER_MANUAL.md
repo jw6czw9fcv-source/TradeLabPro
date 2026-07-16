@@ -91,6 +91,8 @@ won't collapse below a readable width.
 The Scanner filters the market down to symbols matching your criteria and ranks
 them by a 0–100 **Score**.
 
+![The Scanner tab: parameters, exchange/list selection, and the ranked results table.](images/scanner.png)
+
 ### Running a scan
 1. Choose which symbols to scan using the **exchange / list** selectors
    (shortcuts: USA, Canada, All, None; your own lists live under **My Lists**;
@@ -139,6 +141,8 @@ automatically. **Open** loads a setup file from elsewhere on disk. You can also
 
 The chart workspace on the right renders responsive, zoomable charts (built on
 PyQtGraph).
+
+![The price chart: company name and live price header, candlesticks with EMA overlays, BUY/SELL markers, and Volume / MACD / RSI sub-panes.](images/chart.png)
 
 ### Loading & navigating
 - Load a symbol by double-clicking a Scanner result, or type a ticker into the
@@ -220,7 +224,11 @@ you.
 
 ## 9. Backtest lab
 
-Test a strategy against historical data. Four sub-tabs:
+Test a strategy against historical data.
+
+![The Backtest lab: strategy selector, the Single / Multi-Symbol / Optimize / Walk-Forward sub-tabs, metrics, and the trade list.](images/backtest.png)
+
+Four sub-tabs:
 
 - **Single** — run one strategy on one symbol; see metrics (win rate, total
   return, profit factor, **max drawdown %**) and the full trade list (Entry Date,
@@ -244,6 +252,9 @@ the numbers for you.
 ## 10. Strategy builder
 
 Build your own BUY/SELL strategies **without code**:
+
+![The Strategy builder: BUY/SELL condition blocks that compile into a saveable custom strategy.](images/strategy_builder.png)
+
 1. Add **condition blocks** for entry (BUY) and exit (SELL) — e.g. "RSI Below 30",
    "EMA 9 Above EMA 21", "Price Above SMA 200".
 2. Conditions support **field-vs-value** and **field-vs-field** comparisons (for
@@ -261,6 +272,9 @@ defaults.
 ## 11. Plugins
 
 Extend TradeLab Pro with **custom indicators** written in Python:
+
+![The Plugins tab: discovered indicator plugins (loaded or errored) with a Reload button.](images/plugins.png)
+
 - Drop a `.py` file in the `plugins/` folder that defines `PLUGIN_NAME` and a
   `compute(df)` function returning an indicator series.
 - It's auto-discovered at startup (and via the **Reload** button on this tab) and
@@ -279,6 +293,8 @@ order entry and watch P&L behave.
 > **Simulated only.** No real money moves and no live orders are ever placed.
 > Everything fills against a local ledger inside the app. A prominent amber banner
 > on the tab is your reminder.
+
+![The Paper Trading tab: simulated-account banner, live account summary, order entry, and the positions and orders tables.](images/paper_trading.png)
 
 **Starting out:** the account begins with **$100,000** in simulated cash. It
 persists between runs (in `data/paper_account.json`).
@@ -306,6 +322,8 @@ confirmation).
 
 A natural-language assistant that **explains** indicators, scores, and setups in
 plain English.
+
+![The AI Assist tab: the no-live-data disclaimer, API-key field and model picker, symbol-context loader, and chat.](images/ai_assist.png)
 
 > ⚠ **No live market data.** It reasons over the indicator snapshot TradeLab Pro
 > computes for the loaded symbol plus the model's general knowledge — not
