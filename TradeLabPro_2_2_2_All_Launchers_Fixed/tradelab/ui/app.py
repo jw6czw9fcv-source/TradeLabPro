@@ -2333,9 +2333,10 @@ class PluginPanel(QWidget):
             self._on_plugins_changed()
 
 class ManualBrowser(QTextBrowser):
-    """User-manual viewer whose embedded screenshots scale to the current
-    window width and re-scale on resize/maximize, so images 'follow' the
-    window instead of staying at their fixed native pixel size."""
+    """User-manual viewer whose embedded screenshots scale with the window
+    AND with Ctrl+wheel zoom, so images 'follow' both when you resize/maximize
+    the window and when you zoom the text in or out (like a browser page zoom),
+    instead of staying at their fixed native pixel size."""
 
     def __init__(self, base_dir):
         super().__init__()
@@ -2344,14 +2345,39 @@ class ManualBrowser(QTextBrowser):
         # Resolve the manual's relative image paths (images/*.png).
         self.setSearchPaths([str(self._base_dir)])
         self._native = {}  # src name -> (width, height) in native pixels
+        self._base_pt = None  # font point size at zoom 1.0
 
     def load_markdown(self, md):
         self.setMarkdown(md)
+        # Capture a baseline point size so the zoom factor is well-defined even
+        # if the widget font was pixel-sized.
+        if self.font().pointSizeF() <= 0:
+            f = self.font(); f.setPointSizeF(11.0); self.setFont(f)
+        self._base_pt = self.font().pointSizeF()
         self._rescale_images()
+
+    def wheelEvent(self, event):
+        """Ctrl+wheel zooms text (works even though the viewer is read-only)
+        and rescales images by the same factor so they zoom together."""
+        if event.modifiers() & Qt.ControlModifier:
+            if event.angleDelta().y() > 0:
+                self.zoomIn(1)
+            elif event.angleDelta().y() < 0:
+                self.zoomOut(1)
+            self._rescale_images()
+            event.accept()
+        else:
+            super().wheelEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._rescale_images()
+
+    def _zoom_factor(self):
+        cur = self.font().pointSizeF()
+        if self._base_pt and self._base_pt > 0 and cur > 0:
+            return cur / self._base_pt
+        return 1.0
 
     def _native_size(self, name):
         if name not in self._native:
@@ -2360,12 +2386,13 @@ class ManualBrowser(QTextBrowser):
         return self._native[name]
 
     def _rescale_images(self):
-        """Set every embedded image to the available content width (aspect
-        preserved). Collect positions first, then apply, so editing the
-        document doesn't invalidate the iterator mid-walk."""
+        """Size every embedded image to the content width scaled by the current
+        zoom factor (aspect preserved). Collect positions first, then apply, so
+        editing the document doesn't invalidate the iterator mid-walk."""
         avail = self.viewport().width() - 24  # leave room for scrollbar/margins
         if avail < 50:
             return
+        target = avail * self._zoom_factor()
         doc = self.document()
         positions = []
         block = doc.begin()
@@ -2387,8 +2414,8 @@ class ManualBrowser(QTextBrowser):
             imgfmt = fmt.toImageFormat()
             nw, nh = self._native_size(imgfmt.name())
             if nw > 0 and nh > 0:
-                imgfmt.setWidth(avail)
-                imgfmt.setHeight(avail * nh / nw)
+                imgfmt.setWidth(target)
+                imgfmt.setHeight(target * nh / nw)
                 cur.setCharFormat(imgfmt)
 
 

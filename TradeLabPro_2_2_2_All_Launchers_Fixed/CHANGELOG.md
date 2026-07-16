@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.12.4 - Manual zoom follows screenshots
+
+### Fixed
+- In the in-app **Help → User Manual** viewer, **Ctrl + mouse wheel** now zooms the text *and* the embedded screenshots together (browser-style page zoom). Previously only the text zoomed and the images stayed at a fixed size. Window resize/maximize scaling (added in 2.12.3) is unchanged.
+
+### Verified
+- 319/319 pytest tests pass (1 new in `tests/test_help_menu.py`: images grow with Ctrl+wheel zoom).
+
 ## 2.12.3 - Manual window polish
 
 ### Changed

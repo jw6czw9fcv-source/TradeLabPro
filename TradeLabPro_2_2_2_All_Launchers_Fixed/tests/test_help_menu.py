@@ -97,6 +97,43 @@ def test_manual_screenshots_scale_to_the_window_width(qapp):
     assert abs(widths[0] - avail) < 2  # scaled to the content width
 
 
+def _first_image_width(browser):
+    doc = browser.document()
+    block = doc.begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.charFormat().isImageFormat():
+                return frag.charFormat().toImageFormat().width()
+            it += 1
+        block = block.next()
+    return None
+
+
+def test_manual_screenshots_follow_ctrl_wheel_zoom(qapp):
+    from tradelab.ui.app import ManualBrowser
+    from tradelab.core.config import ROOT_DIR
+    docs = ROOT_DIR / "docs"
+    browser = ManualBrowser(docs)
+    browser.load_markdown((docs / "USER_MANUAL.md").read_text(encoding="utf-8"))
+    browser.resize(700, 500)
+    browser.show()
+    qapp.processEvents()
+    browser._rescale_images()
+    base = _first_image_width(browser)
+
+    # Zoom the text in; images should grow with it (browser-style page zoom).
+    browser.zoomIn(6)
+    browser._rescale_images()
+    zoomed = _first_image_width(browser)
+    browser.hide()
+
+    assert base and zoomed
+    assert browser._zoom_factor() > 1.0
+    assert zoomed > base * 1.1
+
+
 def test_version_action_shows_about_with_version(qapp, monkeypatch):
     from tradelab.ui import app as appmod
     from tradelab.core.config import APP_VERSION

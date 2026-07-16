@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.12.3
+Current version: 2.12.4
 Current phase: Phase 8 - Paper Trading (done)
+
+## Completed in 2.12.4 (Manual zoom follows screenshots)
+- Help > User Manual: Ctrl+wheel now zooms text and embedded screenshots together (was text-only).
+- pytest regression suite now 319 tests, all passing.
 
 ## Completed in 2.12.3 (Manual window polish)
 - Help > User Manual window: standard minimize + maximize/restore title-bar buttons.
