@@ -5,15 +5,16 @@ import time
 from pathlib import Path
 import pandas as pd
 from PySide6.QtCore import Qt, QThread, Signal, QSettings, QTimer
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QSpinBox, QDoubleSpinBox, QComboBox,
     QListWidget, QLineEdit, QMessageBox, QSplitter, QFormLayout, QGroupBox, QCheckBox,
     QAbstractItemView, QTextEdit, QFileDialog, QProgressBar, QScrollArea, QHeaderView,
-    QMenu, QToolButton, QSizePolicy
+    QMenu, QToolButton, QSizePolicy, QDialog, QTextBrowser
 )
 
-from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR
+from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR, ROOT_DIR
 from tradelab.data.database import Database
 from tradelab.data.universe import list_symbols, available_universes, refresh_exchange_cache, import_universe_file, universe_metadata
 from tradelab.data.market_data import get_history
@@ -2378,7 +2379,54 @@ class MainWindow(QMainWindow):
         splitter.setSizes([520, 1080])
         self.setCentralWidget(splitter)
         self.statusBar().showMessage(f"{APP_NAME} {APP_VERSION} ready")
+        self._build_menus()
         self.restore_window_state()
+
+    def _build_menus(self):
+        """Menu bar with a Help section: an in-app User Manual viewer and a
+        Version / About dialog. References are held on self so PySide6 doesn't
+        garbage-collect the underlying C++ menu/actions."""
+        self.help_menu = self.menuBar().addMenu("&Help")
+
+        self.manual_action = QAction("User Manual", self)
+        self.manual_action.setShortcut("F1")
+        self.manual_action.triggered.connect(self.show_user_manual)
+        self.help_menu.addAction(self.manual_action)
+
+        self.help_menu.addSeparator()
+
+        self.version_action = QAction("Version", self)
+        self.version_action.triggered.connect(self.show_version)
+        self.help_menu.addAction(self.version_action)
+
+    def show_user_manual(self):
+        """Open the bundled docs/USER_MANUAL.md in a scrollable in-app viewer
+        (rendered from Markdown), so users never leave the app to read it."""
+        manual_path = ROOT_DIR / "docs" / "USER_MANUAL.md"
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"{APP_NAME} - User Manual")
+        dlg.resize(900, 720)
+        layout = QVBoxLayout(dlg)
+        viewer = QTextBrowser()
+        viewer.setOpenExternalLinks(True)
+        try:
+            viewer.setMarkdown(manual_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            viewer.setPlainText(
+                f"Could not load the user manual from:\n{manual_path}\n\n{e}")
+        layout.addWidget(viewer)
+        dlg.exec()
+
+    def show_version(self):
+        """Version / About dialog."""
+        QMessageBox.about(
+            self, f"About {APP_NAME}",
+            f"<h3>{APP_NAME}</h3>"
+            f"<p><b>Version:</b> {APP_VERSION}</p>"
+            "<p>A desktop trading workstation for scanning, charting, watchlists, "
+            "portfolios, backtesting, strategy building, and simulated paper trading.</p>"
+            "<p><i>Analysis and practice tool only. It does not place real orders or "
+            "provide financial advice.</i></p>")
 
     def _on_strategies_changed(self):
         self.scanner_panel.refresh_strategies()

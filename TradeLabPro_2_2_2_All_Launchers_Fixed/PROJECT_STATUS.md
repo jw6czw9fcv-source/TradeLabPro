@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.12.0
+Current version: 2.12.1
 Current phase: Phase 8 - Paper Trading (done)
+
+## Completed in 2.12.1 (Help menu)
+- Help menu with an in-app User Manual viewer (renders docs/USER_MANUAL.md, F1) and a Version/About dialog.
+- pytest regression suite now 316 tests, all passing.
 
 ## Completed in 2.12.0 (Paper Trading, Phase 8)
 - `tradelab/core/broker.py`: Qt-free broker abstraction + `PaperBroker` simulator — cash, long/short positions with weighted-average cost, realized/unrealized P&L, market + resting-limit order book, commission, JSON persistence (`data/paper_account.json`, gitignored). Price source is injectable (offline-testable).

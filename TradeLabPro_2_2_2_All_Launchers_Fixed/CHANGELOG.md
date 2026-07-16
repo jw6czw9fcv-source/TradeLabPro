@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.12.1 - Help menu
+
+### Added
+- **Help** menu in the menu bar with two items:
+  - **User Manual** (F1) — opens an in-app viewer that renders `docs/USER_MANUAL.md` in a scrollable window, so the full manual is readable without leaving the app.
+  - **Version** — an About dialog showing the app name, version, a one-line description, and the analysis/practice-only disclaimer.
+- Menu/action references are held on the window so PySide6 doesn't garbage-collect the underlying C++ objects.
+
+### Verified
+- 316/316 pytest tests pass (3 new in `tests/test_help_menu.py`).
+
 ## 2.12.0 - Paper Trading (Phase 8)
 
 Phase 8 delivers the safe, genuinely useful half of "IBKR-grade" connectivity: a broker abstraction plus a fully-simulated paper-trading account. **No real money moves and no live orders are ever routed** — everything fills against a local ledger. The abstraction is built so a real broker *paper-account* adapter can drop in later behind the same API.
