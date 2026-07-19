@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.14.2
+Current version: 2.14.3
 Current phase: Phase 10 - Market Heatmap (done)
+
+## Completed in 2.14.3 (Company names on chart)
+- Fixed many tickers (KO, CAT, MO, JPM, XOM...) showing only the symbol, no company name. Yahoo stopped returning longName/shortName for these; `get_quote_meta` now resolves via longName → shortName → legal name derived from `longBusinessSummary` (`_name_from_summary`, handles `&`/`of` connectors) → `displayName` → ticker. Chart header, heatmap tooltips, and Scanner name/sector all benefit.
+- pytest regression suite now 373 tests, all passing.
 
 ## Completed in 2.14.2 (Heatmap auto-refresh)
 - Added an auto-refresh timer to the Heatmap tab: an "Auto-refresh every N s" checkbox + interval spin (15–3600s) drives a `QTimer` that re-runs `load()`. Toggling on refreshes immediately; interval changes apply live; a refresh that overruns is skipped (load() no-ops while a worker is in flight); timer stops in `shutdown()`. Status line shows last-update time + "auto-refresh on".

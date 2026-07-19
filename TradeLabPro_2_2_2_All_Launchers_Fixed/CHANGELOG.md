@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.14.3 - Company names on the chart (KO, CAT, JPM…)
+
+### Fixed
+- **Many stocks showed only their ticker, not the company name** (KO, CAT, MO, JPM, XOM, …). Yahoo has become inconsistent about which name field it returns — these blue-chips come back **without** `longName`/`shortName`, so the lookup fell back to the ticker. Name resolution now also uses `displayName` and derives the full legal name from the business summary, so the chart header (and heatmap tooltips) show e.g. **"KO — The Coca-Cola Company"**, **"JPM — JPMorgan Chase & Co."**, **"BAC — Bank of America Corporation"**. Affects `get_quote_meta`, so the Scanner "Sector"/name columns benefit too.
+
+### Verified
+- 373/373 pytest tests pass (new: legal-name extraction from a business summary incl. `&`/`of` connectors, and the full longName → shortName → summary → displayName → ticker fallback chain).
+
 ## 2.14.2 - Heatmap auto-refresh
 
 ### Added

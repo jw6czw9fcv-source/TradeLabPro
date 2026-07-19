@@ -45,6 +45,52 @@ def get_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.Dat
 
 _quote_meta_cache: dict = {}
 
+# Yahoo has become inconsistent about which name field it returns: many
+# blue-chips (KO, CAT, MO, JPM, XOM...) now come back WITHOUT longName /
+# shortName, but WITH a displayName and a longBusinessSummary whose first
+# phrase is the full legal name. Resolving names from only longName/shortName
+# left those tickers showing just their symbol on the chart header.
+_NAME_CONNECTORS = {"of", "and", "the", "for", "de", "&", "von", "van", "du", "des", "la", "le"}
+
+
+def _name_from_summary(summary: str) -> str:
+    """Pull the leading legal name out of a business summary:
+    'The Coca-Cola Company, a beverage company, ...' -> 'The Coca-Cola Company'
+    'Caterpillar Inc. provides construction ...'     -> 'Caterpillar Inc.'
+    'JPMorgan Chase & Co. operates as a bank ...'    -> 'JPMorgan Chase & Co.'
+    The name is the run of capitalised words (plus common lowercase
+    connectors like 'of'/'&') before the first comma or sentence verb.
+    """
+    head = (summary or "").split(",")[0].strip()
+    if not head:
+        return ""
+    kept = []
+    for word in head.split():
+        first = next((ch for ch in word if ch.isalpha()), "")
+        # A genuinely lowercase word that isn't a name connector is the verb
+        # that starts the description ("provides", "operates", ...) - stop.
+        if first and first.islower() and word.lower() not in _NAME_CONNECTORS:
+            break
+        kept.append(word)
+    return " ".join(kept).strip().rstrip(",&").strip()
+
+
+def _company_name_from_info(info: dict, symbol: str) -> str:
+    """Best-available human company name from a yfinance .info dict, falling
+    back through longName -> shortName -> summary-derived -> displayName ->
+    the ticker itself."""
+    for key in ("longName", "shortName"):
+        value = info.get(key)
+        if value and str(value).strip():
+            return str(value).strip()
+    derived = _name_from_summary(info.get("longBusinessSummary", ""))
+    if 2 <= len(derived) <= 70 and any(c.isalpha() for c in derived):
+        return derived
+    display = info.get("displayName")
+    if display and str(display).strip():
+        return str(display).strip()
+    return symbol
+
 
 def get_quote_meta(symbol: str) -> dict:
     """Real market cap + sector/industry via yfinance, cached in-process so
@@ -66,7 +112,7 @@ def get_quote_meta(symbol: str) -> dict:
                 meta["market_cap"] = float(market_cap)
             meta["sector"] = info.get("sector") or "Unknown"
             meta["industry"] = info.get("industry") or "Unknown"
-            meta["name"] = info.get("longName") or info.get("shortName") or symbol
+            meta["name"] = _company_name_from_info(info, symbol)
         except Exception:
             pass
 

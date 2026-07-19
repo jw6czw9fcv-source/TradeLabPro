@@ -2,7 +2,9 @@ import pandas as pd
 import pytest
 
 import tradelab.data.market_data as market_data
-from tradelab.data.market_data import synthetic_ohlcv, get_history, get_quote_meta, market_cap_bucket
+from tradelab.data.market_data import (synthetic_ohlcv, get_history, get_quote_meta,
+                                       market_cap_bucket, _company_name_from_info,
+                                       _name_from_summary)
 
 
 def test_synthetic_ohlcv_returns_expected_columns():
@@ -98,6 +100,46 @@ def test_get_quote_meta_is_cached_per_symbol(monkeypatch):
     get_quote_meta("XOM")
     get_quote_meta("XOM")
     assert calls == ["XOM"]  # only fetched once
+
+
+@pytest.mark.parametrize("summary,expected", [
+    ("The Coca-Cola Company, a beverage company, engages in ...", "The Coca-Cola Company"),
+    ("Caterpillar Inc. provides construction and mining equipment ...", "Caterpillar Inc."),
+    ("JPMorgan Chase & Co. operates as a financial services company ...", "JPMorgan Chase & Co."),
+    ("Bank of America Corporation provides banking products ...", "Bank of America Corporation"),
+    ("The Procter & Gamble Company provides branded consumer ...", "The Procter & Gamble Company"),
+    ("", ""),
+])
+def test_name_from_summary(summary, expected):
+    assert _name_from_summary(summary) == expected
+
+
+def test_company_name_prefers_longname_then_shortname():
+    assert _company_name_from_info({"longName": "Apple Inc.", "shortName": "Apple"}, "AAPL") == "Apple Inc."
+    assert _company_name_from_info({"shortName": "Apple"}, "AAPL") == "Apple"
+
+
+def test_company_name_falls_back_to_summary_when_no_long_short_name():
+    # The real-world KO/CAT/JPM case: no longName/shortName, but a summary.
+    info = {"displayName": "Coca-Cola",
+            "longBusinessSummary": "The Coca-Cola Company, a beverage company, engages ..."}
+    assert _company_name_from_info(info, "KO") == "The Coca-Cola Company"
+
+
+def test_company_name_falls_back_to_displayname_then_symbol():
+    assert _company_name_from_info({"displayName": "Caterpillar"}, "CAT") == "Caterpillar"
+    assert _company_name_from_info({}, "ZZZZ") == "ZZZZ"
+
+
+def test_get_quote_meta_resolves_name_from_displayname_and_summary(monkeypatch):
+    # End-to-end: a KO-shaped info dict (no longName/shortName) still yields a
+    # real company name, not the ticker.
+    info = {"marketCap": 350_000_000_000, "sector": "Consumer Defensive",
+            "displayName": "Coca-Cola",
+            "longBusinessSummary": "The Coca-Cola Company, a beverage company, engages ..."}
+    monkeypatch.setattr(market_data, "yf", type("_yf", (), {
+        "Ticker": staticmethod(lambda symbol: _FakeTicker(info))}))
+    assert get_quote_meta("KO")["name"] == "The Coca-Cola Company"
 
 
 @pytest.mark.parametrize("market_cap,expected", [
