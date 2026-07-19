@@ -2499,6 +2499,19 @@ class HeatmapPanel(QWidget):
         "Canada - ETFs": ["XIU.TO", "XIC.TO", "XEI.TO", "XRE.TO", "XFN.TO",
                           "XEG.TO", "XIT.TO", "XSP.TO", "XQQ.TO", "ZSP.TO",
                           "ZCN.TO", "ZEB.TO", "VDY.TO", "VCN.TO", "VFV.TO"],
+        # World map: major global companies (mostly US-listed ADRs so the data
+        # resolves). Group by Country for the Finviz-style world view.
+        "World - Large caps": [
+            "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "JPM",
+            "BABA", "PDD", "JD", "NIO", "BIDU", "TCEHY", "LI",
+            "TSM", "TM", "SONY", "MUFG", "HMC",
+            "AZN", "HSBC", "SHEL", "UL", "RIO", "BTI", "BP",
+            "NVS", "NSRGY", "UBS", "LVMUY", "TTE", "SNY",
+            "SAP", "DB", "ASML", "PHG",
+            "INFY", "WIT", "HDB", "IBN",
+            "VALE", "PBR", "ITUB", "NU",
+            "SHOP.TO", "RY.TO", "TD.TO", "ENB.TO", "CNQ.TO",
+            "BHP", "NVO", "MELI", "SAN", "TEF"],
     }
 
     def __init__(self, db: Database, chart: ChartWidget, cfg: ScannerConfig, quote_provider=None):
@@ -2514,17 +2527,24 @@ class HeatmapPanel(QWidget):
         layout.addWidget(_hint(
             "A market map at a glance. Each tile is a stock/ETF, sized by market cap "
             "and coloured by its % change over the selected Period (green up, red down), "
-            "grouped by sector. Map a preset, your Watchlist or Portfolio. "
-            "Click a tile to open its chart. Uses cached data offline."))
+            "grouped by Sector, Industry or Country. Map a preset, a Theme basket, the "
+            "World, your Watchlist or Portfolio. Click a tile to open its chart."))
+
+        self._NO_THEME = "(no theme)"
+        self._GROUP_ATTR = {"Sector": "sector", "Industry": "industry",
+                            "Country": "country", "None": None}
 
         controls = QHBoxLayout()
         self.market = QComboBox(); self.market.addItems(list(self._MARKETS.keys()) + ["Watchlist", "Portfolio"])
+        self.theme_sel = QComboBox(); self.theme_sel.addItems([self._NO_THEME] + hm.theme_choices())
+        self.theme_sel.setToolTip("Map a thematic basket (AI, Semiconductors, EV, …). Overrides Market while set.")
         self.period_sel = QComboBox(); self.period_sel.addItems(hm.period_choices())
-        self.period_sel.setToolTip("Performance window the tile colour represents (like Finviz): 1 Day, 1 Week … 1 Year, YTD.")
+        self.period_sel.setToolTip("Performance window the tile colour represents (like Finviz): 1 Day, 1 Week … 10 Year, YTD.")
         self.size_by = QComboBox(); self.size_by.addItems(["Market cap", "Dollar volume"])
         self.size_by.setToolTip("Tile area = market cap (classic) or today's traded dollar volume (faster, no cap lookup).")
-        self.group_chk = QCheckBox("Group by sector"); self.group_chk.setChecked(True)
-        self.group_chk.toggled.connect(self.render_heatmap)
+        self.group_by = QComboBox(); self.group_by.addItems(["Sector", "Industry", "Country", "None"])
+        self.group_by.setToolTip("Group tiles into blocks by Sector, Industry, or Country (Country suits the World map).")
+        self.group_by.currentTextChanged.connect(self.render_heatmap)
         self.max_tiles = QSpinBox(); self.max_tiles.setRange(10, 500); self.max_tiles.setValue(100)
         self.max_tiles.setToolTip("Cap the number of tiles (largest first) so the map stays fast and readable.")
         self.load_btn = QPushButton("Load map"); self.load_btn.clicked.connect(self.load)
@@ -2534,16 +2554,19 @@ class HeatmapPanel(QWidget):
         self.auto_chk.toggled.connect(self._on_auto_toggled)
         self.auto_secs.valueChanged.connect(self._on_auto_interval_changed)
         controls.addWidget(QLabel("Market")); controls.addWidget(self.market, 1)
+        controls.addWidget(QLabel("Theme")); controls.addWidget(self.theme_sel)
         controls.addWidget(QLabel("Period")); controls.addWidget(self.period_sel)
         controls.addWidget(QLabel("Size by")); controls.addWidget(self.size_by)
-        controls.addWidget(self.group_chk)
+        controls.addWidget(QLabel("Group")); controls.addWidget(self.group_by)
         controls.addWidget(QLabel("Max")); controls.addWidget(self.max_tiles)
         controls.addWidget(self.load_btn)
         controls.addWidget(self.auto_chk); controls.addWidget(self.auto_secs)
         layout.addLayout(controls)
-        # Changing the period re-fetches, but only once a map has been loaded
-        # (avoids a fetch during construction / before the first Load).
+        # Changing period/theme/market re-fetches, but only once a map has been
+        # loaded (avoids a fetch during construction / before the first Load).
         self.period_sel.currentTextChanged.connect(self._on_period_changed)
+        self.theme_sel.currentTextChanged.connect(self._on_theme_changed)
+        self.market.currentTextChanged.connect(self._on_market_changed)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._auto_refresh)
@@ -2572,6 +2595,9 @@ class HeatmapPanel(QWidget):
 
     # --- data -------------------------------------------------------------
     def _symbols_for_market(self):
+        theme = self.theme_sel.currentText()
+        if theme != self._NO_THEME:                 # a theme overrides the market
+            return list(hm.THEMES.get(theme, []))
         name = self.market.currentText()
         if name == "Watchlist":
             return list(self.db.watch_symbols())
@@ -2587,6 +2613,24 @@ class HeatmapPanel(QWidget):
     def _on_period_changed(self, _period):
         self.legend_title.setText(f"{self.period_sel.currentText()} change:")
         if self._tiles:   # already loaded once -> refresh with the new window
+            self.load()
+
+    def _on_theme_changed(self, _theme):
+        if self._tiles:
+            self.load()
+
+    def _on_market_changed(self, name):
+        # Picking a market clears any active theme so the market takes effect,
+        # and the World map defaults to grouping by Country (Finviz-style).
+        if self.theme_sel.currentText() != self._NO_THEME:
+            self.theme_sel.blockSignals(True)
+            self.theme_sel.setCurrentText(self._NO_THEME)
+            self.theme_sel.blockSignals(False)
+        if name.startswith("World"):
+            self.group_by.blockSignals(True)
+            self.group_by.setCurrentText("Country")
+            self.group_by.blockSignals(False)
+        if self._tiles:
             self.load()
 
     def load(self):
@@ -2658,8 +2702,8 @@ class HeatmapPanel(QWidget):
         scene.setSceneRect(0, 0, vw, vh)
         if not self._tiles:
             return
-        cells = hm.layout_heatmap(self._tiles, vw, vh, header=16.0,
-                                  group_by_sector=self.group_chk.isChecked())
+        group_attr = self._GROUP_ATTR.get(self.group_by.currentText(), "sector")
+        cells = hm.layout_heatmap(self._tiles, vw, vh, header=16.0, group_by=group_attr)
         border = QColor("#0b0e14")
         for cell in cells:
             if cell.is_header:
@@ -2679,8 +2723,9 @@ class HeatmapPanel(QWidget):
             rect.setPen(QPen(border))
             rect.setData(0, t.symbol)
             rect.setToolTip(
-                f"{t.symbol} — {t.name}\nSector: {t.sector}\n"
-                f"Price: {t.price:,.2f}\nChange: {t.change_pct:+.2f}%\nSize: {fmt_large(t.size)}")
+                f"{t.symbol} — {t.name}\nSector: {t.sector}\nIndustry: {t.industry}\n"
+                f"Country: {t.country}\nPrice: {t.price:,.2f}\n"
+                f"Change: {t.change_pct:+.2f}%\nSize: {fmt_large(t.size)}")
             scene.addItem(rect)
             if cell.w >= 34 and cell.h >= 22:
                 big = cell.w >= 56

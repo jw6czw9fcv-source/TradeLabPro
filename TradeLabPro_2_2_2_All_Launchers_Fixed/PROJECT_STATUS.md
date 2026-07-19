@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.16.0
+Current version: 2.17.0
 Current phase: Phase 10 - Market Heatmap (done)
+
+## Completed in 2.17.0 (Heatmap: Industry/Country grouping, Themes, World map)
+- Group-by is now Sector/Industry/Country/None (was a sector checkbox). `heatmap.group_tiles(tiles, key)` generalizes grouping; `layout_heatmap(..., group_by=<attr>|None)`; `HeatmapTile` gains `industry`/`country`; `get_quote_meta` returns `country`.
+- Theme dropdown maps curated `heatmap.THEMES` baskets (AI, Semis, EV, Cloud, Cybersecurity, Biotech, Renewables, Fintech, E-commerce, Defense, Gaming, Social) and overrides the Market while set. `theme_choices()`.
+- "World - Large caps" market (global ADRs) auto-groups by Country. Tooltips show industry + country.
+- pytest regression suite now 389 tests, all passing.
 
 ## Completed in 2.16.0 (Heatmap Portfolio + performance periods)
 - Heatmap: added "Portfolio" as a market source (maps `db.positions()` symbols) and a Finviz-style Period dropdown (1 Day/1 Week/1 Month/3 Month/6 Month/1 Year/3 Year/5 Year/10 Year/YTD; long look-backs use bounded ≤10y spans, never `max`, so the update stays ~0.5s). Core `heatmap.py` now has `HEATMAP_PERIODS`/`period_choices`/`_spec_for`/`_reference_close`/`_stats_from_df`; `default_quote_provider(symbols, period=..., progress=...)` and `_batch_prices(symbols, spec)` measure % change over the chosen window (N trading days back, or prior-year last close for YTD). `HeatmapWorker` takes a period; changing the period re-fetches once a map is loaded and relabels the legend.

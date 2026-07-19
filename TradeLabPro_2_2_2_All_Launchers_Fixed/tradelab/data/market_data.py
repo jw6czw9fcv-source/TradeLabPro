@@ -107,7 +107,8 @@ def get_quote_meta(symbol: str) -> dict:
     if cached is not None:
         return cached
 
-    meta = {"market_cap": 0.0, "sector": "Unknown", "industry": "Unknown", "name": symbol, "quote_type": ""}
+    meta = {"market_cap": 0.0, "sector": "Unknown", "industry": "Unknown",
+            "country": "Unknown", "name": symbol, "quote_type": ""}
     if yf is not None:
         try:
             info = yf.Ticker(symbol).info
@@ -120,6 +121,7 @@ def get_quote_meta(symbol: str) -> dict:
                 meta["market_cap"] = float(market_cap)
             meta["sector"] = info.get("sector") or info.get("category") or "Unknown"
             meta["industry"] = info.get("industry") or info.get("category") or "Unknown"
+            meta["country"] = info.get("country") or "Unknown"
             meta["name"] = _company_name_from_info(info, symbol)
             meta["quote_type"] = info.get("quoteType") or ""
         except Exception:

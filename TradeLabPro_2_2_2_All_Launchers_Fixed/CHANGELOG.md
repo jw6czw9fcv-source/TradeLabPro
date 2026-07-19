@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.17.0 - Heatmap: group by Industry/Country, Theme baskets, World map
+
+### Added
+- **Group by Sector / Industry / Country / None.** The old "Group by sector" checkbox is now a **Group** dropdown. `get_quote_meta` now also returns `country`, so tiles can block by industry or country.
+- **Theme dropdown (thematic baskets).** A **Theme** selector maps curated baskets — AI & Big Data, Semiconductors, EV & Battery, Cloud & SaaS, Cybersecurity, Biotech, Renewable Energy, Fintech & Payments, E-commerce & Internet, Defense & Aerospace, Gaming & Esports, Social Media. A theme overrides the Market while set; picking a Market clears it.
+- **World map (Finviz-style).** New **World – Large caps** market of major global companies (mostly US-listed ADRs), which auto-selects **Group by Country** — Taiwan, China, Japan, UK, Germany, India, Brazil, Canada, and more.
+- Tile tooltips now show Industry and Country too.
+
+### Verified
+- 389/389 pytest tests pass (new: industry/country grouping, theme baskets/choices, tiles carry industry+country, panel group-by options, theme override, World→Country default).
+
 ## 2.16.0 - Heatmap: Portfolio map + performance periods
 
 ### Added

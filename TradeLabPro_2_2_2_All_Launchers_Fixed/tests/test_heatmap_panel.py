@@ -25,6 +25,8 @@ def _fake_provider(symbols, period=None, progress=None):
             "market_cap": 1e12 / (i + 1),
             "dollar_volume": 1e9 / (i + 1),
             "sector": "Technology" if i % 2 == 0 else "Energy",
+            "industry": "Software" if i % 2 == 0 else "Oil & Gas",
+            "country": "United States" if i % 3 else "China",
             "name": f"Company {s}",
         }
     return quotes
@@ -86,14 +88,33 @@ def test_clicking_a_tile_charts_it(qapp):
     assert sym.upper() in panel.status.text().upper()
 
 
-def test_group_toggle_rerenders_without_error(qapp):
+def test_group_by_options_rerender_without_error(qapp):
     panel = _panel(qapp)
     _load_sync(panel)
-    panel.group_chk.setChecked(False)
-    panel.render_heatmap()
-    panel.group_chk.setChecked(True)
-    panel.render_heatmap()
-    assert len(panel.view.scene().items()) > 0
+    for choice in ["Sector", "Industry", "Country", "None"]:
+        panel.group_by.setCurrentText(choice)
+        panel.render_heatmap()
+        assert len(panel.view.scene().items()) > 0
+
+
+def test_theme_dropdown_overrides_market_symbols(qapp):
+    panel = _panel(qapp)
+    themes = [panel.theme_sel.itemText(i) for i in range(panel.theme_sel.count())]
+    assert "Semiconductors" in themes
+    panel.theme_sel.setCurrentText("Semiconductors")
+    syms = panel._symbols_for_market()
+    assert "NVDA" in syms and "AMD" in syms
+    # Selecting a market clears the theme again.
+    panel.market.setCurrentText("US - NASDAQ large caps")
+    assert panel.theme_sel.currentText() == panel._NO_THEME
+
+
+def test_world_market_defaults_group_to_country(qapp):
+    panel = _panel(qapp)
+    items = [panel.market.itemText(i) for i in range(panel.market.count())]
+    assert any(m.startswith("World") for m in items)
+    panel.market.setCurrentText("World - Large caps")
+    assert panel.group_by.currentText() == "Country"
 
 
 def test_watchlist_market_with_no_symbols_is_safe(qapp):

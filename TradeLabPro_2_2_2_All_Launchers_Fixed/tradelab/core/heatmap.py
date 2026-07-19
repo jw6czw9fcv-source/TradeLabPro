@@ -31,6 +31,8 @@ class HeatmapTile:
     size: float          # market cap or dollar volume - drives tile area
     change_pct: float    # day % change - drives tile colour
     price: float = 0.0
+    industry: str = "Unknown"
+    country: str = "Unknown"
 
 
 @dataclass
@@ -102,20 +104,66 @@ def build_tiles(quotes: dict, size_by: str = "market_cap") -> list[HeatmapTile]:
             size=size,
             change_pct=change,
             price=price,
+            industry=str(q.get("industry", "Unknown") or "Unknown"),
+            country=str(q.get("country", "Unknown") or "Unknown"),
         ))
     tiles.sort(key=lambda t: t.size, reverse=True)
     return tiles
 
 
-def group_tiles_by_sector(tiles: list[HeatmapTile]) -> list[tuple[str, list[HeatmapTile], float]]:
-    """[(sector, tiles_big_to_small, total_size), ...] ordered by total size
-    descending. Preserves the incoming big->small order within each sector."""
+# Thematic stock baskets (Finviz-style "themes"). Curated US-listed tickers so
+# yfinance data resolves; a stale ticker just doesn't render.
+THEMES = {
+    "AI & Big Data": ["NVDA", "MSFT", "GOOGL", "META", "AMD", "PLTR", "SNOW",
+                      "AI", "PATH", "CRM", "ORCL", "IBM"],
+    "Semiconductors": ["NVDA", "AMD", "INTC", "TSM", "AVGO", "QCOM", "MU", "TXN",
+                       "AMAT", "LRCX", "KLAC", "ASML", "ARM", "MRVL"],
+    "EV & Battery": ["TSLA", "RIVN", "LCID", "NIO", "LI", "XPEV", "F", "GM",
+                     "ALB", "CHPT", "QS"],
+    "Cloud & SaaS": ["CRM", "NOW", "SNOW", "DDOG", "NET", "MDB", "ZS", "TEAM",
+                     "WDAY", "ADBE", "SHOP", "HUBS"],
+    "Cybersecurity": ["CRWD", "PANW", "ZS", "FTNT", "S", "OKTA", "NET", "CYBR",
+                      "RPD", "TENB", "QLYS"],
+    "Biotech": ["AMGN", "GILD", "VRTX", "REGN", "MRNA", "BIIB", "ILMN", "BNTX",
+                "BMRN", "ALNY"],
+    "Renewable Energy": ["ENPH", "SEDG", "FSLR", "RUN", "NEE", "PLUG", "BE",
+                         "ARRY", "SHLS", "NOVA"],
+    "Fintech & Payments": ["V", "MA", "PYPL", "COIN", "SOFI", "AFRM", "FI",
+                           "GPN", "NU", "HOOD"],
+    "E-commerce & Internet": ["AMZN", "BABA", "MELI", "SHOP", "ETSY", "EBAY",
+                              "CHWY", "SE", "JD", "PDD"],
+    "Defense & Aerospace": ["LMT", "RTX", "NOC", "GD", "BA", "LHX", "HII",
+                            "TDG", "AXON", "LDOS"],
+    "Gaming & Esports": ["EA", "TTWO", "RBLX", "U", "NTES", "SONY", "NVDA"],
+    "Social Media": ["META", "PINS", "SNAP", "RDDT", "GOOGL", "MTCH", "BMBL"],
+}
+
+
+def theme_choices() -> list[str]:
+    return list(THEMES.keys())
+
+
+# Attributes tiles can be grouped by (a heatmap "block" per distinct value).
+GROUP_KEYS = ("sector", "industry", "country")
+
+
+def group_tiles(tiles: list[HeatmapTile], key: str = "sector") -> list[tuple[str, list[HeatmapTile], float]]:
+    """[(group_value, tiles_big_to_small, total_size), ...] ordered by total
+    size descending, grouping by the tile attribute `key` (sector / industry /
+    country). Preserves the incoming big->small order within each group."""
+    if key not in GROUP_KEYS:
+        key = "sector"
     groups: dict[str, list[HeatmapTile]] = {}
     for t in tiles:
-        groups.setdefault(t.sector, []).append(t)
-    out = [(sector, ts, sum(t.size for t in ts)) for sector, ts in groups.items()]
+        groups.setdefault(getattr(t, key, "Unknown") or "Unknown", []).append(t)
+    out = [(value, ts, sum(t.size for t in ts)) for value, ts in groups.items()]
     out.sort(key=lambda g: g[2], reverse=True)
     return out
+
+
+def group_tiles_by_sector(tiles: list[HeatmapTile]) -> list[tuple[str, list[HeatmapTile], float]]:
+    """Back-compat wrapper for group_tiles(tiles, 'sector')."""
+    return group_tiles(tiles, "sector")
 
 
 # --- squarified treemap -----------------------------------------------------
@@ -181,20 +229,21 @@ def squarify(sizes: list[float], x: float, y: float, dx: float, dy: float) -> li
 
 
 def layout_heatmap(tiles: list[HeatmapTile], width: float, height: float,
-                   header: float = 16.0, group_by_sector: bool = True) -> list[LayoutCell]:
-    """Lay tiles into a (width x height) rectangle. When grouped, sectors are
-    squarified into blocks; each block gets a small header band plus its
-    tiles squarified below. Returns drawing cells (headers + tiles)."""
+                   header: float = 16.0, group_by: Optional[str] = "sector") -> list[LayoutCell]:
+    """Lay tiles into a (width x height) rectangle. When grouped (group_by =
+    'sector' / 'industry' / 'country'), each group is squarified into a block
+    with a small header band plus its tiles squarified below. group_by=None
+    (or "") lays a single ungrouped treemap. Returns drawing cells."""
     cells: list[LayoutCell] = []
     if not tiles or width <= 0 or height <= 0:
         return cells
 
-    if not group_by_sector:
+    if not group_by:
         for t, (rx, ry, rw, rh) in zip(tiles, squarify([t.size for t in tiles], 0, 0, width, height)):
             cells.append(LayoutCell(t, t.sector, rx, ry, rw, rh))
         return cells
 
-    groups = group_tiles_by_sector(tiles)
+    groups = group_tiles(tiles, group_by)
     sector_rects = squarify([g[2] for g in groups], 0, 0, width, height)
     for (sector, stiles, _total), (sx, sy, sw, sh) in zip(groups, sector_rects):
         if sw <= 0 or sh <= 0:
@@ -334,6 +383,8 @@ def default_quote_provider(symbols: list[str], period: str = DEFAULT_PERIOD,
             "dollar_volume": dvol,
             "market_cap": float(meta.get("market_cap", 0.0) or 0.0),
             "sector": meta.get("sector", "Unknown") or "Unknown",
+            "industry": meta.get("industry", "Unknown") or "Unknown",
+            "country": meta.get("country", "Unknown") or "Unknown",
             "name": meta.get("name", sym) or sym,
         }
         if progress:

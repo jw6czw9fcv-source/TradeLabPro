@@ -6,8 +6,8 @@ import pandas as pd
 
 from tradelab.core.heatmap import (HeatmapTile, build_tiles, color_for_change,
                                     default_quote_provider, group_tiles_by_sector,
-                                    layout_heatmap, squarify, period_choices,
-                                    _spec_for, _stats_from_df)
+                                    group_tiles, layout_heatmap, squarify, period_choices,
+                                    theme_choices, THEMES, _spec_for, _stats_from_df)
 
 
 # --- colour -----------------------------------------------------------------
@@ -96,11 +96,37 @@ def test_group_tiles_by_sector_orders_by_total():
     assert [t.symbol for t in groups[0][1]] == ["MSFT", "AAPL"]
 
 
+def test_group_tiles_by_industry_and_country():
+    tiles = [
+        HeatmapTile("AAPL", "Apple", "Technology", 3e12, 1.0, industry="Hardware", country="United States"),
+        HeatmapTile("MSFT", "Microsoft", "Technology", 3e12, 1.0, industry="Software", country="United States"),
+        HeatmapTile("TSM", "TSMC", "Technology", 1e12, 1.0, industry="Semiconductors", country="Taiwan"),
+    ]
+    inds = {g[0] for g in group_tiles(tiles, "industry")}
+    assert inds == {"Hardware", "Software", "Semiconductors"}
+    countries = {g[0] for g in group_tiles(tiles, "country")}
+    assert countries == {"United States", "Taiwan"}
+
+
+def test_theme_choices_and_baskets():
+    choices = theme_choices()
+    assert "Semiconductors" in choices and "AI & Big Data" in choices
+    assert "NVDA" in THEMES["Semiconductors"]
+    assert all(isinstance(v, list) and v for v in THEMES.values())
+
+
+def test_build_tiles_carries_industry_and_country():
+    quotes = {"AAPL": {"price": 1, "change_pct": 0, "market_cap": 1e12,
+                       "sector": "Technology", "industry": "Hardware", "country": "United States"}}
+    t = build_tiles(quotes)[0]
+    assert t.industry == "Hardware" and t.country == "United States"
+
+
 # --- layout -----------------------------------------------------------------
 
 def test_layout_grouped_has_headers_and_tiles_within_bounds():
     tiles = build_tiles(_quotes(), size_by="market_cap")
-    cells = layout_heatmap(tiles, 400, 300, group_by_sector=True)
+    cells = layout_heatmap(tiles, 400, 300, group_by="sector")
     headers = [c for c in cells if c.is_header]
     tile_cells = [c for c in cells if not c.is_header]
     assert {c.sector for c in headers} == {"Technology", "Energy"}
@@ -113,7 +139,7 @@ def test_layout_grouped_has_headers_and_tiles_within_bounds():
 
 def test_layout_ungrouped_has_no_headers():
     tiles = build_tiles(_quotes(), size_by="market_cap")
-    cells = layout_heatmap(tiles, 400, 300, group_by_sector=False)
+    cells = layout_heatmap(tiles, 400, 300, group_by=None)
     assert all(not c.is_header for c in cells)
     assert len(cells) == len(tiles)
 
