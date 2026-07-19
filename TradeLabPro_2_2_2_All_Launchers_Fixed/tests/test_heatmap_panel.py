@@ -92,3 +92,32 @@ def test_watchlist_market_with_no_symbols_is_safe(qapp):
     # db.watch_symbols() may be empty in a fresh test DB; load must not raise.
     panel.load()
     assert panel._worker is None or True
+
+
+def test_auto_refresh_toggle_starts_and_stops_timer(qapp):
+    panel = _panel(qapp)
+    assert not panel._timer.isActive()
+    panel.auto_secs.setValue(30)
+    panel.auto_chk.setChecked(True)
+    assert panel._timer.isActive()
+    assert panel._timer.interval() == 30_000
+    panel.auto_chk.setChecked(False)
+    assert not panel._timer.isActive()
+    panel.shutdown()  # join the worker the immediate refresh started
+
+
+def test_auto_refresh_interval_change_updates_running_timer(qapp):
+    panel = _panel(qapp)
+    panel.auto_chk.setChecked(True)
+    panel.auto_secs.setValue(45)
+    assert panel._timer.interval() == 45_000
+    panel.auto_chk.setChecked(False)
+    panel.shutdown()
+
+
+def test_shutdown_stops_auto_refresh_timer(qapp):
+    panel = _panel(qapp)
+    panel.auto_chk.setChecked(True)
+    assert panel._timer.isActive()
+    panel.shutdown()
+    assert not panel._timer.isActive()

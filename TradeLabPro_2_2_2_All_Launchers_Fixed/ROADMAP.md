@@ -24,4 +24,4 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 - Risk & position-sizing panel (risk % + stop -> shares, sector exposure)
 - Chart replay / bar-by-bar practice mode
 - Data-source abstraction (Alpaca/Polygon/IBKR) to harden the yfinance dependency
-- Heatmap follow-ups: auto-refresh timer, index/ETF maps, click-through from Scanner results
+- Heatmap follow-ups: auto-refresh timer (DONE 2.14.2), index/ETF maps, click-through from Scanner results

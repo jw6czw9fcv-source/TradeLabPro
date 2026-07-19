@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.14.1
+Current version: 2.14.2
 Current phase: Phase 10 - Market Heatmap (done)
+
+## Completed in 2.14.2 (Heatmap auto-refresh)
+- Added an auto-refresh timer to the Heatmap tab: an "Auto-refresh every N s" checkbox + interval spin (15–3600s) drives a `QTimer` that re-runs `load()`. Toggling on refreshes immediately; interval changes apply live; a refresh that overruns is skipped (load() no-ops while a worker is in flight); timer stops in `shutdown()`. Status line shows last-update time + "auto-refresh on".
+- pytest regression suite now 363 tests, all passing.
 
 ## Completed in 2.14.1 (Window-fit layout fix)
 - Fixed the window bottom being clipped/unreachable on ~1080p screens. A `QTabWidget` adopts its tallest page as the tab stack's minimum height, so the Scanner tab (~1330px) forced the whole window taller than the screen. Each tab page is now wrapped in a widget-resizable `QScrollArea` (`_scroll_tab`), dropping the window minimum height from ~1360px to ~380px; tall tabs scroll internally instead of overflowing.

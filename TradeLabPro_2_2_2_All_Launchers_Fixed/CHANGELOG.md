@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.14.2 - Heatmap auto-refresh
+
+### Added
+- **Auto-refresh timer on the Heatmap.** Tick "Auto-refresh every N s" (15 s–1 h) and the map reloads on a timer so it tracks the market through the day. Toggling it on refreshes immediately; the status line shows the last update time and an "auto-refresh on" marker. A refresh that overruns its interval is skipped rather than stacked (the loader no-ops while a fetch is in flight). The timer stops cleanly on app close.
+
+### Verified
+- 363/363 pytest tests pass (new: timer starts/stops with the toggle, interval changes apply live, shutdown stops the timer).
+
 ## 2.14.1 - Window fits the screen (layout fix)
 
 ### Fixed

@@ -2513,12 +2513,21 @@ class HeatmapPanel(QWidget):
         self.max_tiles = QSpinBox(); self.max_tiles.setRange(10, 500); self.max_tiles.setValue(100)
         self.max_tiles.setToolTip("Cap the number of tiles (largest first) so the map stays fast and readable.")
         self.load_btn = QPushButton("Load map"); self.load_btn.clicked.connect(self.load)
+        self.auto_chk = QCheckBox("Auto-refresh every")
+        self.auto_chk.setToolTip("Reload the map on a timer so it tracks the market during the day.")
+        self.auto_secs = QSpinBox(); self.auto_secs.setRange(15, 3600); self.auto_secs.setValue(60); self.auto_secs.setSuffix(" s")
+        self.auto_chk.toggled.connect(self._on_auto_toggled)
+        self.auto_secs.valueChanged.connect(self._on_auto_interval_changed)
         controls.addWidget(QLabel("Market")); controls.addWidget(self.market, 1)
         controls.addWidget(QLabel("Size by")); controls.addWidget(self.size_by)
         controls.addWidget(self.group_chk)
         controls.addWidget(QLabel("Max")); controls.addWidget(self.max_tiles)
         controls.addWidget(self.load_btn)
+        controls.addWidget(self.auto_chk); controls.addWidget(self.auto_secs)
         layout.addLayout(controls)
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._auto_refresh)
 
         self.progress = QProgressBar(); self.progress.setVisible(False)
         layout.addWidget(self.progress)
@@ -2568,6 +2577,23 @@ class HeatmapPanel(QWidget):
     def _clear_worker(self):
         self._worker = None
 
+    # --- auto-refresh -----------------------------------------------------
+    def _on_auto_toggled(self, on):
+        if on:
+            self._timer.start(self.auto_secs.value() * 1000)
+            self.load()  # refresh immediately so the timer's effect is visible
+        else:
+            self._timer.stop()
+
+    def _on_auto_interval_changed(self, secs):
+        if self._timer.isActive():
+            self._timer.start(secs * 1000)
+
+    def _auto_refresh(self):
+        # load() no-ops if a fetch is still in flight, so a slow refresh never
+        # stacks up behind the next tick.
+        self.load()
+
     def _on_progress(self, i, total, sym):
         self.progress.setValue(i)
         self.status.setText(f"Loading {i}/{total}: {sym}")
@@ -2581,8 +2607,11 @@ class HeatmapPanel(QWidget):
             self.view.scene().clear()
             return
         gainers = sum(1 for t in tiles if t.change_pct > 0)
+        stamp = time.strftime("%H:%M:%S")
+        suffix = " · auto-refresh on" if self._timer.isActive() else ""
         self.status.setText(
-            f"{len(tiles)} stocks — {gainers} up / {len(tiles) - gainers} down. Click a tile to chart it.")
+            f"{len(tiles)} stocks — {gainers} up / {len(tiles) - gainers} down "
+            f"(updated {stamp}{suffix}). Click a tile to chart it.")
         self.render_heatmap()
 
     # --- drawing ----------------------------------------------------------
@@ -2640,6 +2669,10 @@ class HeatmapPanel(QWidget):
             self.status.setText(f"Could not chart {symbol}: {exc}")
 
     def shutdown(self):
+        try:
+            self._timer.stop()
+        except Exception:
+            pass
         if self._worker is not None and self._worker.isRunning():
             self._worker.wait(3000)
 
