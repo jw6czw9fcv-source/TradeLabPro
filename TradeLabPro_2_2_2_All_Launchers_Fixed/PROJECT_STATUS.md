@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.14.0
+Current version: 2.14.1
 Current phase: Phase 10 - Market Heatmap (done)
+
+## Completed in 2.14.1 (Window-fit layout fix)
+- Fixed the window bottom being clipped/unreachable on ~1080p screens. A `QTabWidget` adopts its tallest page as the tab stack's minimum height, so the Scanner tab (~1330px) forced the whole window taller than the screen. Each tab page is now wrapped in a widget-resizable `QScrollArea` (`_scroll_tab`), dropping the window minimum height from ~1360px to ~380px; tall tabs scroll internally instead of overflowing.
+- pytest regression suite now 360 tests, all passing.
 
 ## Completed in 2.14.0 (Market Heatmap, Phase 10)
 - `tradelab/core/heatmap.py`: Qt-free, offline-testable market-map engine. Iterative **squarified treemap** (`squarify`, no recursion limit) + `layout_heatmap` (sector blocks with header bands), a green→red `color_for_change` scale, `build_tiles`/`group_tiles_by_sector`, and an injectable `default_quote_provider` (one batched yfinance download for price/%-change/dollar-volume + cached `get_quote_meta` for cap/sector; falls back to synthetic history offline).

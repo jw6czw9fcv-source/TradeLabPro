@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QListWidget, QLineEdit, QMessageBox, QSplitter, QFormLayout, QGroupBox, QCheckBox,
     QAbstractItemView, QTextEdit, QFileDialog, QProgressBar, QScrollArea, QHeaderView,
     QMenu, QToolButton, QSizePolicy, QDialog, QTextBrowser, QSystemTrayIcon, QStyle,
-    QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem
+    QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem, QFrame
 )
 
 from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR, ROOT_DIR
@@ -1753,6 +1753,25 @@ def _hint(text):
     return lbl
 
 
+def _scroll_tab(widget):
+    """Wrap a tab page in a widget-resizable scroll area so it can shrink.
+
+    A QStackedWidget (what QTabWidget uses) adopts its TALLEST page as the
+    whole stack's minimum height. Without this, one tall tab - the Scanner
+    needs ~1330px for its parameters + results table - forces the entire
+    window taller than a 1080p screen, so the bottom of every tab (and the
+    charts) gets clipped and can't be reached. A scroll area lets each page
+    still fill a tall pane, but scroll internally instead of overflowing a
+    short one, so the window can always fit on screen.
+    """
+    sa = QScrollArea()
+    sa.setWidgetResizable(True)
+    sa.setFrameShape(QFrame.NoFrame)
+    sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    sa.setWidget(widget)
+    return sa
+
+
 class BacktestPanel(QWidget):
     """Backtesting Lab (Phase 4): single-symbol, multi-symbol, parameter
     optimization, and walk-forward - all strategy-agnostic via the engine
@@ -2965,22 +2984,25 @@ class MainWindow(QMainWindow):
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
         self.portfolio_panel = PortfolioPanel(self.db)
         self.scanner_panel = ScannerPanel(self.db, self.chart, self.watch_panel.refresh, self.portfolio_panel.refresh)
-        tabs.addTab(self.scanner_panel, "Scanner")
-        tabs.addTab(self.watch_panel, "Watchlists")
-        tabs.addTab(self.portfolio_panel, "Portfolio")
+        # Each tab page is wrapped in a scroll area (see _scroll_tab) so no
+        # single tall tab can force the whole window past the screen height
+        # and clip the bottom.
+        tabs.addTab(_scroll_tab(self.scanner_panel), "Scanner")
+        tabs.addTab(_scroll_tab(self.watch_panel), "Watchlists")
+        tabs.addTab(_scroll_tab(self.portfolio_panel), "Portfolio")
         self.alerts_panel = AlertsPanel(symbol_provider=self.db.watch_symbols)
-        tabs.addTab(self.alerts_panel, "Alerts")
+        tabs.addTab(_scroll_tab(self.alerts_panel), "Alerts")
         self.heatmap_panel = HeatmapPanel(self.db, self.chart, self.cfg)
-        tabs.addTab(self.heatmap_panel, "Heatmap")
-        tabs.addTab(MarketPanel(), "Market")
+        tabs.addTab(_scroll_tab(self.heatmap_panel), "Heatmap")
+        tabs.addTab(_scroll_tab(MarketPanel()), "Market")
         self.backtest_panel = BacktestPanel(self.chart, self.cfg)
-        tabs.addTab(self.backtest_panel, "Backtest")
+        tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")
         # When a custom strategy is saved/deleted in the builder, refresh the
         # Scanner and Backtest strategy dropdowns so it appears immediately.
-        tabs.addTab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed), "Strategies")
-        tabs.addTab(PluginPanel(on_plugins_changed=self._on_plugins_changed), "Plugins")
-        tabs.addTab(PaperTradingPanel(), "Paper Trading")
-        tabs.addTab(AIAssistantPanel(), "AI Assist")
+        tabs.addTab(_scroll_tab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed)), "Strategies")
+        tabs.addTab(_scroll_tab(PluginPanel(on_plugins_changed=self._on_plugins_changed)), "Plugins")
+        tabs.addTab(_scroll_tab(PaperTradingPanel()), "Paper Trading")
+        tabs.addTab(_scroll_tab(AIAssistantPanel()), "AI Assist")
         settings_text = QTextEdit(); settings_text.setReadOnly(True)
         settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")
         tabs.addTab(settings_text, "Settings")

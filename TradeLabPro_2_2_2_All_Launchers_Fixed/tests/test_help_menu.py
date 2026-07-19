@@ -184,6 +184,25 @@ def test_manual_screenshots_follow_ctrl_wheel_zoom(qapp):
     assert zoomed > base * 1.1
 
 
+def test_window_min_height_fits_a_normal_screen(qapp):
+    # Regression: a QTabWidget adopts its tallest page as the whole stack's
+    # minimum height, so the tall Scanner tab used to force the window past a
+    # 1080p screen and clip the bottom. Each tab page is now wrapped in a
+    # scroll area, so the window minimum must stay well under a typical screen.
+    win = _main_window(qapp)
+    assert win.centralWidget().minimumSizeHint().height() < 700
+    assert win.minimumSizeHint().height() < 720
+
+
+def test_tab_panels_are_still_accessible_after_scroll_wrap(qapp):
+    # Wrapping tab pages in scroll areas must not break the panel attributes
+    # the rest of the app (and tests) rely on.
+    win = _main_window(qapp)
+    assert win.scanner_panel.__class__.__name__ == "ScannerPanel"
+    assert win.heatmap_panel.__class__.__name__ == "HeatmapPanel"
+    assert win.alerts_panel.__class__.__name__ == "AlertsPanel"
+
+
 def test_version_action_shows_about_with_version(qapp, monkeypatch):
     from tradelab.ui import app as appmod
     from tradelab.core.config import APP_VERSION

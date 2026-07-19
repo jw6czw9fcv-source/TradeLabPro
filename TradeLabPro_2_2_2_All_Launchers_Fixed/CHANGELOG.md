@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.14.1 - Window fits the screen (layout fix)
+
+### Fixed
+- **The bottom of the window could be cut off / unreachable** (reported when clicking a stock in the Heatmap). Root cause: a `QTabWidget` adopts its **tallest** page as the whole tab stack's minimum height, so the tall **Scanner** tab (~1330px, its parameters + results table) forced the entire window taller than a 1080p screen — clipping the bottom of every tab and the charts. Each tab page is now wrapped in a **scroll area**, so a page still fills a tall pane but scrolls internally instead of overflowing a short one. The window's minimum height dropped from ~1360px to ~380px, so it fits any screen.
+
+### Verified
+- 360/360 pytest tests pass (new: window minimum height stays under a normal screen; tab panels remain accessible after the scroll-area wrap).
+
 ## 2.14.0 - Market Heatmap
 
 ### Added
