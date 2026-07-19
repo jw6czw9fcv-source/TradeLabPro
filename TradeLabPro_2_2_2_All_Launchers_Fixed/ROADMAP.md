@@ -19,8 +19,9 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 - Phase 9: Alerts Engine (condition-based price/indicator alerts + desktop notifications) — DONE 2.13.0
 - Phase 10: Market Heatmap (Finviz-style sector treemap for US & Canada) — DONE 2.14.0
 
+- Phase 11: Trade Journal (tag/note trades, win-rate/R-multiple/expectancy review, import paper fills) — DONE 2.18.0
+
 ## Candidate next
-- Trade journal on top of paper trading (tag/note fills, win-rate & R-multiple review)
 - Risk & position-sizing panel (risk % + stop -> shares, sector exposure)
 - Chart replay / bar-by-bar practice mode
 - Data-source abstraction (Alpaca/Polygon/IBKR) to harden the yfinance dependency

@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
     QListWidget, QLineEdit, QMessageBox, QSplitter, QFormLayout, QGroupBox, QCheckBox,
     QAbstractItemView, QTextEdit, QFileDialog, QProgressBar, QScrollArea, QHeaderView,
     QMenu, QToolButton, QSizePolicy, QDialog, QTextBrowser, QSystemTrayIcon, QStyle,
-    QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem, QFrame
+    QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem, QFrame,
+    QInputDialog
 )
 
 from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR, ROOT_DIR
@@ -22,6 +23,7 @@ from tradelab.data.market_data import get_history
 from tradelab.core.scanner import scan_symbols
 from tradelab.core.alerts import Alert, AlertStore
 from tradelab.core.filters import FilterCondition
+from tradelab.core.journal import Journal, JournalEntry, summarize, group_stats
 from tradelab.core import heatmap as hm
 from tradelab.data.universe import US_NASDAQ, US_NYSE, US_AMEX, CAN_TSX, CAN_TSX_EXPANDED
 from tradelab.strategies import strategy_choices
@@ -3015,6 +3017,363 @@ class AlertsPanel(QWidget):
             self._tray.hide()
 
 
+class IbkrFlexWorker(QThread):
+    """Fetches an IBKR Flex Query report off the UI thread and returns the
+    parsed fills. Read-only network call; no orders, no funds."""
+    done = Signal(object, str)   # fills, error_message
+
+    def __init__(self, token, query_id):
+        super().__init__()
+        self.token = token
+        self.query_id = query_id
+
+    def run(self):
+        try:
+            from tradelab.core.journal import (fetch_ibkr_flex, parse_ibkr_flex_xml,
+                                               parse_ibkr_trades_csv)
+            text = fetch_ibkr_flex(self.token, self.query_id)
+            fills = parse_ibkr_flex_xml(text) or parse_ibkr_trades_csv(text)
+            error = "" if fills else "No trades found in the Flex report."
+        except BaseException as exc:
+            fills, error = [], str(exc)
+        try:
+            self.done.emit(fills, error)
+        except RuntimeError:
+            pass
+
+
+class JournalPanel(QWidget):
+    """Trade journal: log trades with a stop/strategy/tags, then review what
+    works - win rate, average R-multiple, expectancy, and P&L by strategy or
+    tag. Round-trips can be imported from the paper-trading account. Analysis
+    and practice only; nothing here places orders."""
+
+    _COLS = ["Symbol", "Side", "Qty", "Entry", "Stop", "Exit", "P&L", "P&L %",
+             "R", "Status", "Strategy", "Tags"]
+
+    def __init__(self, chart: ChartWidget, cfg: ScannerConfig):
+        super().__init__()
+        self.chart = chart
+        self.cfg = cfg
+        self.journal = Journal()
+        self._flex_worker = None
+        layout = QVBoxLayout(self)
+        layout.addWidget(_hint(
+            "Log your trades, tag them, and review what works: win rate, average "
+            "R-multiple, expectancy, and P&L by strategy/tag. Set a Stop to get "
+            "R-multiples. Import round-trips from Paper Trading. Practice tool only."))
+
+        # --- log-a-trade form ---------------------------------------------
+        form = QGroupBox("Log a trade")
+        fl = QHBoxLayout(form)
+        self.f_symbol = QLineEdit(); self.f_symbol.setPlaceholderText("Symbol"); self.f_symbol.setMaximumWidth(90)
+        self.f_side = QComboBox(); self.f_side.addItems(["Long", "Short"])
+        self.f_qty = QDoubleSpinBox(); self.f_qty.setRange(0, 1e9); self.f_qty.setValue(100); self.f_qty.setMaximumWidth(90)
+        self.f_entry = QDoubleSpinBox(); self.f_entry.setRange(0, 1e9); self.f_entry.setDecimals(2); self.f_entry.setPrefix("$"); self.f_entry.setMaximumWidth(110)
+        self.f_stop = QDoubleSpinBox(); self.f_stop.setRange(0, 1e9); self.f_stop.setDecimals(2); self.f_stop.setPrefix("$"); self.f_stop.setSpecialValueText("— none"); self.f_stop.setMaximumWidth(110)
+        self.f_stop.setToolTip("Protective stop (0 = none). Needed for R-multiples.")
+        self.f_strategy = QLineEdit(); self.f_strategy.setPlaceholderText("Strategy"); self.f_strategy.setMaximumWidth(120)
+        self.f_tags = QLineEdit(); self.f_tags.setPlaceholderText("tags, comma-separated"); self.f_tags.setMaximumWidth(150)
+        add_btn = QPushButton("Add"); add_btn.clicked.connect(self.add_trade)
+        for label, w in [("Symbol", self.f_symbol), ("Side", self.f_side), ("Qty", self.f_qty),
+                         ("Entry", self.f_entry), ("Stop", self.f_stop),
+                         ("Strategy", self.f_strategy), ("Tags", self.f_tags)]:
+            fl.addWidget(QLabel(label)); fl.addWidget(w)
+        fl.addWidget(add_btn)
+        fl.addStretch()
+        layout.addWidget(form)
+
+        # --- stats summary ------------------------------------------------
+        self.stats_label = QLabel("No trades yet."); self.stats_label.setWordWrap(True)
+        self.stats_label.setStyleSheet("font-weight:bold;")
+        layout.addWidget(self.stats_label)
+
+        # --- trades table -------------------------------------------------
+        self.table = QTableWidget(0, len(self._COLS))
+        self.table.setHorizontalHeaderLabels(self._COLS)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.cellDoubleClicked.connect(self._chart_row)
+        layout.addWidget(self.table, 1)
+
+        controls = QHBoxLayout()
+        close_btn = QPushButton("Close selected…"); close_btn.clicked.connect(self.close_selected)
+        edit_note_btn = QPushButton("Edit note…"); edit_note_btn.clicked.connect(self.edit_note)
+        del_btn = QPushButton("Delete"); del_btn.clicked.connect(self.delete_selected)
+        import_btn = QPushButton("Import from Paper Trading"); import_btn.clicked.connect(self.import_paper)
+        ibkr_btn = QPushButton("Import from IBKR (CSV)…"); ibkr_btn.clicked.connect(self.import_ibkr)
+        ibkr_btn.setToolTip("Import an IBKR trades CSV — a Flex Query 'Trades' export or an Activity Statement.")
+        flex_btn = QPushButton("Import from IBKR (Flex)…"); flex_btn.clicked.connect(self.import_ibkr_flex)
+        flex_btn.setToolTip("Fetch your Flex Query report directly over IBKR's Flex Web Service (read-only).")
+        export_btn = QPushButton("Export CSV"); export_btn.clicked.connect(self.export_csv)
+        controls.addWidget(close_btn); controls.addWidget(edit_note_btn); controls.addWidget(del_btn)
+        controls.addStretch()
+        controls.addWidget(import_btn); controls.addWidget(ibkr_btn); controls.addWidget(flex_btn); controls.addWidget(export_btn)
+        layout.addLayout(controls)
+
+        # --- breakdown ----------------------------------------------------
+        bd = QHBoxLayout()
+        bd.addWidget(QLabel("Breakdown by"))
+        self.group_by = QComboBox(); self.group_by.addItems(["Strategy", "Tag", "Symbol"])
+        self.group_by.currentTextChanged.connect(self._refresh_breakdown)
+        bd.addWidget(self.group_by); bd.addStretch()
+        layout.addLayout(bd)
+        self.breakdown = QTableWidget(0, 5)
+        self.breakdown.setHorizontalHeaderLabels(["Group", "Trades", "Win %", "Total P&L", "Avg R"])
+        self.breakdown.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.breakdown.setMaximumHeight(180)
+        layout.addWidget(self.breakdown)
+
+        self.status = QLabel("")
+        layout.addWidget(self.status)
+        self.refresh()
+
+    # --- helpers ----------------------------------------------------------
+    def _selected_ids(self):
+        ids = []
+        for idx in self.table.selectionModel().selectedRows():
+            item = self.table.item(idx.row(), 0)
+            if item:
+                ids.append(item.data(Qt.UserRole))
+        return ids
+
+    def _chart_row(self, row, _col):
+        item = self.table.item(row, 0)
+        if not item:
+            return
+        entry = self.journal.get(item.data(Qt.UserRole))
+        if entry:
+            try:
+                self.chart.plot(entry.symbol, get_history(entry.symbol, self.cfg.period, self.cfg.interval), self.cfg)
+            except Exception as exc:
+                self.status.setText(f"Could not chart {entry.symbol}: {exc}")
+
+    # --- actions ----------------------------------------------------------
+    def add_trade(self):
+        symbol = self.f_symbol.text().strip().upper()
+        if not symbol:
+            self.status.setText("Enter a symbol first.")
+            return
+        stop = self.f_stop.value() or None
+        entry = JournalEntry(
+            symbol=symbol, side=self.f_side.currentText(), qty=self.f_qty.value(),
+            entry_price=self.f_entry.value(), stop=stop,
+            strategy=self.f_strategy.text().strip(),
+            tags=self.f_tags.text().strip())
+        self.journal.add(entry)
+        self.f_symbol.clear(); self.f_tags.clear()
+        self.status.setText(f"Logged {entry.side} {entry.symbol}.")
+        self.refresh()
+
+    def close_selected(self):
+        ids = self._selected_ids()
+        open_ids = [i for i in ids if self.journal.get(i) and self.journal.get(i).is_open]
+        if not open_ids:
+            self.status.setText("Select an open trade to close.")
+            return
+        price, ok = QInputDialog.getDouble(self, "Close trade", "Exit price:", 0.0, 0.0, 1e9, 2)
+        if not ok:
+            return
+        for i in open_ids:
+            self.journal.close_trade(i, price)
+        self.status.setText(f"Closed {len(open_ids)} trade(s) @ {price:g}.")
+        self.refresh()
+
+    def edit_note(self):
+        ids = self._selected_ids()
+        if not ids:
+            self.status.setText("Select a trade to annotate.")
+            return
+        entry = self.journal.get(ids[0])
+        text, ok = QInputDialog.getMultiLineText(self, "Edit note", f"Note for {entry.symbol}:", entry.notes)
+        if ok:
+            entry.notes = text
+            self.journal.save()
+            self.status.setText("Note saved.")
+
+    def delete_selected(self):
+        for i in self._selected_ids():
+            self.journal.remove(i)
+        self.refresh()
+
+    def import_paper(self):
+        path = DATA_DIR / "paper_account.json"
+        if not path.exists():
+            self.status.setText("No paper-trading account found yet — place some paper trades first.")
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            added = self.journal.import_fills(data.get("orders", []))
+        except Exception as exc:
+            self.status.setText(f"Import failed: {exc}")
+            return
+        self.status.setText(f"Imported {added} new trade(s) from Paper Trading."
+                            if added else "No new trades to import.")
+        self.refresh()
+
+    def import_ibkr(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import IBKR trades CSV", "", "CSV files (*.csv);;All files (*)")
+        if not path:
+            return
+        try:
+            added = self.journal.import_ibkr_csv(path)
+        except Exception as exc:
+            self.status.setText(f"IBKR import failed: {exc}")
+            return
+        if added:
+            self.status.setText(f"Imported {added} new trade(s) from IBKR.")
+        else:
+            self.status.setText("No new trades found in that IBKR CSV "
+                                "(already imported, or not a recognized Flex/Activity export).")
+        self.refresh()
+
+    def import_ibkr_flex(self):
+        """Direct pull via IBKR's Flex Web Service. The user supplies their own
+        read-only Flex token + query id (stored locally, token masked). The
+        fetch runs off the UI thread. Read-only: no login, no orders, no funds."""
+        if self._flex_worker is not None and self._flex_worker.isRunning():
+            self.status.setText("An IBKR Flex fetch is already running…")
+            return
+        settings = QSettings("TradeLabPro", "TradeLabPro")
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Import from IBKR — Flex Web Service")
+        form = QFormLayout(dlg)
+        info = QLabel(
+            "Fetches your Flex Query report directly (read-only — no login, no orders).\n"
+            "In IBKR Client Portal: Performance & Reports → Flex Queries → create a "
+            "Trades query, then enable the Flex Web Service to get a token.")
+        info.setWordWrap(True)
+        form.addRow(info)
+        token_edit = QLineEdit(str(settings.value("ibkr/flex_token", "") or ""))
+        token_edit.setEchoMode(QLineEdit.Password)
+        token_edit.setPlaceholderText("Flex Web Service token")
+        query_edit = QLineEdit(str(settings.value("ibkr/flex_query", "") or ""))
+        query_edit.setPlaceholderText("Flex Query ID")
+        form.addRow("Flex token", token_edit)
+        form.addRow("Query id", query_edit)
+        buttons = QHBoxLayout()
+        ok_btn = QPushButton("Fetch && import"); cancel_btn = QPushButton("Cancel")
+        ok_btn.clicked.connect(dlg.accept); cancel_btn.clicked.connect(dlg.reject)
+        buttons.addStretch(); buttons.addWidget(cancel_btn); buttons.addWidget(ok_btn)
+        form.addRow(buttons)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        token, query = token_edit.text().strip(), query_edit.text().strip()
+        if not token or not query:
+            self.status.setText("Flex token and query id are both required.")
+            return
+        settings.setValue("ibkr/flex_token", token)
+        settings.setValue("ibkr/flex_query", query)
+        self.status.setText("Fetching your Flex report from IBKR…")
+        self._flex_worker = IbkrFlexWorker(token, query)
+        self._flex_worker.done.connect(self._on_flex_done)
+        self._flex_worker.start()
+
+    def _on_flex_done(self, fills, error):
+        if error and not fills:
+            self.status.setText(f"IBKR Flex import failed: {error}")
+            return
+        added = self.journal.import_fills(fills)
+        self.status.setText(f"Imported {added} new trade(s) from IBKR Flex."
+                            if added else "No new trades to import from IBKR Flex.")
+        self.refresh()
+
+    def shutdown(self):
+        if self._flex_worker is not None and self._flex_worker.isRunning():
+            self._flex_worker.wait(3000)
+
+    def export_csv(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Export journal", "trade_journal.csv", "CSV files (*.csv)")
+        if not path:
+            return
+        rows = []
+        for e in self.journal.all():
+            rows.append({
+                "Symbol": e.symbol, "Side": e.side, "Qty": e.qty, "Entry": e.entry_price,
+                "Stop": e.stop, "Exit": e.exit_price, "PnL": e.pnl, "PnL%": e.pnl_pct,
+                "R": e.r_multiple, "EntryDate": e.entry_date, "ExitDate": e.exit_date,
+                "Strategy": e.strategy, "Tags": ",".join(e.tags), "Notes": e.notes,
+            })
+        pd.DataFrame(rows).to_csv(path, index=False)
+        self.status.setText(f"Exported {len(rows)} trades.")
+
+    # --- rendering --------------------------------------------------------
+    @staticmethod
+    def _num(value, money=False, pct=False, suffix=""):
+        item = SortableTableWidgetItem("", sort_value=(value if value is not None else -1e18))
+        if value is None:
+            item.setText("—")
+            return item
+        if money:
+            item.setText(f"{value:,.2f}")
+        elif pct:
+            item.setText(f"{value:+.2f}%")
+        else:
+            item.setText(f"{value:g}{suffix}")
+        if money or pct:
+            item.setForeground(QColor("#3fb950") if value > 0 else QColor("#f0553a") if value < 0 else QColor("#8b98a5"))
+        return item
+
+    def refresh(self):
+        entries = self.journal.all()
+        self.table.setRowCount(len(entries))
+        for r, e in enumerate(entries):
+            cells = [
+                QTableWidgetItem(e.symbol),
+                QTableWidgetItem(e.side),
+                self._num(e.qty),
+                self._num(e.entry_price, money=True),
+                self._num(e.stop, money=True),
+                self._num(e.exit_price, money=True),
+                self._num(e.pnl, money=True),
+                self._num(e.pnl_pct, pct=True),
+                self._num(e.r_multiple, suffix="R"),
+                QTableWidgetItem("Open" if e.is_open else "Closed"),
+                QTableWidgetItem(e.strategy),
+                QTableWidgetItem(", ".join(e.tags)),
+            ]
+            cells[0].setData(Qt.UserRole, e.id)
+            for c, item in enumerate(cells):
+                self.table.setItem(r, c, item)
+        self.table.resizeColumnsToContents()
+        self._refresh_stats(entries)
+        self._refresh_breakdown()
+
+    def _refresh_stats(self, entries):
+        s = summarize(entries)
+        if s["closed"] == 0:
+            self.stats_label.setText(f"{s['open']} open trade(s), none closed yet — close trades to see stats.")
+            return
+        pf = s["profit_factor"]
+        pf_txt = "∞" if pf == float("inf") else f"{pf:.2f}"
+        avg_r = "—" if s["avg_r"] is None else f"{s['avg_r']:+.2f}R"
+        self.stats_label.setText(
+            f"Closed {s['closed']}  ·  Win rate {s['win_rate']:.0f}%  "
+            f"({s['wins']}W / {s['losses']}L)  ·  Expectancy ${s['expectancy']:,.2f}/trade  ·  "
+            f"Profit factor {pf_txt}  ·  Avg {avg_r}  ·  Total P&L ${s['total_pnl']:,.2f}  ·  "
+            f"{s['open']} open")
+
+    def _refresh_breakdown(self):
+        key = {"Strategy": "strategy", "Tag": "tag", "Symbol": "symbol"}[self.group_by.currentText()]
+        groups = group_stats(self.journal.all(), key)
+        self.breakdown.setRowCount(len(groups))
+        for r, (label, s) in enumerate(groups):
+            pnl_item = SortableTableWidgetItem(f"{s['total_pnl']:,.2f}", sort_value=s["total_pnl"])
+            pnl_item.setForeground(QColor("#3fb950") if s["total_pnl"] > 0 else QColor("#f0553a") if s["total_pnl"] < 0 else QColor("#8b98a5"))
+            avg_r = "—" if s["avg_r"] is None else f"{s['avg_r']:+.2f}"
+            for c, item in enumerate([
+                QTableWidgetItem(label or "—"),
+                QTableWidgetItem(str(s["closed"])),
+                QTableWidgetItem(f"{s['win_rate']:.0f}%"),
+                pnl_item,
+                QTableWidgetItem(avg_r),
+            ]):
+                self.breakdown.setItem(r, c, item)
+        self.breakdown.resizeColumnsToContents()
+
+
 class ManualBrowser(QTextBrowser):
     """User-manual viewer whose embedded screenshots scale with the window
     AND with Ctrl+wheel zoom, so images 'follow' both when you resize/maximize
@@ -3115,6 +3474,8 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed)), "Strategies")
         tabs.addTab(_scroll_tab(PluginPanel(on_plugins_changed=self._on_plugins_changed)), "Plugins")
         tabs.addTab(_scroll_tab(PaperTradingPanel()), "Paper Trading")
+        self.journal_panel = JournalPanel(self.chart, self.cfg)
+        tabs.addTab(_scroll_tab(self.journal_panel), "Journal")
         tabs.addTab(_scroll_tab(AIAssistantPanel()), "AI Assist")
         settings_text = QTextEdit(); settings_text.setReadOnly(True)
         settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")
@@ -3284,6 +3645,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.heatmap_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.journal_panel.shutdown()
         except Exception:
             pass
         super().closeEvent(event)

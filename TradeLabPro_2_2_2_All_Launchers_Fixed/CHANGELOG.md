@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.18.0 - Trade Journal (Phase 11)
+
+### Added
+- **New "Journal" tab.** Log trades (symbol, side, qty, entry, optional **stop**, strategy, tags, notes) and review what actually works:
+  - Per-trade **P&L, P&L %, R-multiple** (vs. your stop), and status.
+  - Aggregate stats: **win rate, W/L, expectancy per trade, profit factor, average R, total P&L**.
+  - **Breakdown by Strategy / Tag / Symbol** — see which setups make money.
+- **Import from Paper Trading** — pairs your paper account's fills into position-level round-trip trades (size-weighted entry/exit), idempotently (no duplicates on re-import).
+- **Import from IBKR (CSV)** — load a real Interactive Brokers trades export (both the **Flex Query** trades format and the **Activity Statement** format), auto-detecting columns and asset class (stocks only); fills are paired into round-trips and de-duplicated like paper imports. Read-only import of your own history — no brokerage connection, no orders.
+- **Import from IBKR (Flex Web Service)** — a direct pull: paste your read-only **Flex token + Query ID** (stored locally, token masked) and the app fetches the report over HTTPS (two-step SendRequest/GetStatement with automatic retry while the statement generates), off the UI thread. Parses the Flex XML report (falls back to CSV) and imports it. Still read-only — no login, no order routing, no funds.
+- **Close** open trades (enter an exit price), **edit notes**, **export to CSV**, and double-click a row to chart the symbol.
+- Journal persists to `data/journal.json` (gitignored). Analysis/practice only — nothing here places orders.
+
+### Verified
+- 426/426 pytest tests pass (new: `tests/test_journal.py` — P&L/R/expectancy/profit-factor math, strategy/tag breakdowns, FIFO position-level fill pairing incl. scale-outs/shorts/opens, IBKR Flex/Activity CSV parsing, Flex Web Service two-step fetch with retry + error handling and XML report parsing, store persistence; `tests/test_journal_panel.py` — headless UI incl. paper, IBKR CSV, and Flex import paths).
+
 ## 2.17.0 - Heatmap: group by Industry/Country, Theme baskets, World map
 
 ### Added

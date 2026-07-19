@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "TradeLab Pro"
-APP_VERSION = '2.17.0 Heatmap Themes + World'
+APP_VERSION = '2.18.0 Trade Journal'
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "tradelab.db"

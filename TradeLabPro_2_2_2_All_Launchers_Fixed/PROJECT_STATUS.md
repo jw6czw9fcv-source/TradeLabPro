@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.17.0
-Current phase: Phase 10 - Market Heatmap (done)
+Current version: 2.18.0
+Current phase: Phase 11 - Trade Journal (done)
+
+## Completed in 2.18.0 (Trade Journal, Phase 11)
+- `tradelab/core/journal.py` (Qt-free): `JournalEntry` (side/qty/entry/stop/exit/strategy/tags/notes) with derived P&L, P&L%, R-multiple (vs stop), holding days; `summarize()` (win rate, expectancy, profit factor, avg R, totals) and `group_stats(key)` by strategy/tag/symbol; `extract_trades_from_fills()` pairs fills into position-level round-trips; `parse_ibkr_trades_csv()` reads IBKR Flex-Query/Activity CSVs; `fetch_ibkr_flex(token, query_id, transport=)` runs the Flex Web Service two-step SendRequest/GetStatement (retry while generating) and `parse_ibkr_flex_xml()` parses the report; `Journal` store → `data/journal.json` (gitignored) with idempotent `import_fills()`/`import_ibkr_csv()`/`import_ibkr_flex()`.
+- New "Journal" tab: log-a-trade form, trades table (P&L/R coloured), Close/Edit note/Delete, Import from Paper Trading, **Import from IBKR (CSV)** and **Import from IBKR (Flex Web Service)** (both read-only; Flex fetch runs in `IbkrFlexWorker` QThread, token+query id stored masked in QSettings under `ibkr/*`), Export CSV, double-click to chart, live stats + Strategy/Tag/Symbol breakdown.
+- pytest regression suite now 426 tests, all passing (network-free).
 
 ## Completed in 2.17.0 (Heatmap: Industry/Country grouping, Themes, World map)
 - Group-by is now Sector/Industry/Country/None (was a sector checkbox). `heatmap.group_tiles(tiles, key)` generalizes grouping; `layout_heatmap(..., group_by=<attr>|None)`; `HeatmapTile` gains `industry`/`country`; `get_quote_meta` returns `country`.
