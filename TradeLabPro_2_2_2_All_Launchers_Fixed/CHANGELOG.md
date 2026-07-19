@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.14.0 - Market Heatmap
+
+### Added
+- **New "Heatmap" tab** — a Finviz-style market map. Each stock is a tile **sized by market cap** (or dollar volume) and **coloured green→red by the day's % change**, grouped into **sector blocks** via a squarified treemap. See a whole market's health at a glance.
+- **US and Canadian presets** built in: US Mega/Large caps (NASDAQ+NYSE), NASDAQ-only, NYSE-only, Canada TSX large caps, Canada TSX (expanded), plus your **Watchlist**.
+- **Click any tile to open its chart.** Hover for a tooltip (name, sector, price, % change, size). Toggle sector grouping, choose the sizing metric, and cap the tile count for speed/readability.
+- Loads off the UI thread with a progress bar; prices come from a single batched download and cap/sector from cached metadata, so it stays responsive and still renders offline.
+
+### Verified
+- 358/358 pytest tests pass (new: `tests/test_heatmap.py` — squarified-treemap layout tiles the area proportionally & in-bounds, colour scale, tile/sector building, offline provider; `tests/test_heatmap_panel.py` — headless UI smoke via an injected provider).
+
+## 2.13.0 - Alerts Engine
+
+### Added
+- **New "Alerts" tab.** Watch any symbol for any condition (the same field/operator/value builder the Scanner and Strategy Builder use — price, RSI, MACD, EMA/SMA crossovers, VWAP, and every other indicator, incl. plugins) and get a **desktop notification** the moment it triggers.
+- **Edge-triggered** firing: "RSI Below 30" fires once as it drops through 30, not on every check while it stays below. Two modes — **recurring** (re-arms and can fire again on the next crossing) and **once** (fires a single time, then disarms).
+- **Background poller** with a configurable **Auto-check** interval (15 s – 1 h) plus a manual **Check now**; a running check never freezes the UI (evaluation runs off the UI thread). Firings are shown in an in-panel log and sent to the system tray.
+- Alerts persist to `data/alerts.json` (gitignored per-user state), surviving restarts without immediately re-firing already-true conditions.
+- Quick-add a symbol from your watchlist.
+
+### Notes
+- Analysis/practice tool only — alerts never place orders (consistent with the simulated-only safety model).
+
+### Verified
+- 339/339 pytest tests pass (new: `tests/test_alerts.py` core engine — edge-trigger/once/recurring/persistence/offline-provider; `tests/test_alerts_panel.py` headless UI smoke).
+
 ## 2.12.5 - Manual: Open as PDF
 
 ### Added

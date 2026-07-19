@@ -1,7 +1,18 @@
 # TradeLab Pro Project Status
 
-Current version: 2.12.5
-Current phase: Phase 8 - Paper Trading (done)
+Current version: 2.14.0
+Current phase: Phase 10 - Market Heatmap (done)
+
+## Completed in 2.14.0 (Market Heatmap, Phase 10)
+- `tradelab/core/heatmap.py`: Qt-free, offline-testable market-map engine. Iterative **squarified treemap** (`squarify`, no recursion limit) + `layout_heatmap` (sector blocks with header bands), a green→red `color_for_change` scale, `build_tiles`/`group_tiles_by_sector`, and an injectable `default_quote_provider` (one batched yfinance download for price/%-change/dollar-volume + cached `get_quote_meta` for cap/sector; falls back to synthetic history offline).
+- New "Heatmap" tab: `HeatmapView` (QGraphicsScene) renders tiles sized by market cap (or dollar volume), coloured by day % change, grouped by sector; tooltips + click-to-chart. US/Canada presets (NASDAQ/NYSE/TSX large caps, expanded TSX) + Watchlist; size-by and group-by toggles; max-tiles cap; loads in a background `HeatmapWorker` with progress; re-lays out on resize; clean shutdown on close.
+- pytest regression suite now 358 tests, all passing (network-free).
+
+## Completed in 2.13.0 (Alerts Engine, Phase 9)
+- `tradelab/core/alerts.py`: Qt-free, offline-testable alerts engine. An `Alert` watches one symbol for one `FilterCondition` (reuses the Scanner/Strategy-Builder condition system). Firing is edge-triggered (false->true crossing), with "once" (disarm after firing) and "recurring" (re-arm when the condition releases) modes. `AlertStore` persists to `data/alerts.json` (gitignored). `evaluate_alerts()` takes an injectable history provider so it runs network-free in tests.
+- New "Alerts" tab: symbol + single-condition builder (shared `_build_condition_row`, now with a non-removable variant), alert table with live status colouring, enable/disable + remove + "Check now", a configurable auto-check interval, an in-panel triggered-alerts log, and desktop notifications via `QSystemTrayIcon`. Checks run in a background `AlertCheckWorker` (QThread) so the UI never blocks; the poller stops cleanly on close.
+- Alerts are analysis-only and never place orders (simulated-only safety model preserved).
+- pytest regression suite now 339 tests, all passing (network-free).
 
 ## Completed in 2.12.5 (Manual: Open as PDF)
 - "Open as PDF" button at the top of Help > User Manual: renders the manual (text + screenshots) to an A4 PDF and opens it in the system viewer.
