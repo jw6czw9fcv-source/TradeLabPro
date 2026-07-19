@@ -1,7 +1,15 @@
 # TradeLab Pro Project Status
 
-Current version: 2.14.3
+Current version: 2.16.0
 Current phase: Phase 10 - Market Heatmap (done)
+
+## Completed in 2.16.0 (Heatmap Portfolio + performance periods)
+- Heatmap: added "Portfolio" as a market source (maps `db.positions()` symbols) and a Finviz-style Period dropdown (1 Day/1 Week/1 Month/3 Month/6 Month/1 Year/3 Year/5 Year/10 Year/YTD; long look-backs use bounded ≤10y spans, never `max`, so the update stays ~0.5s). Core `heatmap.py` now has `HEATMAP_PERIODS`/`period_choices`/`_spec_for`/`_reference_close`/`_stats_from_df`; `default_quote_provider(symbols, period=..., progress=...)` and `_batch_prices(symbols, spec)` measure % change over the chosen window (N trading days back, or prior-year last close for YTD). `HeatmapWorker` takes a period; changing the period re-fetches once a map is loaded and relabels the legend.
+- pytest regression suite now 382 tests, all passing.
+
+## Completed in 2.15.0 (ETF/Index heatmaps)
+- Added ETF/index presets to the Heatmap: US Sector ETFs (SPDR), US Index & asset ETFs, US ETFs (all = US_AMEX), Canada ETFs. `get_quote_meta` now falls back to AUM (totalAssets/netAssets) for size and fund `category` for the sector grouping when marketCap/sector are absent, plus a `quote_type` field. Hardened `_company_name_from_info` to reject filler summary starts ("In seeking to track…") via a content-word check.
+- pytest regression suite now 376 tests, all passing.
 
 ## Completed in 2.14.3 (Company names on chart)
 - Fixed many tickers (KO, CAT, MO, JPM, XOM...) showing only the symbol, no company name. Yahoo stopped returning longName/shortName for these; `get_quote_meta` now resolves via longName → shortName → legal name derived from `longBusinessSummary` (`_name_from_summary`, handles `&`/`of` connectors) → `displayName` → ticker. Chart header, heatmap tooltips, and Scanner name/sector all benefit.

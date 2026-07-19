@@ -212,15 +212,66 @@ def layout_heatmap(tiles: list[HeatmapTile], width: float, height: float,
 # --- quote provider (the only networked part) -------------------------------
 
 
-def _price_change_from_df(df) -> Optional[tuple[float, float, float]]:
-    """(price, change_pct, dollar_volume) from an OHLCV frame, or None."""
+# Performance windows the colour can represent (Finviz-style), each mapped to
+# the yfinance history span to pull and the trading-day look-back for the
+# reference close ("YTD" uses the prior year's last close instead).
+HEATMAP_PERIODS = {
+    "1 Day":   {"yf_period": "5d",  "trading_days": 1},
+    "1 Week":  {"yf_period": "1mo", "trading_days": 5},
+    "1 Month": {"yf_period": "3mo", "trading_days": 21},
+    "3 Month": {"yf_period": "6mo", "trading_days": 63},
+    "6 Month": {"yf_period": "1y",  "trading_days": 126},
+    "1 Year":  {"yf_period": "2y",  "trading_days": 252},
+    # Longer look-backs use bounded spans (10y, not "max") so the fetch stays
+    # ~0.5s: yfinance's time is per-request latency, not bar count. The 10-year
+    # reference is the oldest bar in the 10y span (~10 years back).
+    "3 Year":  {"yf_period": "5y",  "trading_days": 756},
+    "5 Year":  {"yf_period": "10y", "trading_days": 1260},
+    "10 Year": {"yf_period": "10y", "trading_days": 2520},
+    "YTD":     {"yf_period": "1y",  "ytd": True},
+}
+DEFAULT_PERIOD = "1 Day"
+
+
+def period_choices() -> list[str]:
+    return list(HEATMAP_PERIODS.keys())
+
+
+def _spec_for(period: Optional[str]) -> dict:
+    return HEATMAP_PERIODS.get(period or DEFAULT_PERIOD, HEATMAP_PERIODS[DEFAULT_PERIOD])
+
+
+def _reference_close(closes, spec: dict) -> Optional[float]:
+    """The close to measure % change against for this period."""
+    if spec.get("ytd"):
+        try:
+            last_year = closes.index[-1].year
+            prev = closes[closes.index.year < last_year]
+            if len(prev):
+                return float(prev.iloc[-1])          # last close of prior year
+            this_year = closes[closes.index.year == last_year]
+            if len(this_year):
+                return float(this_year.iloc[0])      # else first close this year
+        except Exception:
+            pass
+        return float(closes.iloc[0])
+    td = int(spec.get("trading_days", 1))
+    if len(closes) <= td:
+        return float(closes.iloc[0])
+    return float(closes.iloc[-1 - td])
+
+
+def _stats_from_df(df, spec: dict) -> Optional[tuple[float, float, float]]:
+    """(price, change_pct over the period, dollar_volume) from an OHLCV frame."""
     try:
-        close = df["Close"].dropna()
-        if len(close) < 2:
+        closes = df["Close"].dropna()
+        if closes is None or len(closes) < 2:
             return None
-        price = float(close.iloc[-1])
-        prev = float(close.iloc[-2])
-        change = ((price - prev) / prev * 100.0) if prev else 0.0
+        price = float(closes.iloc[-1])
+        ref = _reference_close(closes, spec)
+        if not ref:
+            return None
+        change = (price - ref) / ref * 100.0
         vol = df["Volume"].dropna()
         dvol = float(price * float(vol.iloc[-1])) if len(vol) else 0.0
         return price, change, dvol
@@ -228,7 +279,7 @@ def _price_change_from_df(df) -> Optional[tuple[float, float, float]]:
         return None
 
 
-def _batch_prices(symbols: list[str]) -> dict:
+def _batch_prices(symbols: list[str], spec: dict) -> dict:
     """One batched yfinance download for all symbols -> {sym: (price,
     change_pct, dollar_volume)}. Empty dict if yfinance is unavailable so the
     caller falls back to per-symbol history (synthetic offline)."""
@@ -237,7 +288,7 @@ def _batch_prices(symbols: list[str]) -> dict:
     except Exception:
         return {}
     try:
-        data = yf.download(symbols, period="5d", interval="1d", progress=False,
+        data = yf.download(symbols, period=spec["yf_period"], interval="1d", progress=False,
                            group_by="ticker", threads=True, auto_adjust=False)
     except Exception:
         return {}
@@ -246,33 +297,36 @@ def _batch_prices(symbols: list[str]) -> dict:
     for sym in symbols:
         try:
             sub = data[sym] if multi else data
-            pc = _price_change_from_df(sub)
-            if pc is not None:
-                out[sym] = pc
+            stats = _stats_from_df(sub, spec)
+            if stats is not None:
+                out[sym] = stats
         except Exception:
             continue
     return out
 
 
-def default_quote_provider(symbols: list[str], progress: Optional[Callable[[int, int, str], None]] = None) -> dict:
-    """Fetch heatmap quotes for `symbols`. Prices/change come from a single
-    batched download; market cap + sector come from the cached
-    get_quote_meta (warm after any prior scan). Falls back to per-symbol
-    synthetic history offline so the map always renders."""
+def default_quote_provider(symbols: list[str], period: str = DEFAULT_PERIOD,
+                           progress: Optional[Callable[[int, int, str], None]] = None) -> dict:
+    """Fetch heatmap quotes for `symbols`, with the % change measured over
+    `period` (see HEATMAP_PERIODS). Prices/change come from a single batched
+    download; market cap + sector come from the cached get_quote_meta (warm
+    after any prior scan). Falls back to per-symbol synthetic history offline
+    so the map always renders."""
     from tradelab.data.market_data import get_history, get_quote_meta
 
-    prices = _batch_prices(symbols)
+    spec = _spec_for(period)
+    prices = _batch_prices(symbols, spec)
     quotes: dict = {}
     total = len(symbols)
     for idx, sym in enumerate(symbols, start=1):
-        pc = prices.get(sym)
-        if pc is None:
-            pc = _price_change_from_df(get_history(sym, "5d", "1d"))
-        if pc is None:
+        stats = prices.get(sym)
+        if stats is None:
+            stats = _stats_from_df(get_history(sym, spec["yf_period"], "1d"), spec)
+        if stats is None:
             if progress:
                 progress(idx, total, sym)
             continue
-        price, change, dvol = pc
+        price, change, dvol = stats
         meta = get_quote_meta(sym)
         quotes[sym] = {
             "price": price,

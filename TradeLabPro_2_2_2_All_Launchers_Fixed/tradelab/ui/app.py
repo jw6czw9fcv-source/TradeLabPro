@@ -23,7 +23,7 @@ from tradelab.core.scanner import scan_symbols
 from tradelab.core.alerts import Alert, AlertStore
 from tradelab.core.filters import FilterCondition
 from tradelab.core import heatmap as hm
-from tradelab.data.universe import US_NASDAQ, US_NYSE, CAN_TSX, CAN_TSX_EXPANDED
+from tradelab.data.universe import US_NASDAQ, US_NYSE, US_AMEX, CAN_TSX, CAN_TSX_EXPANDED
 from tradelab.strategies import strategy_choices
 from tradelab.ui.chart_widget import ChartWorkspace, ChartWidget
 from tradelab.ui import colors
@@ -2453,10 +2453,11 @@ class HeatmapWorker(QThread):
     progress = Signal(int, int, str)
     done = Signal(object)  # list[HeatmapTile]
 
-    def __init__(self, symbols, size_by, quote_provider=None):
+    def __init__(self, symbols, size_by, period=hm.DEFAULT_PERIOD, quote_provider=None):
         super().__init__()
         self.symbols = symbols
         self.size_by = size_by
+        self.period = period
         self._provider = quote_provider or hm.default_quote_provider
 
     def run(self):
@@ -2466,7 +2467,7 @@ class HeatmapWorker(QThread):
                     self.progress.emit(int(i), int(t), str(s))
                 except RuntimeError:
                     pass
-            quotes = self._provider(self.symbols, progress=prog)
+            quotes = self._provider(self.symbols, period=self.period, progress=prog)
             tiles = hm.build_tiles(quotes, self.size_by)
         except BaseException:
             tiles = []
@@ -2487,6 +2488,17 @@ class HeatmapPanel(QWidget):
         "US - NYSE large caps": list(US_NYSE),
         "Canada - TSX large caps": list(CAN_TSX),
         "Canada - TSX (expanded)": list(CAN_TSX_EXPANDED),
+        # ETF / index maps. Funds have no market cap or sector; get_quote_meta
+        # falls back to AUM (totalAssets) for size and fund `category` for the
+        # group label, so these map cleanly too.
+        "US - Sector ETFs (SPDR)": ["XLF", "XLK", "XLE", "XLY", "XLV", "XLI",
+                                     "XLP", "XLU", "XLB", "XLRE", "XLC"],
+        "US - Index & asset ETFs": ["SPY", "QQQ", "DIA", "IWM", "GLD", "SLV",
+                                    "TLT", "HYG", "LQD", "ARKK"],
+        "US - ETFs (all)": list(US_AMEX),
+        "Canada - ETFs": ["XIU.TO", "XIC.TO", "XEI.TO", "XRE.TO", "XFN.TO",
+                          "XEG.TO", "XIT.TO", "XSP.TO", "XQQ.TO", "ZSP.TO",
+                          "ZCN.TO", "ZEB.TO", "VDY.TO", "VCN.TO", "VFV.TO"],
     }
 
     def __init__(self, db: Database, chart: ChartWidget, cfg: ScannerConfig, quote_provider=None):
@@ -2500,12 +2512,15 @@ class HeatmapPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(_hint(
-            "A market map of a whole market at a glance. Each tile is a stock, "
-            "sized by market cap and coloured by today's % change (green up, red down), "
-            "grouped by sector. Click a tile to open its chart. Uses cached data offline."))
+            "A market map at a glance. Each tile is a stock/ETF, sized by market cap "
+            "and coloured by its % change over the selected Period (green up, red down), "
+            "grouped by sector. Map a preset, your Watchlist or Portfolio. "
+            "Click a tile to open its chart. Uses cached data offline."))
 
         controls = QHBoxLayout()
-        self.market = QComboBox(); self.market.addItems(list(self._MARKETS.keys()) + ["Watchlist"])
+        self.market = QComboBox(); self.market.addItems(list(self._MARKETS.keys()) + ["Watchlist", "Portfolio"])
+        self.period_sel = QComboBox(); self.period_sel.addItems(hm.period_choices())
+        self.period_sel.setToolTip("Performance window the tile colour represents (like Finviz): 1 Day, 1 Week … 1 Year, YTD.")
         self.size_by = QComboBox(); self.size_by.addItems(["Market cap", "Dollar volume"])
         self.size_by.setToolTip("Tile area = market cap (classic) or today's traded dollar volume (faster, no cap lookup).")
         self.group_chk = QCheckBox("Group by sector"); self.group_chk.setChecked(True)
@@ -2519,12 +2534,16 @@ class HeatmapPanel(QWidget):
         self.auto_chk.toggled.connect(self._on_auto_toggled)
         self.auto_secs.valueChanged.connect(self._on_auto_interval_changed)
         controls.addWidget(QLabel("Market")); controls.addWidget(self.market, 1)
+        controls.addWidget(QLabel("Period")); controls.addWidget(self.period_sel)
         controls.addWidget(QLabel("Size by")); controls.addWidget(self.size_by)
         controls.addWidget(self.group_chk)
         controls.addWidget(QLabel("Max")); controls.addWidget(self.max_tiles)
         controls.addWidget(self.load_btn)
         controls.addWidget(self.auto_chk); controls.addWidget(self.auto_secs)
         layout.addLayout(controls)
+        # Changing the period re-fetches, but only once a map has been loaded
+        # (avoids a fetch during construction / before the first Load).
+        self.period_sel.currentTextChanged.connect(self._on_period_changed)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._auto_refresh)
@@ -2538,7 +2557,8 @@ class HeatmapPanel(QWidget):
         layout.addWidget(self.view, 1)
 
         legend = QHBoxLayout()
-        legend.addWidget(QLabel("Day change:"))
+        self.legend_title = QLabel("1 Day change:")
+        legend.addWidget(self.legend_title)
         for pct, text in [(-3, "-3%+"), (-1.5, "-1.5%"), (0, "0"), (1.5, "+1.5%"), (3, "+3%+")]:
             swatch = QLabel(f" {text} ")
             swatch.setStyleSheet(
@@ -2555,20 +2575,35 @@ class HeatmapPanel(QWidget):
         name = self.market.currentText()
         if name == "Watchlist":
             return list(self.db.watch_symbols())
+        if name == "Portfolio":
+            seen, out = set(), []
+            for pos in self.db.positions():
+                sym = str(pos.get("symbol", "")).upper().strip()
+                if sym and sym not in seen:
+                    seen.add(sym); out.append(sym)
+            return out
         return list(self._MARKETS.get(name, []))
+
+    def _on_period_changed(self, _period):
+        self.legend_title.setText(f"{self.period_sel.currentText()} change:")
+        if self._tiles:   # already loaded once -> refresh with the new window
+            self.load()
 
     def load(self):
         if self._worker is not None and self._worker.isRunning():
             return
         symbols = self._symbols_for_market()[: self.max_tiles.value()]
         if not symbols:
-            self.status.setText("No symbols for this market (add some to your watchlist).")
+            src = self.market.currentText().lower()
+            self.status.setText(f"No symbols for {src} (add some in that tab first).")
             return
         size_by = "dollar_volume" if self.size_by.currentText() == "Dollar volume" else "market_cap"
+        period = self.period_sel.currentText()
+        self.legend_title.setText(f"{period} change:")
         self.load_btn.setEnabled(False)
         self.progress.setVisible(True); self.progress.setRange(0, len(symbols)); self.progress.setValue(0)
-        self.status.setText(f"Loading {len(symbols)} symbols…")
-        self._worker = HeatmapWorker(symbols, size_by, self._quote_provider)
+        self.status.setText(f"Loading {len(symbols)} symbols ({period})…")
+        self._worker = HeatmapWorker(symbols, size_by, period, self._quote_provider)
         self._worker.progress.connect(self._on_progress)
         self._worker.done.connect(self._on_done)
         self._worker.finished.connect(self._clear_worker)

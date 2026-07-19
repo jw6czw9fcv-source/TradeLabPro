@@ -1,9 +1,13 @@
 """Heatmap engine tests - all pure/offline (no network)."""
 import math
 
+import numpy as np
+import pandas as pd
+
 from tradelab.core.heatmap import (HeatmapTile, build_tiles, color_for_change,
                                     default_quote_provider, group_tiles_by_sector,
-                                    layout_heatmap, squarify)
+                                    layout_heatmap, squarify, period_choices,
+                                    _spec_for, _stats_from_df)
 
 
 # --- colour -----------------------------------------------------------------
@@ -119,6 +123,60 @@ def test_layout_empty_is_empty():
     assert layout_heatmap(build_tiles(_quotes()), 0, 0) == []
 
 
+# --- performance period -----------------------------------------------------
+
+def _daily(closes):
+    n = len(closes)
+    dates = pd.date_range(end=pd.Timestamp("2024-06-28"), periods=n, freq="B")
+    return pd.DataFrame({"Open": closes, "High": closes, "Low": closes,
+                         "Close": closes, "Volume": np.full(n, 1_000_000)}, index=dates)
+
+
+def test_period_choices_include_finviz_windows():
+    choices = period_choices()
+    for p in ["1 Day", "1 Week", "1 Month", "1 Year", "3 Year", "5 Year", "10 Year", "YTD"]:
+        assert p in choices
+
+
+def test_long_periods_use_bounded_spans_not_max():
+    # Long look-backs must fetch a bounded span (<= 10y), never "max", so the
+    # download stays fast.
+    for p in ["3 Year", "5 Year", "10 Year"]:
+        assert _spec_for(p)["yf_period"] in {"5y", "10y"}
+
+
+def test_ten_year_reference_falls_back_to_oldest_available_bar():
+    # A 10y span holds ~2514 bars; a 2520-day look-back exceeds that, so the
+    # reference is the oldest bar (~10 years back) rather than crashing.
+    closes = list(range(100, 100 + 300))          # 300 bars, oldest = 100
+    df = _daily([float(c) for c in closes])
+    price, change, _ = _stats_from_df(df, _spec_for("10 Year"))
+    assert math.isclose(change, (price - 100.0) / 100.0 * 100.0, rel_tol=1e-9)
+
+
+def test_one_day_change_uses_previous_close():
+    df = _daily([100.0, 110.0])          # +10% day
+    price, change, _ = _stats_from_df(df, _spec_for("1 Day"))
+    assert price == 110.0
+    assert math.isclose(change, 10.0, rel_tol=1e-9)
+
+
+def test_one_week_change_looks_back_five_trading_days():
+    # 6 bars: ref is 5 trading days back (the first bar here).
+    df = _daily([100.0, 101, 102, 103, 104, 120.0])
+    _, change, _ = _stats_from_df(df, _spec_for("1 Week"))
+    assert math.isclose(change, 20.0, rel_tol=1e-9)   # 120 vs 100
+
+
+def test_ytd_change_uses_prior_year_last_close():
+    dates = pd.to_datetime(["2023-12-29", "2024-01-02", "2024-03-01", "2024-06-28"])
+    closes = [200.0, 210.0, 220.0, 260.0]
+    df = pd.DataFrame({"Open": closes, "High": closes, "Low": closes,
+                       "Close": closes, "Volume": [1_000_000] * 4}, index=dates)
+    _, change, _ = _stats_from_df(df, _spec_for("YTD"))
+    assert math.isclose(change, 30.0, rel_tol=1e-9)   # 260 vs 200 (last 2023 close)
+
+
 # --- provider (offline via synthetic history fallback) ----------------------
 
 def test_default_quote_provider_offline_builds_quotes(monkeypatch):
@@ -127,7 +185,7 @@ def test_default_quote_provider_offline_builds_quotes(monkeypatch):
     # Force the batched-download path to return nothing so it falls back to
     # per-symbol history (synthetic, offline-deterministic), and stub meta so
     # nothing touches the network.
-    monkeypatch.setattr(hm, "_batch_prices", lambda syms: {})
+    monkeypatch.setattr(hm, "_batch_prices", lambda syms, spec: {})
     import tradelab.data.market_data as md
     monkeypatch.setattr(md, "get_quote_meta",
                         lambda s: {"market_cap": 1e9, "sector": "Technology", "name": s})

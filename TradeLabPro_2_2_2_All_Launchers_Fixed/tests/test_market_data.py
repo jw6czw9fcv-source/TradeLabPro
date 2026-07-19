@@ -131,6 +131,29 @@ def test_company_name_falls_back_to_displayname_then_symbol():
     assert _company_name_from_info({}, "ZZZZ") == "ZZZZ"
 
 
+def test_company_name_rejects_filler_summary_start():
+    # ETF summaries often start "In seeking to track ..." - the leading run
+    # ("In") is not a real name and must be rejected, not shown as the name.
+    info = {"longBusinessSummary": "In seeking to track the S&P 500 index, the fund invests ...",
+            "displayName": "Technology Select"}
+    assert _company_name_from_info(info, "XLK") == "Technology Select"
+    assert _company_name_from_info({"longBusinessSummary": "In seeking to track ..."}, "XLK") == "XLK"
+
+
+def test_get_quote_meta_uses_aum_and_category_for_etfs(monkeypatch):
+    # ETFs have no marketCap/sector: get_quote_meta must fall back to AUM
+    # (totalAssets) for size and the fund `category` for the group label.
+    info = {"quoteType": "ETF", "totalAssets": 781_000_000_000,
+            "category": "Large Blend", "longName": "SPDR S&P 500 ETF Trust"}
+    monkeypatch.setattr(market_data, "yf", type("_yf", (), {
+        "Ticker": staticmethod(lambda symbol: _FakeTicker(info))}))
+    meta = get_quote_meta("SPY")
+    assert meta["market_cap"] == 781_000_000_000
+    assert meta["sector"] == "Large Blend"
+    assert meta["name"] == "SPDR S&P 500 ETF Trust"
+    assert meta["quote_type"] == "ETF"
+
+
 def test_get_quote_meta_resolves_name_from_displayname_and_summary(monkeypatch):
     # End-to-end: a KO-shaped info dict (no longName/shortName) still yields a
     # real company name, not the ticker.

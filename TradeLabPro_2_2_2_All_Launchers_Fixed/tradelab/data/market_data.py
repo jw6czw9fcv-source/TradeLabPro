@@ -84,7 +84,11 @@ def _company_name_from_info(info: dict, symbol: str) -> str:
         if value and str(value).strip():
             return str(value).strip()
     derived = _name_from_summary(info.get("longBusinessSummary", ""))
-    if 2 <= len(derived) <= 70 and any(c.isalpha() for c in derived):
+    # Guard against a summary that starts with a filler word ("In seeking to
+    # track ...", "As of ...") where the leading run isn't a real name: require
+    # at least one substantial content token (>=3 chars, not a connector).
+    content = [w for w in derived.split() if len(w) >= 3 and w.lower() not in _NAME_CONNECTORS]
+    if content and len(derived) <= 70:
         return derived
     display = info.get("displayName")
     if display and str(display).strip():
@@ -103,16 +107,21 @@ def get_quote_meta(symbol: str) -> dict:
     if cached is not None:
         return cached
 
-    meta = {"market_cap": 0.0, "sector": "Unknown", "industry": "Unknown", "name": symbol}
+    meta = {"market_cap": 0.0, "sector": "Unknown", "industry": "Unknown", "name": symbol, "quote_type": ""}
     if yf is not None:
         try:
             info = yf.Ticker(symbol).info
-            market_cap = info.get("marketCap")
+            # ETFs/funds have no marketCap or sector - they report AUM
+            # (totalAssets/netAssets) and a fund `category` instead. Fall back
+            # to those so ETF heatmaps size by AUM and group by category, and
+            # the market-cap filter has a real number for funds too.
+            market_cap = info.get("marketCap") or info.get("totalAssets") or info.get("netAssets")
             if market_cap:
                 meta["market_cap"] = float(market_cap)
-            meta["sector"] = info.get("sector") or "Unknown"
-            meta["industry"] = info.get("industry") or "Unknown"
+            meta["sector"] = info.get("sector") or info.get("category") or "Unknown"
+            meta["industry"] = info.get("industry") or info.get("category") or "Unknown"
             meta["name"] = _company_name_from_info(info, symbol)
+            meta["quote_type"] = info.get("quoteType") or ""
         except Exception:
             pass
 

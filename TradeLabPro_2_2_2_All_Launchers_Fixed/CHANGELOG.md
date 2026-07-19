@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.16.0 - Heatmap: Portfolio map + performance periods
+
+### Added
+- **Portfolio map.** "Portfolio" is now a Market source on the Heatmap — it maps your Portfolio-tab holdings, just like Watchlist.
+- **Performance-period dropdown (Finviz-style).** A **Period** selector — **1 Day / 1 Week / 1 Month / 3 Month / 6 Month / 1 Year / 3 Year / 5 Year / 10 Year / YTD** — chooses the window the tile colour represents. The reference close is the price N trading days back (or the prior year's last close for YTD). Long look-backs use bounded fetch spans (≤10y, never `max`) so the update stays fast (~0.5s regardless of period). Changing the period re-fetches automatically once a map is loaded, and the colour legend relabels (e.g. "1 Month change:").
+
+### Verified
+- 382/382 pytest tests pass (new: 1-Day/1-Week/YTD change math, period choices, Portfolio source, period dropdown updates the legend).
+
+## 2.15.0 - ETF / Index heatmaps
+
+### Added
+- **ETF and index maps on the Heatmap tab.** New presets: **US – Sector ETFs (SPDR)** (XLF, XLK, XLE, …), **US – Index & asset ETFs** (SPY, QQQ, DIA, IWM, GLD, SLV, TLT, HYG, LQD, ARKK), **US – ETFs (all)**, and **Canada – ETFs** (XIU, XIC, ZSP, VFV, …).
+- Funds have no market cap or sector, so `get_quote_meta` now falls back to **AUM** (`totalAssets`/`netAssets`) for tile size and the fund **category** (e.g. "Large Blend", "Financial", "Long Government") for the sector grouping — so ETF maps size and group meaningfully. The market-cap filter and Scanner get real AUM for funds too.
+
+### Fixed
+- Hardened company-name resolution so a rate-limited fund whose summary starts with filler ("In seeking to track …") no longer shows a garbage name — it falls back to the display name or ticker.
+
+### Verified
+- 376/376 pytest tests pass (new: ETF AUM/category resolution, filler-summary guard, ETF/index presets present).
+
 ## 2.14.3 - Company names on the chart (KO, CAT, JPM…)
 
 ### Fixed

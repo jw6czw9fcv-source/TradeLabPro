@@ -14,7 +14,7 @@ def qapp():
     yield app
 
 
-def _fake_provider(symbols, progress=None):
+def _fake_provider(symbols, period=None, progress=None):
     quotes = {}
     for i, s in enumerate(symbols):
         if progress:
@@ -58,6 +58,16 @@ def test_panel_constructs_with_markets(qapp):
     assert "Watchlist" in items
 
 
+def test_etf_and_index_markets_available(qapp):
+    panel = _panel(qapp)
+    items = [panel.market.itemText(i) for i in range(panel.market.count())]
+    assert any("ETF" in m for m in items)
+    # Sector-ETF preset resolves to the SPDR sector symbols.
+    panel.market.setCurrentText("US - Sector ETFs (SPDR)")
+    syms = panel._symbols_for_market()
+    assert "XLF" in syms and "XLK" in syms and "XLE" in syms
+
+
 def test_load_builds_tiles_and_renders(qapp):
     panel = _panel(qapp)
     panel.market.setCurrentText("US - NASDAQ large caps")
@@ -92,6 +102,23 @@ def test_watchlist_market_with_no_symbols_is_safe(qapp):
     # db.watch_symbols() may be empty in a fresh test DB; load must not raise.
     panel.load()
     assert panel._worker is None or True
+
+
+def test_period_dropdown_present_and_updates_legend(qapp):
+    panel = _panel(qapp)
+    periods = [panel.period_sel.itemText(i) for i in range(panel.period_sel.count())]
+    assert "1 Day" in periods and "1 Year" in periods and "YTD" in periods
+    panel.period_sel.setCurrentText("1 Month")
+    assert "1 Month" in panel.legend_title.text()
+
+
+def test_portfolio_market_source(qapp):
+    panel = _panel(qapp)
+    items = [panel.market.itemText(i) for i in range(panel.market.count())]
+    assert "Portfolio" in items
+    panel.db.add_position("NVDA", 10, 100.0)
+    panel.market.setCurrentText("Portfolio")
+    assert "NVDA" in panel._symbols_for_market()
 
 
 def test_auto_refresh_toggle_starts_and_stops_timer(qapp):
