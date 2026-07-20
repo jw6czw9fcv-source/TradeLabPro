@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.21.0 - Heatmap ↔ Scanner link (Phase 14)
+
+### Added
+- **Map your scan results.** A new **🗺 Map results** button on the Scanner sends the current results into the **Heatmap** as a "Scanner results" source (sized by cap, coloured by % change, grouped by sector) and switches to that tab — instantly see which of your hits are green/red and where the strength is.
+- **Right-click a heatmap tile** for a context menu: **Open chart** or **Add to watchlist**. (Left-click still opens the chart.)
+- **Zoom & pan the heatmap (Finviz-style).** Scroll to **zoom** toward the cursor on dense maps, **drag** to pan, **double-click** empty space to fit. Zoom enlarges the *tiles* while the **label text stays a normal, readable size** — and tickers that were too small to show simply **appear** once their tile is big enough. Left-click still charts a tile; right-click still opens the menu.
+- **More tickers labelled on the heatmap.** Tile labels now **auto-fit** their font to the tile and are **clipped** to it, so far smaller tiles show their symbol (and % change where there's room) instead of only the big ones — handy on dense maps like mapped scan results.
+
+### Verified
+- 471/471 pytest tests pass (new: Scanner `result_symbols()` filters error rows, `show_results_in_heatmap()` end-to-end sets the heatmap source and fronts the tab; heatmap `set_external_symbols()` adds/selects the source and clears any theme).
+
 ## 2.20.0 - Chart Replay (Phase 13)
 
 ### Added

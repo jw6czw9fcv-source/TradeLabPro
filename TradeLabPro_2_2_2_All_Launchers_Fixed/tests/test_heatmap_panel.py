@@ -125,6 +125,95 @@ def test_watchlist_market_with_no_symbols_is_safe(qapp):
     assert panel._worker is None or True
 
 
+def _tiles(n):
+    from tradelab.core.heatmap import HeatmapTile
+    return [HeatmapTile(f"SYM{i}", f"Co {i}", "Tech", 1.0, (i % 3) - 1) for i in range(n)]
+
+
+def test_zoom_enlarges_scene_and_clamps(qapp):
+    from PySide6.QtCore import QPoint
+    panel = _panel(qapp); panel.resize(400, 300)
+    panel._tiles = _tiles(40); panel.group_by.setCurrentText("None")
+    panel.render_heatmap()
+    base_w = panel.view.scene().sceneRect().width()
+    assert panel._zoom == 1.0
+
+    panel._zoom_at(1.2, QPoint(50, 50))            # zoom in
+    assert panel._zoom > 1.0
+    assert panel.view.scene().sceneRect().width() > base_w    # scene grew
+    for _ in range(60):                            # clamp at max
+        panel._zoom_at(1.2, QPoint(50, 50))
+    assert panel._zoom <= panel._MAX_ZOOM
+    for _ in range(60):                            # clamp back to fit
+        panel._zoom_at(1 / 1.2, QPoint(50, 50))
+    assert panel._zoom == 1.0
+
+
+def test_zoom_reveals_more_labels(qapp):
+    from PySide6.QtWidgets import QGraphicsSimpleTextItem
+    from PySide6.QtCore import QPoint
+    panel = _panel(qapp); panel.resize(400, 300)
+    # 400 tiles in a small view -> each is a ~15px sliver too small to label.
+    panel._tiles = _tiles(400); panel.group_by.setCurrentText("None")
+    panel.render_heatmap()
+    labels_fit = len([it for it in panel.view.scene().items()
+                      if isinstance(it, QGraphicsSimpleTextItem)])
+    for _ in range(10):
+        panel._zoom_at(1.2, QPoint(0, 0))
+    labels_zoomed = len([it for it in panel.view.scene().items()
+                         if isinstance(it, QGraphicsSimpleTextItem)])
+    assert labels_zoomed > labels_fit              # hidden tickers come up
+
+
+def test_fit_zoom_returns_to_one(qapp):
+    from PySide6.QtCore import QPoint
+    panel = _panel(qapp); panel.resize(400, 300)
+    panel._tiles = _tiles(40); panel.group_by.setCurrentText("None")
+    panel.render_heatmap()
+    panel._zoom_at(1.2, QPoint(10, 10))
+    assert panel._zoom > 1.0
+    panel._fit_zoom()
+    assert panel._zoom == 1.0
+
+
+def test_fit_pt_labels_small_tiles_but_skips_tiny_ones():
+    from tradelab.ui.app import HeatmapPanel
+    # A comfortable tile gets a readable size.
+    assert HeatmapPanel._fit_pt("AAPL", 60, 40) >= 8
+    # A small tile still gets a (smaller) label — the whole point of the fix.
+    assert HeatmapPanel._fit_pt("AAPL", 24, 12) > 0
+    # A genuinely tiny sliver gets nothing (would be unreadable / overflow).
+    assert HeatmapPanel._fit_pt("AAPL", 8, 6) == 0.0
+    # Longer tickers need more width for the same tile.
+    assert HeatmapPanel._fit_pt("GOOGL", 24, 12) <= HeatmapPanel._fit_pt("KO", 24, 12)
+
+
+def test_render_labels_small_tiles(qapp):
+    from PySide6.QtWidgets import QGraphicsSimpleTextItem
+    panel = _panel(qapp)
+    panel.resize(400, 300)
+    # Many equal tiles -> each is small; with the fix they should still label.
+    from tradelab.core.heatmap import HeatmapTile
+    panel._tiles = [HeatmapTile(f"SYM{i}", f"Co {i}", "Tech", 1.0, (i % 3) - 1)
+                    for i in range(60)]
+    panel.group_by.setCurrentText("None")
+    panel.render_heatmap()
+    labels = [it for it in panel.view.scene().items() if isinstance(it, QGraphicsSimpleTextItem)]
+    assert len(labels) > 0        # small tiles now carry ticker labels
+
+
+def test_set_external_symbols_becomes_the_source(qapp):
+    panel = _panel(qapp)                                # uses the fast fake provider
+    panel.set_external_symbols(["AAPL", "msft", "NVDA"], "Scanner results")
+    # A "Scanner results" entry is added and selected, and it drives the map.
+    items = [panel.market.itemText(i) for i in range(panel.market.count())]
+    assert "Scanner results" in items
+    assert panel.market.currentText() == "Scanner results"
+    assert panel._symbols_for_market() == ["AAPL", "MSFT", "NVDA"]
+    assert panel.theme_sel.currentText() == panel._NO_THEME   # theme cleared
+    panel.shutdown()                                   # join the background load
+
+
 def test_period_dropdown_present_and_updates_legend(qapp):
     panel = _panel(qapp)
     periods = [panel.period_sel.itemText(i) for i in range(panel.period_sel.count())]

@@ -203,6 +203,34 @@ def test_tab_panels_are_still_accessible_after_scroll_wrap(qapp):
     assert win.alerts_panel.__class__.__name__ == "AlertsPanel"
 
 
+def test_scanner_results_map_into_the_heatmap(qapp):
+    import pandas as pd
+    win = _main_window(qapp)
+    # Keep the heatmap's background load offline + instant.
+    win.heatmap_panel._quote_provider = lambda symbols, period=None, progress=None: {}
+    # Simulate a completed scan (skip the ERROR row).
+    win.scanner_panel.results = pd.DataFrame([
+        {"Symbol": "AAPL", "Signal": "BUY"},
+        {"Symbol": "MSFT", "Signal": "BUY"},
+        {"Symbol": "BADX", "Signal": "ERROR"},
+    ])
+    assert win.scanner_panel.result_symbols() == ["AAPL", "MSFT"]   # ERROR filtered
+    win.scanner_panel.show_results_in_heatmap()
+    # Heatmap now sourced from the scan results, and that tab is fronted.
+    assert win.heatmap_panel.market.currentText() == "Scanner results"
+    assert win.heatmap_panel._symbols_for_market() == ["AAPL", "MSFT"]
+    assert win.tabs.currentWidget() is win._heatmap_page
+    win.heatmap_panel.shutdown()                    # join the background load
+
+
+def test_map_results_with_no_scan_is_safe(qapp):
+    import pandas as pd
+    win = _main_window(qapp)
+    win.scanner_panel.results = pd.DataFrame()
+    win.scanner_panel.show_results_in_heatmap()   # must not raise
+    assert "no results" in win.scanner_panel.status.text().lower()
+
+
 def test_version_action_shows_about_with_version(qapp, monkeypatch):
     from tradelab.ui import app as appmod
     from tradelab.core.config import APP_VERSION

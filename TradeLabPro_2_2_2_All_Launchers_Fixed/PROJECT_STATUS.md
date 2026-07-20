@@ -1,7 +1,14 @@
 # TradeLab Pro Project Status
 
-Current version: 2.20.0
-Current phase: Phase 13 - Chart Replay (done)
+Current version: 2.21.0
+Current phase: Phase 14 - Heatmap <-> Scanner link (done)
+
+## Completed in 2.21.0 (Heatmap <-> Scanner link, Phase 14)
+- Scanner: added `on_show_heatmap` callback + "Map results" button + `result_symbols()`/`show_results_in_heatmap()` (drops ERROR rows). MainWindow `_show_scan_in_heatmap()` sets the heatmap source and fronts the tab (`self.tabs`/`self._heatmap_page`).
+- HeatmapPanel: `set_external_symbols(symbols, label)` adds/selects a "Scanner results" source (clears theme) and loads; `_symbols_for_market` handles it. `HeatmapView` now emits `context_requested` on right-click (left-click still charts); `_on_tile_menu` offers Open chart / Add to watchlist.
+- Heatmap zoom re-lays the treemap out into a larger scene (`_zoom`/`_zoom_at`/`_fit_zoom`, clamp 1x-12x, cursor-anchored) instead of scaling the view transform — so tiles grow, label text stays normal size, and previously-hidden tickers appear. `HeatmapView` emits `zoom_requested`/`fit_requested`; drag-to-pan with click-vs-drag detection; double-click empty = fit; `load()` resets zoom.
+- Heatmap tile labels now auto-fit the tile (`HeatmapPanel._fit_pt`) and are clipped to it (`ItemClipsChildrenToShape`), so small tiles show tickers too.
+- pytest regression suite now 471 tests, all passing.
 
 ## Completed in 2.20.0 (Chart Replay, Phase 13)
 - Rebuilt the dead `ReplayPanel` (was an unregistered "Next candle" stub) into a full bar-by-bar replay and registered it as the "Replay" tab. Play/Pause via `QTimer`, step +/-, reset/to-end, speed 0.5x-8x, a scrub `QSlider`, and a "Start at bar N" spin. `_plot()` charts `data.iloc[:index]` so indicators use only revealed bars (no look-ahead). `set_data()` hook makes it testable without network; `shutdown()` stops the timer (wired into closeEvent).

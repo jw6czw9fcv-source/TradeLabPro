@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QTextEdit, QFileDialog, QProgressBar, QScrollArea, QHeaderView,
     QMenu, QToolButton, QSizePolicy, QDialog, QTextBrowser, QSystemTrayIcon, QStyle,
     QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem, QFrame,
-    QInputDialog, QSlider
+    QInputDialog, QSlider, QGraphicsItem
 )
 
 from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR, ROOT_DIR
@@ -130,10 +130,12 @@ class UniverseRefreshWorker(QThread):
 
 
 class ScannerPanel(QWidget):
-    def __init__(self, db: Database, chart: ChartWidget, on_watchlist_changed=None, on_portfolio_changed=None):
+    def __init__(self, db: Database, chart: ChartWidget, on_watchlist_changed=None,
+                 on_portfolio_changed=None, on_show_heatmap=None):
         super().__init__()
         self.db = db
         self.chart = chart
+        self.on_show_heatmap = on_show_heatmap
         self.on_watchlist_changed = on_watchlist_changed
         self.on_portfolio_changed = on_portfolio_changed
         self.cfg = ScannerConfig()
@@ -426,7 +428,11 @@ class ScannerPanel(QWidget):
         self.load_chart.clicked.connect(self.load_selected_chart)
         export_btn = QPushButton("Export results CSV")
         export_btn.clicked.connect(self.export_results)
-        row.addWidget(self.add_watch); row.addWidget(self.add_port); row.addWidget(self.load_chart); row.addWidget(export_btn)
+        self.heatmap_btn = QPushButton("🗺 Map results")
+        self.heatmap_btn.setToolTip("Show the scan results as a heatmap (sized by cap, coloured by % change).")
+        self.heatmap_btn.clicked.connect(self.show_results_in_heatmap)
+        row.addWidget(self.add_watch); row.addWidget(self.add_port); row.addWidget(self.load_chart)
+        row.addWidget(self.heatmap_btn); row.addWidget(export_btn)
         layout.addLayout(row)
 
         self.refresh_preset_list()
@@ -1224,6 +1230,29 @@ class ScannerPanel(QWidget):
         if more > 0:
             top += f"  |  +{more} more sector{'s' if more != 1 else ''}"
         return f"   —   {top}"
+
+    def result_symbols(self) -> list:
+        """Valid (non-error) symbols from the current results, best score first."""
+        if self.results is None or self.results.empty or "Symbol" not in self.results.columns:
+            return []
+        out = []
+        for _, row in self.results.iterrows():
+            if str(row.get("Signal", "")) == "ERROR":
+                continue
+            sym = str(row.get("Symbol", "")).strip().upper()
+            if sym:
+                out.append(sym)
+        return out
+
+    def show_results_in_heatmap(self):
+        syms = self.result_symbols()
+        if not syms:
+            self.status.setText("Run a scan first — no results to map.")
+            return
+        if self.on_show_heatmap:
+            self.on_show_heatmap(syms)
+        else:
+            self.status.setText("Heatmap is not available.")
 
     def export_results(self):
         if self.results.empty:
@@ -2569,35 +2598,97 @@ class HeatmapView(QGraphicsView):
     new size."""
     picked = Signal(str)
     resized = Signal()
+    context_requested = Signal(str, object)   # symbol, global position
+    zoom_requested = Signal(float, object)    # factor, view position (anchor)
+    fit_requested = Signal()
 
     def __init__(self):
         super().__init__()
         self.setScene(QGraphicsScene(self))
         self.setRenderHint(QPainter.Antialiasing)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Scrollbars appear only when zoomed in (so you can pan the magnified map).
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.setFrameShape(QGraphicsView.NoFrame)
         self.setBackgroundBrush(QColor("#0b0e14"))
         self.setMinimumHeight(320)
+        self._left_down = False
+        self._dragging = False
+        self._pan_last = None
+        self._press_pos = None
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.resized.emit()
 
-    def mousePressEvent(self, event):
-        try:
-            pos = event.position().toPoint()
-        except AttributeError:
-            pos = event.pos()
+    def _symbol_at(self, pos):
         item = self.itemAt(pos)
         while item is not None:
             sym = item.data(0)
             if sym:
-                self.picked.emit(str(sym))
-                break
+                return str(sym)
             item = item.parentItem()
+        return None
+
+    # --- zoom (handled by the panel, which re-lays the map out bigger so the
+    #     TILES grow but the label text stays a normal, readable size) --------
+    def wheelEvent(self, event):
+        factor = 1.2 if event.angleDelta().y() > 0 else 1 / 1.2
+        try:
+            pos = event.position().toPoint()
+        except AttributeError:
+            pos = event.pos()
+        self.zoom_requested.emit(factor, pos)
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        # Double-click empty space (no tile) to fit the whole map again.
+        if self._symbol_at(event.pos()) is None:
+            self.fit_requested.emit()
+        super().mouseDoubleClickEvent(event)
+
+    # --- click / drag-to-pan ---------------------------------------------
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._left_down = True
+            self._dragging = False
+            self._pan_last = event.pos()
+            self._press_pos = event.pos()
+            event.accept()
+            return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._left_down:
+            delta = event.pos() - self._pan_last
+            if not self._dragging and (abs(delta.x()) + abs(delta.y())) > 3:
+                self._dragging = True
+                self.setCursor(Qt.ClosedHandCursor)
+            if self._dragging:
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+                self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+                self._pan_last = event.pos()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self._left_down:
+            self._left_down = False
+            self.setCursor(Qt.ArrowCursor)
+            if not self._dragging:                     # a click, not a pan -> chart it
+                sym = self._symbol_at(self._press_pos)
+                if sym:
+                    self.picked.emit(sym)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event):
+        sym = self._symbol_at(event.pos())
+        if sym:
+            self.context_requested.emit(sym, event.globalPos())
 
 
 class HeatmapWorker(QThread):
@@ -2674,13 +2765,18 @@ class HeatmapPanel(QWidget):
         self._quote_provider = quote_provider
         self._tiles = []
         self._worker = None
+        self._EXTERNAL_LABEL = "Scanner results"
+        self._external_symbols = []
+        self._zoom = 1.0
+        self._MAX_ZOOM = 12.0
 
         layout = QVBoxLayout(self)
         layout.addWidget(_hint(
             "A market map at a glance. Each tile is a stock/ETF, sized by market cap "
             "and coloured by its % change over the selected Period (green up, red down), "
             "grouped by Sector, Industry or Country. Map a preset, a Theme basket, the "
-            "World, your Watchlist or Portfolio. Click a tile to open its chart."))
+            "World, your Watchlist or Portfolio. Click a tile to chart it, right-click for "
+            "more. Scroll to zoom in on small tiles, drag to pan, double-click to fit."))
 
         self._NO_THEME = "(no theme)"
         self._GROUP_ATTR = {"Sector": "sector", "Industry": "industry",
@@ -2729,6 +2825,9 @@ class HeatmapPanel(QWidget):
         self.view = HeatmapView()
         self.view.picked.connect(self._on_pick)
         self.view.resized.connect(self.render_heatmap)
+        self.view.context_requested.connect(self._on_tile_menu)
+        self.view.zoom_requested.connect(self._zoom_at)
+        self.view.fit_requested.connect(self._fit_zoom)
         layout.addWidget(self.view, 1)
 
         legend = QHBoxLayout()
@@ -2751,6 +2850,8 @@ class HeatmapPanel(QWidget):
         if theme != self._NO_THEME:                 # a theme overrides the market
             return list(hm.THEMES.get(theme, []))
         name = self.market.currentText()
+        if name == self._EXTERNAL_LABEL:            # symbols pushed in from the Scanner
+            return list(self._external_symbols)
         if name == "Watchlist":
             return list(self.db.watch_symbols())
         if name == "Portfolio":
@@ -2761,6 +2862,33 @@ class HeatmapPanel(QWidget):
                     seen.add(sym); out.append(sym)
             return out
         return list(self._MARKETS.get(name, []))
+
+    def set_external_symbols(self, symbols, label=None):
+        """Map an ad-hoc symbol list (e.g. Scanner results). Adds/selects a
+        source entry in the Market dropdown and loads it."""
+        label = label or self._EXTERNAL_LABEL
+        self._EXTERNAL_LABEL = label
+        self._external_symbols = [str(s).upper() for s in symbols if str(s).strip()]
+        if self.market.findText(label) < 0:
+            self.market.blockSignals(True); self.market.addItem(label); self.market.blockSignals(False)
+        # Clear any theme (it would override the market) and select this source.
+        self.theme_sel.blockSignals(True); self.theme_sel.setCurrentText(self._NO_THEME); self.theme_sel.blockSignals(False)
+        self.market.blockSignals(True); self.market.setCurrentText(label); self.market.blockSignals(False)
+        self.load()
+
+    def _on_tile_menu(self, symbol, global_pos):
+        menu = QMenu(self)
+        act_chart = menu.addAction(f"Open chart — {symbol}")
+        act_watch = menu.addAction("Add to watchlist")
+        chosen = menu.exec(global_pos)
+        if chosen == act_chart:
+            self._on_pick(symbol)
+        elif chosen == act_watch:
+            try:
+                self.db.add_watch_symbol(symbol)
+                self.status.setText(f"Added {symbol} to watchlist.")
+            except Exception as exc:
+                self.status.setText(f"Could not add {symbol}: {exc}")
 
     def _on_period_changed(self, _period):
         self.legend_title.setText(f"{self.period_sel.currentText()} change:")
@@ -2796,6 +2924,7 @@ class HeatmapPanel(QWidget):
         size_by = "dollar_volume" if self.size_by.currentText() == "Dollar volume" else "market_cap"
         period = self.period_sel.currentText()
         self.legend_title.setText(f"{period} change:")
+        self._zoom = 1.0            # a fresh map starts fitted, not zoomed
         self.load_btn.setEnabled(False)
         self.progress.setVisible(True); self.progress.setRange(0, len(symbols)); self.progress.setValue(0)
         self.status.setText(f"Loading {len(symbols)} symbols ({period})…")
@@ -2845,17 +2974,55 @@ class HeatmapPanel(QWidget):
             f"(updated {stamp}{suffix}). Click a tile to chart it.")
         self.render_heatmap()
 
+    # --- zoom -------------------------------------------------------------
+    def _zoom_at(self, factor, view_pos):
+        """Re-lay the map out `factor`× bigger/smaller, keeping the point under
+        the cursor fixed. Tiles grow; label text stays a normal size and
+        previously-hidden tickers appear once their tile is big enough."""
+        old = self._zoom
+        new = max(1.0, min(self._MAX_ZOOM, old * factor))
+        if abs(new - old) < 1e-6:
+            return
+        before = self.view.mapToScene(view_pos)      # scene point under cursor now
+        self._zoom = new
+        self.render_heatmap()
+        ratio = new / old
+        # The same content point is now at before*ratio; scroll so it sits back
+        # under the cursor.
+        self.view.horizontalScrollBar().setValue(int(before.x() * ratio - view_pos.x()))
+        self.view.verticalScrollBar().setValue(int(before.y() * ratio - view_pos.y()))
+
+    def _fit_zoom(self):
+        if self._zoom != 1.0:
+            self._zoom = 1.0
+            self.render_heatmap()
+
     # --- drawing ----------------------------------------------------------
+    @staticmethod
+    def _fit_pt(text, w, h, max_pt=11.0, min_pt=5.0):
+        """Largest point size at which `text` fits a w×h tile (0 = too small to
+        label). Lets tickers show on much smaller tiles than a fixed size would."""
+        if not text or w < 13 or h < 9:
+            return 0.0
+        pt_w = (w - 3) / (len(text) * 0.66)     # ~0.66·pt per character
+        pt_h = (h - 2) / 1.4                     # ~1.4·pt per line
+        pt = min(max_pt, pt_w, pt_h)
+        return pt if pt >= min_pt else 0.0
+
     def render_heatmap(self):
         scene = self.view.scene()
         scene.clear()
         vw = max(50, self.view.viewport().width() - 2)
         vh = max(50, self.view.viewport().height() - 2)
-        scene.setSceneRect(0, 0, vw, vh)
+        # Zoom enlarges the SCENE (so tiles grow and more of them get a label at
+        # a normal text size), and scrollbars pan it - the label text itself is
+        # never scaled up.
+        sw, sh = vw * self._zoom, vh * self._zoom
+        scene.setSceneRect(0, 0, sw, sh)
         if not self._tiles:
             return
         group_attr = self._GROUP_ATTR.get(self.group_by.currentText(), "sector")
-        cells = hm.layout_heatmap(self._tiles, vw, vh, header=16.0, group_by=group_attr)
+        cells = hm.layout_heatmap(self._tiles, sw, sh, header=16.0, group_by=group_attr)
         border = QColor("#0b0e14")
         for cell in cells:
             if cell.is_header:
@@ -2870,28 +3037,32 @@ class HeatmapPanel(QWidget):
                     scene.addItem(lbl)
                 continue
             t = cell.tile
-            rect = QGraphicsRectItem(cell.x, cell.y, max(0.0, cell.w - 1), max(0.0, cell.h - 1))
+            rw, rh = max(0.0, cell.w - 1), max(0.0, cell.h - 1)
+            rect = QGraphicsRectItem(cell.x, cell.y, rw, rh)
             rect.setBrush(QColor(hm.color_for_change(t.change_pct)))
             rect.setPen(QPen(border))
             rect.setData(0, t.symbol)
+            # Clip any label to the tile so a ticker never bleeds into neighbours.
+            rect.setFlag(QGraphicsItem.ItemClipsChildrenToShape, True)
             rect.setToolTip(
                 f"{t.symbol} — {t.name}\nSector: {t.sector}\nIndustry: {t.industry}\n"
                 f"Country: {t.country}\nPrice: {t.price:,.2f}\n"
                 f"Change: {t.change_pct:+.2f}%\nSize: {fmt_large(t.size)}")
             scene.addItem(rect)
-            if cell.w >= 34 and cell.h >= 22:
-                big = cell.w >= 56
-                sym = QGraphicsSimpleTextItem(t.symbol)
-                f = QFont(); f.setBold(True); f.setPointSize(9 if big else 7); sym.setFont(f)
+            # Auto-size the ticker to the tile so even small tiles are labelled.
+            pt = self._fit_pt(t.symbol, rw, rh)
+            if pt:
+                sym = QGraphicsSimpleTextItem(t.symbol, rect)   # child -> clipped
+                f = QFont(); f.setBold(True); f.setPointSizeF(pt); sym.setFont(f)
                 sym.setBrush(QColor("#ffffff")); sym.setData(0, t.symbol)
-                sym.setPos(cell.x + 3, cell.y + 2)
-                scene.addItem(sym)
-                if cell.h >= 36:
-                    pct = QGraphicsSimpleTextItem(f"{t.change_pct:+.2f}%")
-                    pf = QFont(); pf.setPointSize(7); pct.setFont(pf)
+                sym.setPos(cell.x + 2, cell.y + 1)
+                line_h = pt * 1.4
+                if rh >= line_h * 2 + 2 and rw >= 30:      # room for a second line
+                    ppt = max(5.0, pt * 0.85)
+                    pct = QGraphicsSimpleTextItem(f"{t.change_pct:+.2f}%", rect)
+                    pf = QFont(); pf.setPointSizeF(ppt); pct.setFont(pf)
                     pct.setBrush(QColor("#eef1f5")); pct.setData(0, t.symbol)
-                    pct.setPos(cell.x + 3, cell.y + (16 if big else 13))
-                    scene.addItem(pct)
+                    pct.setPos(cell.x + 2, cell.y + 1 + line_h)
 
     def _on_pick(self, symbol):
         try:
@@ -3866,10 +4037,13 @@ class MainWindow(QMainWindow):
         plugins.discover_plugins()
         splitter = QSplitter(Qt.Horizontal)
         tabs = QTabWidget()
+        self.tabs = tabs
         self.chart = ChartWorkspace()
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
         self.portfolio_panel = PortfolioPanel(self.db)
-        self.scanner_panel = ScannerPanel(self.db, self.chart, self.watch_panel.refresh, self.portfolio_panel.refresh)
+        self.scanner_panel = ScannerPanel(self.db, self.chart, self.watch_panel.refresh,
+                                          self.portfolio_panel.refresh,
+                                          on_show_heatmap=self._show_scan_in_heatmap)
         # Each tab page is wrapped in a scroll area (see _scroll_tab) so no
         # single tall tab can force the whole window past the screen height
         # and clip the bottom.
@@ -3879,7 +4053,8 @@ class MainWindow(QMainWindow):
         self.alerts_panel = AlertsPanel(symbol_provider=self.db.watch_symbols)
         tabs.addTab(_scroll_tab(self.alerts_panel), "Alerts")
         self.heatmap_panel = HeatmapPanel(self.db, self.chart, self.cfg)
-        tabs.addTab(_scroll_tab(self.heatmap_panel), "Heatmap")
+        self._heatmap_page = _scroll_tab(self.heatmap_panel)
+        tabs.addTab(self._heatmap_page, "Heatmap")
         tabs.addTab(_scroll_tab(MarketPanel()), "Market")
         self.backtest_panel = BacktestPanel(self.chart, self.cfg)
         tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")
@@ -4023,6 +4198,11 @@ class MainWindow(QMainWindow):
             "and simulated paper trading.</p>"
             "<p><i>Analysis and practice tool only. It does not place real orders or "
             "provide financial advice.</i></p>")
+
+    def _show_scan_in_heatmap(self, symbols):
+        """Scanner → Heatmap: map the scan results and switch to the Heatmap tab."""
+        self.heatmap_panel.set_external_symbols(symbols, "Scanner results")
+        self.tabs.setCurrentWidget(self._heatmap_page)
 
     def _on_strategies_changed(self):
         self.scanner_panel.refresh_strategies()
