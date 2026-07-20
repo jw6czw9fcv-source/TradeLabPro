@@ -238,9 +238,10 @@ def test_parse_ibkr_activity_statement_csv():
         'Trades,Data,Order,Forex,USD,EUR.USD,"2024-02-02, 15:00:00",1000,1.08\n'  # non-stock, skipped
     )
     fills = parse_ibkr_trades_csv(text)
-    assert {f["symbol"] for f in fills} == {"TSLA"}      # forex row filtered out
-    trades = extract_trades_from_fills(fills)
-    assert len(trades) == 1 and trades[0].pnl == 200.0
+    # Every asset class is imported (a stocks-only filter used to hide trades).
+    assert {f["symbol"] for f in fills} == {"TSLA", "EUR.USD"}
+    tsla = [t for t in extract_trades_from_fills(fills) if t.symbol == "TSLA"]
+    assert len(tsla) == 1 and tsla[0].pnl == 200.0
 
 
 def test_import_ibkr_csv_via_store_is_idempotent(tmp_path):
@@ -276,11 +277,79 @@ _FLEX_REPORT = """<?xml version="1.0"?>
 </FlexQueryResponse>"""
 
 
-def test_parse_ibkr_flex_xml_stocks_only():
+def test_parse_ibkr_flex_xml_imports_all_asset_classes():
+    # Regression: we used to keep only assetCategory="STK", which silently
+    # dropped options/futures/forex and looked like "no trades found".
     fills = parse_ibkr_flex_xml(_FLEX_REPORT)
-    assert {f["symbol"] for f in fills} == {"AAPL"}      # forex (CASH) skipped
-    trades = extract_trades_from_fills(fills)
-    assert len(trades) == 1 and trades[0].pnl == 200.0
+    assert {f["symbol"] for f in fills} == {"AAPL", "EUR.USD"}
+    aapl = [t for t in extract_trades_from_fills(fills) if t.symbol == "AAPL"]
+    assert len(aapl) == 1 and aapl[0].pnl == 200.0
+
+
+def test_parse_ibkr_flex_xml_applies_contract_multiplier():
+    # 1 option contract, $2 -> $5 premium, multiplier 100 = +$300, not +$3.
+    xml = ('<FlexQueryResponse><Trades>'
+           '<Trade symbol="AAPL 240119C00190000" assetCategory="OPT" buySell="BUY" '
+           'quantity="1" multiplier="100" tradePrice="2.0" dateTime="20240102;103100"/>'
+           '<Trade symbol="AAPL 240119C00190000" assetCategory="OPT" buySell="SELL" '
+           'quantity="1" multiplier="100" tradePrice="5.0" dateTime="20240103;103100"/>'
+           '</Trades></FlexQueryResponse>')
+    trade = extract_trades_from_fills(parse_ibkr_flex_xml(xml))[0]
+    assert trade.pnl == 300.0
+
+
+def test_parse_ibkr_flex_xml_reads_trade_confirmation_rows():
+    # A Trade Confirmation query emits <TradeConfirm> instead of <Trade>.
+    xml = ('<FlexQueryResponse><TradeConfirms>'
+           '<TradeConfirm symbol="MSFT" assetCategory="STK" buySell="BUY"  quantity="5" tradePrice="400.0" tradeDate="20240102"/>'
+           '<TradeConfirm symbol="MSFT" assetCategory="STK" buySell="SELL" quantity="5" tradePrice="420.0" tradeDate="20240103"/>'
+           '</TradeConfirms></FlexQueryResponse>')
+    trade = extract_trades_from_fills(parse_ibkr_flex_xml(xml))[0]
+    assert trade.symbol == "MSFT" and trade.pnl == 100.0
+
+
+def test_parse_ibkr_flex_xml_deduplicates_levels_of_detail():
+    # Same trade reported at EXECUTION and ORDER level must not double-count.
+    xml = ('<FlexQueryResponse><Trades>'
+           '<Trade symbol="X" buySell="BUY" quantity="10" tradePrice="100.0" levelOfDetail="EXECUTION" dateTime="20240102;100000"/>'
+           '<Trade symbol="X" buySell="BUY" quantity="10" tradePrice="100.0" levelOfDetail="ORDER"     dateTime="20240102;100000"/>'
+           '</Trades></FlexQueryResponse>')
+    fills = parse_ibkr_flex_xml(xml)
+    assert len(fills) == 1 and fills[0]["filled_qty"] == 10
+
+
+def test_flex_missing_fields_detects_absent_trade_price():
+    # Real-world case: a Flex Query that omits "Trade Price" returns trade rows
+    # we can't use - the UI must name the missing field instead of a vague error.
+    from tradelab.core.journal import flex_missing_fields
+    xml = ('<FlexQueryResponse><Trades>'
+           '<Trade symbol="AAPL" assetCategory="STK" buySell="BUY" quantity="10" dateTime="20240102;103100"/>'
+           '</Trades></FlexQueryResponse>')
+    assert flex_missing_fields(xml) == ["Trade Price"]
+    assert parse_ibkr_flex_xml(xml) == []          # unusable without a price
+    # A complete row reports nothing missing.
+    assert flex_missing_fields(_FLEX_REPORT) == []
+
+
+def test_flex_trade_row_count_diagnostic():
+    from tradelab.core.journal import flex_trade_row_count
+    assert flex_trade_row_count(_FLEX_REPORT) == 3
+    assert flex_trade_row_count("<FlexQueryResponse></FlexQueryResponse>") == 0
+    assert flex_trade_row_count("not xml") == 0
+
+
+def test_fetch_ibkr_flex_raises_when_still_generating_past_deadline():
+    # Regression: a big account's report can still be generating when we give
+    # up - we must say "try again", not return the in-progress body (which has
+    # no trades and looked like "no trades found").
+    def fake_transport(url):
+        if "SendRequest" in url:
+            return '<FlexStatementResponse><Status>Success</Status><ReferenceCode>R</ReferenceCode></FlexStatementResponse>'
+        return ('<FlexStatementResponse><Status>Warn</Status><ErrorCode>1019</ErrorCode>'
+                '<ErrorMessage>Statement generation in progress</ErrorMessage></FlexStatementResponse>')
+    with pytest.raises(RuntimeError) as e:
+        fetch_ibkr_flex("t", "q", transport=fake_transport, max_wait=0, sleep=0)
+    assert "still generating" in str(e.value).lower()
 
 
 def test_fetch_ibkr_flex_two_step_with_transport():
@@ -331,6 +400,8 @@ def test_import_ibkr_flex_via_store(tmp_path):
             return '<FlexStatementResponse><Status>Success</Status><ReferenceCode>R</ReferenceCode></FlexStatementResponse>'
         return _FLEX_REPORT
     j = Journal(tmp_path / "journal.json")
-    assert j.import_ibkr_flex("t", "q", transport=fake_transport) == 1
+    # AAPL round-trip (closed) + the EUR.USD buy (left open) = 2 trades.
+    assert j.import_ibkr_flex("t", "q", transport=fake_transport) == 2
     assert j.import_ibkr_flex("t", "q", transport=fake_transport) == 0   # idempotent
-    assert j.all()[0].pnl == 200.0
+    aapl = [t for t in j.all() if t.symbol == "AAPL"]
+    assert len(aapl) == 1 and aapl[0].pnl == 200.0

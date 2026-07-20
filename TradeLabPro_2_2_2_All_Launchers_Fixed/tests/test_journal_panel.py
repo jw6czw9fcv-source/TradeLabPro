@@ -96,6 +96,67 @@ def test_import_from_ibkr_csv(qapp, tmp_path, monkeypatch):
     assert panel.journal.all()[0].pnl == 200.0
 
 
+def test_table_shows_entry_and_exit_dates(qapp, tmp_path):
+    # Regression: imported trades carried dates but the table had no date
+    # columns, so they looked like they had none.
+    from tradelab.core.journal import JournalEntry
+    panel = _panel(qapp, tmp_path)
+    e = JournalEntry(symbol="AAPL", qty=10, entry_price=100.0, entry_date="2026-01-26")
+    e.close(120.0, "2026-02-05")
+    panel.journal.add(e)
+    panel.refresh()
+    headers = [panel.table.horizontalHeaderItem(i).text() for i in range(panel.table.columnCount())]
+    assert "Entry date" in headers and "Exit date" in headers and "Days" in headers
+    row = {h: panel.table.item(0, i).text() for i, h in enumerate(headers)}
+    assert row["Entry date"] == "2026-01-26"
+    assert row["Exit date"] == "2026-02-05"
+    assert row["Days"] == "10"
+
+
+def test_table_sorts_newest_first(qapp, tmp_path):
+    from tradelab.core.journal import JournalEntry
+    panel = _panel(qapp, tmp_path)
+    panel.journal.add(JournalEntry(symbol="OLD", qty=1, entry_price=1, entry_date="2025-01-01"))
+    panel.journal.add(JournalEntry(symbol="NEW", qty=1, entry_price=1, entry_date="2026-06-01"))
+    panel.refresh()
+    assert panel.table.item(0, 0).text() == "NEW"
+
+
+def test_clicking_header_sorts_by_value_not_text(qapp, tmp_path):
+    from PySide6.QtCore import Qt
+    from tradelab.core.journal import JournalEntry
+    panel = _panel(qapp, tmp_path)
+    # Quantities 2 / 10 / 100 sort wrong lexicographically ("10" < "2").
+    for sym, qty in [("A", 2), ("B", 10), ("C", 100)]:
+        panel.journal.add(JournalEntry(symbol=sym, qty=qty, entry_price=1.0))
+    panel.refresh()
+    headers = [panel.table.horizontalHeaderItem(i).text() for i in range(panel.table.columnCount())]
+    qty_col = headers.index("Qty")
+    panel.table.sortItems(qty_col, Qt.AscendingOrder)
+    order = [panel.table.item(r, 0).text() for r in range(panel.table.rowCount())]
+    assert order == ["A", "B", "C"]
+    panel.table.sortItems(qty_col, Qt.DescendingOrder)
+    order = [panel.table.item(r, 0).text() for r in range(panel.table.rowCount())]
+    assert order == ["C", "B", "A"]
+
+
+def test_refresh_keeps_the_users_chosen_sort(qapp, tmp_path):
+    from PySide6.QtCore import Qt
+    from tradelab.core.journal import JournalEntry
+    panel = _panel(qapp, tmp_path)
+    for sym, qty in [("A", 2), ("B", 10)]:
+        panel.journal.add(JournalEntry(symbol=sym, qty=qty, entry_price=1.0))
+    panel.refresh()
+    headers = [panel.table.horizontalHeaderItem(i).text() for i in range(panel.table.columnCount())]
+    qty_col = headers.index("Qty")
+    panel.table.sortItems(qty_col, Qt.DescendingOrder)
+    panel.refresh()                       # e.g. after an import
+    h = panel.table.horizontalHeader()
+    assert h.sortIndicatorSection() == qty_col
+    assert h.sortIndicatorOrder() == Qt.DescendingOrder
+    assert panel.table.item(0, 0).text() == "B"      # still biggest-qty first
+
+
 def test_flex_import_done_handler_adds_trades(qapp, tmp_path):
     # Drive the worker's completion path directly with parsed fills (no network).
     panel = _panel(qapp, tmp_path)
@@ -115,13 +176,28 @@ def test_flex_import_done_handler_reports_error(qapp, tmp_path):
     assert "1015" in panel.status.text()
 
 
+def test_flex_credentials_persist_via_injected_settings(qapp, tmp_path):
+    # The Save path writes token + query id to a settings store (injected here
+    # so the real QSettings / user's saved token is never touched).
+    class _FakeSettings:
+        def __init__(self): self.store = {}
+        def setValue(self, k, v): self.store[k] = v
+        def value(self, k, default=None): return self.store.get(k, default)
+
+    panel = _panel(qapp, tmp_path)
+    fake = _FakeSettings()
+    panel._save_flex_credentials("TOKEN123", "999", settings=fake)
+    assert fake.store["ibkr/flex_token"] == "TOKEN123"
+    assert fake.store["ibkr/flex_query"] == "999"
+
+
 def test_breakdown_by_strategy(qapp, tmp_path, monkeypatch):
     from tradelab.ui import app as appmod
     panel = _panel(qapp, tmp_path)
     for strat, exit_ in [("breakout", 120.0), ("fade", 90.0)]:
         panel.f_symbol.setText("AAPL"); panel.f_qty.setValue(10); panel.f_entry.setValue(100.0)
         panel.f_strategy.setText(strat); panel.add_trade()
-        panel.table.selectRow(panel.table.rowCount() - 1)
+        panel.table.selectRow(0)   # newest trade sorts first
         monkeypatch.setattr(appmod.QInputDialog, "getDouble", staticmethod(lambda *a, **k: (exit_, True)))
         panel.close_selected()
     panel.group_by.setCurrentText("Strategy")

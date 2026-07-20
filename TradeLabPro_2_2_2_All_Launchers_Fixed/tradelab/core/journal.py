@@ -352,11 +352,12 @@ def parse_ibkr_trades_csv(text: str) -> list:
             qty_i = col(header, "quantity")
             px_i = col(header, "t. price", "price", "tradeprice")
             dt_i = col(header, "date/time", "datetime", "date")
-            ac_i = col(header, "asset category", "assetclass")
             for r in trade_rows:
                 if len(r) < 2 or str(r[1]).strip() != "Data":
                     continue
-                if ac_i is not None and ac_i < len(r) and "stock" not in str(r[ac_i]).lower():
+                # Skip the statement's own subtotal/total rows, but keep every
+                # asset class (stocks, options, futures, forex...).
+                if str(r[sym_i] if sym_i is not None and sym_i < len(r) else "").strip().lower().startswith("total"):
                     continue
                 if None in (sym_i, qty_i, px_i) or max(sym_i, qty_i, px_i) >= len(r):
                     continue
@@ -379,13 +380,10 @@ def parse_ibkr_trades_csv(text: str) -> list:
     qty_i = col(header, "quantity")
     px_i = col(header, "tradeprice", "price", "t. price")
     dt_i = col(header, "datetime", "date/time", "tradedate", "date")
-    ac_i = col(header, "assetclass", "asset category")
     if None in (sym_i, qty_i, px_i):
         return []
     for r in rows[1:]:
         if not r or max(sym_i, qty_i, px_i) >= len(r):
-            continue
-        if ac_i is not None and ac_i < len(r) and str(r[ac_i]).strip() and "stk" not in str(r[ac_i]).lower() and "stock" not in str(r[ac_i]).lower():
             continue
         try:
             qty_val = float(str(r[qty_i]).replace(",", ""))
@@ -464,11 +462,17 @@ def _flex_raise_if_failed(stmt: str):
 
 
 def fetch_ibkr_flex(token: str, query_id: str, transport=None,
-                    max_wait: float = 20.0, sleep: float = 1.0) -> str:
+                    max_wait: float = 90.0, sleep: float = 2.0) -> str:
     """Run the two-step Flex Web Service exchange and return the report text.
     `transport(url) -> str` defaults to a plain HTTPS GET; inject a fake in
     tests. Retries GetStatement while IBKR reports the statement is still
-    generating, up to `max_wait` seconds."""
+    generating, up to `max_wait` seconds.
+
+    Big accounts take a while to generate: if the deadline passes while IBKR is
+    still working we raise a clear "try again" error rather than returning the
+    in-progress body, which contains no trades and would otherwise look like
+    "no trades found".
+    """
     import time as _time
     transport = transport or _http_get
     token = str(token).strip()
@@ -483,36 +487,98 @@ def fetch_ibkr_flex(token: str, query_id: str, transport=None,
             _flex_raise_if_failed(stmt)
             return stmt
         if _time.time() >= deadline:
-            return stmt
+            raise RuntimeError(
+                "IBKR is still generating your Flex statement (large reports can take "
+                "a while). Wait a few seconds and click Fetch & import again.")
         _time.sleep(sleep)
 
 
-def parse_ibkr_flex_xml(text: str) -> list:
-    """Parse a Flex Query XML report's <Trade> rows into fill dicts (stocks
-    only). Side comes from buySell when present, else the sign of quantity."""
+# Fields a trade row must carry for us to build a usable journal entry, and the
+# attribute spellings IBKR may use for each. A Flex Query only emits the fields
+# the user ticked, so a query missing "Trade Price" yields rows we can't use.
+_FLEX_REQUIRED_FIELDS = {
+    "Symbol": ("symbol", "underlyingSymbol"),
+    "Quantity": ("quantity",),
+    "Trade Price": ("tradePrice", "price"),
+}
+
+
+def flex_missing_fields(text: str) -> list:
+    """Which required fields the report's trade rows lack, so the UI can tell
+    the user exactly what to tick in their Flex Query."""
     import xml.etree.ElementTree as ET
     try:
         root = ET.fromstring(text)
     except Exception:
         return []
+    elems = list(root.iter("Trade")) or list(root.iter("TradeConfirm"))
+    if not elems:
+        return []
+    present = set()
+    for e in elems[:100]:
+        present.update(k for k, v in e.attrib.items() if str(v).strip())
+    return [label for label, names in _FLEX_REQUIRED_FIELDS.items()
+            if not any(n in present for n in names)]
+
+
+def flex_trade_row_count(text: str) -> int:
+    """How many trade rows the report contains, regardless of whether we could
+    read them - used to tell 'query returned nothing' apart from 'we failed to
+    parse it'."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(text)
+    except Exception:
+        return 0
+    return len(list(root.iter("Trade"))) + len(list(root.iter("TradeConfirm")))
+
+
+def parse_ibkr_flex_xml(text: str) -> list:
+    """Parse a Flex report's trade rows into fill dicts.
+
+    Handles both the Activity Flex `<Trade>` rows and Trade-Confirmation
+    `<TradeConfirm>` rows, and **all asset classes** - not just stocks. For
+    derivatives the contract `multiplier` is folded into the quantity so P&L
+    comes out in real dollars (e.g. 1 option contract at a $2 premium behaves
+    like 100 units). Side comes from buySell when present, else the sign of
+    quantity.
+    """
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(text)
+    except Exception:
+        return []
+
+    # Activity Flex uses <Trade>; a Trade Confirmation query uses <TradeConfirm>.
+    elems = list(root.iter("Trade")) or list(root.iter("TradeConfirm"))
+    # A query configured with several levels of detail repeats each trade as an
+    # execution AND an order/closed-lot row; keep executions so nothing doubles.
+    levels = {(e.get("levelOfDetail") or "").upper() for e in elems}
+    if "EXECUTION" in levels and len(levels) > 1:
+        elems = [e for e in elems if (e.get("levelOfDetail") or "").upper() == "EXECUTION"]
+
     fills: list = []
     seq = 0
-    for tr in root.iter("Trade"):
-        a = tr.attrib
-        asset = (a.get("assetCategory") or "").upper()
-        if asset and asset != "STK":
-            continue
+    for e in elems:
+        a = e.attrib
         try:
             qty_val = float(str(a.get("quantity", "")).replace(",", ""))
         except Exception:
             continue
+        if qty_val == 0:
+            continue
+        try:
+            mult = float(a.get("multiplier") or 1) or 1.0
+        except Exception:
+            mult = 1.0
         buysell = (a.get("buySell") or "").upper()
         side = "BUY" if (buysell.startswith("B") if buysell else qty_val > 0) else "SELL"
-        at = _parse_ibkr_datetime(a.get("dateTime") or a.get("tradeDate"))
+        at = _parse_ibkr_datetime(a.get("dateTime") or a.get("tradeDate")
+                                  or a.get("orderTime") or a.get("reportDate"))
         if at is None:
             seq += 1; at = seq
-        f = _to_fill(a.get("symbol"), side, qty_val,
-                     a.get("tradePrice") or a.get("price"), at)
+        f = _to_fill(a.get("symbol") or a.get("underlyingSymbol"), side,
+                     abs(qty_val) * mult, a.get("tradePrice") or a.get("price"), at)
         if f:
             fills.append(f)
     return fills

@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.18.4 - Journal: click a header to sort
+
+### Added
+- **Click any column header in the Journal to sort** (click again to reverse) — trades table and the breakdown table. Numeric columns (Qty, Entry, P&L, P&L %, R, Days, Win %) sort by **value, not text**, so 100 doesn't land between 10 and 2. Dates sort chronologically.
+- Your chosen sort **survives a refresh/import**, so re-importing doesn't throw you back to the default. Default remains Entry date, newest first.
+
+### Verified
+- 437/437 pytest tests pass (new: numeric column sorts by value both directions, chosen sort persists across refresh).
+
+## 2.18.3 - Journal: show trade dates
+
+### Fixed
+- **Imported trades appeared to have no date.** The dates were parsed correctly all along (IBKR's `20260126;123300` -> `2026-01-26`), but the journal table had no date columns to show them. Added **Entry date**, **Exit date** and **Days** (holding period) columns.
+
+### Changed
+- The trades table now lists **newest first**, so a freshly imported year of history opens on your most recent trades.
+
+### Verified
+- 435/435 pytest tests pass (new: date/Days columns populate, newest-first ordering).
+
+## 2.18.2 - Fix "no trades found" on IBKR import
+
+### Fixed
+- **Big accounts reported "no trades" when the report was simply still generating.** IBKR returns a "statement generation in progress" response while it builds the report; after our 20 s wait we returned *that* body, which contains no trades. We now wait up to **90 s** and, if it's still generating, say so ("wait a few seconds and Fetch again") instead of pretending the report was empty.
+- **Non-stock trades were silently dropped.** The importers filtered to `assetCategory = STK`, so options / futures / forex activity vanished. **All asset classes** now import (CSV and XML). For derivatives the contract **multiplier** is applied so P&L is real dollars (1 option contract $2 → $5 = **+$300**, not +$3).
+- **Trade Confirmation reports are now readable** — a query producing `<TradeConfirm>` rows (instead of Activity's `<Trade>`) previously parsed to nothing.
+- **No more double counting** when a query emits the same trade at several levels of detail (execution + order/closed-lot) — execution rows win.
+
+### Changed
+- If your Flex Query omits a required field (most commonly **Trade Price**), the error now **names the missing field** and tells you where to tick it, instead of a vague "none could be read".
+- When an import returns nothing, the message now says *why*: it reports how many trade rows the report actually contained and what to check (Trades section enabled, date period, Activity vs Trade Confirmation query), and saves the raw report to `logs/ibkr_flex_last.xml` for inspection.
+
+### Verified
+- 433/433 pytest tests pass (new: still-generating timeout raises instead of returning an empty body, all-asset-class import, option multiplier P&L, `<TradeConfirm>` parsing, level-of-detail de-duplication, row-count diagnostic).
+
+## 2.18.1 - IBKR Flex credentials: save & keep
+
+### Changed
+- The **IBKR Flex** dialog now has a **Save** button that stores your token + Query ID **without** fetching — so when the token changes you can just update it in the app. Credentials are kept in the OS settings store (independent of the app folder), so they **persist across app updates/reinstalls**; you only enter them once. Added a **Show token** toggle for entry.
+
+### Verified
+- 427/427 pytest tests pass (new: credentials save via an injected settings store, so the real saved token is never touched).
+
 ## 2.18.0 - Trade Journal (Phase 11)
 
 ### Added

@@ -1,7 +1,27 @@
 # TradeLab Pro Project Status
 
-Current version: 2.18.0
+Current version: 2.18.4
 Current phase: Phase 11 - Trade Journal (done)
+
+## Completed in 2.18.4 (Journal column sorting)
+- Enabled click-to-sort headers on the Journal trades table and breakdown table (`setSortingEnabled`), with numeric cells using `SortableTableWidgetItem` sort_values so they order by value. `refresh()`/`_refresh_breakdown()` disable sorting while repopulating then restore the user's sort indicator (default: Entry date descending / P&L descending).
+- pytest regression suite now 437 tests, all passing.
+
+## Completed in 2.18.3 (Journal shows trade dates)
+- Journal table gained Entry date / Exit date / Days columns (dates were imported correctly but never displayed) and now sorts newest-first.
+- pytest regression suite now 435 tests, all passing.
+
+## Completed in 2.18.2 (IBKR import "no trades" fixes)
+- `fetch_ibkr_flex`: max_wait 20s → 90s and now RAISES "still generating, try again" past the deadline instead of returning IBKR's in-progress body (which has no trades and read as "no trades found") — the likely cause on large accounts.
+- Removed the stocks-only (`assetCategory=STK`) filter from both the XML and CSV importers; all asset classes import, with the contract `multiplier` folded into quantity so option/future P&L is in real dollars.
+- `parse_ibkr_flex_xml` now also reads `<TradeConfirm>` rows (Trade Confirmation queries) and de-duplicates multi-level-of-detail reports (prefers EXECUTION rows).
+- Added `flex_trade_row_count()`; the UI now reports how many trade rows the report held, what to check, and saves the raw report to `logs/ibkr_flex_last.xml`.
+- Added `flex_missing_fields()`: when trade rows lack a required field (e.g. Trade Price, the real cause of a user's 61-row report importing nothing), the UI names the missing field and where to enable it.
+- pytest regression suite now 433 tests, all passing.
+
+## Completed in 2.18.1 (IBKR Flex credential persistence)
+- IBKR Flex dialog: added a "Save" button (store token+query id without fetching) and a "Show token" toggle. Credentials persist in QSettings (`ibkr/*`, OS store — survives app updates). Extracted `_save_flex_credentials(token, query, settings=)` (injectable) + `_start_flex_fetch()`; dialog uses a custom result code (`_FLEX_SAVE`) to distinguish Save vs Fetch&import.
+- pytest regression suite now 427 tests, all passing.
 
 ## Completed in 2.18.0 (Trade Journal, Phase 11)
 - `tradelab/core/journal.py` (Qt-free): `JournalEntry` (side/qty/entry/stop/exit/strategy/tags/notes) with derived P&L, P&L%, R-multiple (vs stop), holding days; `summarize()` (win rate, expectancy, profit factor, avg R, totals) and `group_stats(key)` by strategy/tag/symbol; `extract_trades_from_fills()` pairs fills into position-level round-trips; `parse_ibkr_trades_csv()` reads IBKR Flex-Query/Activity CSVs; `fetch_ibkr_flex(token, query_id, transport=)` runs the Flex Web Service two-step SendRequest/GetStatement (retry while generating) and `parse_ibkr_flex_xml()` parses the report; `Journal` store → `data/journal.json` (gitignored) with idempotent `import_fills()`/`import_ibkr_csv()`/`import_ibkr_flex()`.

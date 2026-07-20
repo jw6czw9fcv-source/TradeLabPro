@@ -3030,10 +3030,38 @@ class IbkrFlexWorker(QThread):
     def run(self):
         try:
             from tradelab.core.journal import (fetch_ibkr_flex, parse_ibkr_flex_xml,
-                                               parse_ibkr_trades_csv)
+                                               parse_ibkr_trades_csv, flex_trade_row_count,
+                                               flex_missing_fields)
             text = fetch_ibkr_flex(self.token, self.query_id)
             fills = parse_ibkr_flex_xml(text) or parse_ibkr_trades_csv(text)
-            error = "" if fills else "No trades found in the Flex report."
+            error = ""
+            if not fills:
+                # Distinguish "the query returned nothing" from "we couldn't read
+                # it", and keep the raw report so the cause is inspectable.
+                rows = flex_trade_row_count(text)
+                saved = ""
+                try:
+                    out = ROOT_DIR / "logs" / "ibkr_flex_last.xml"
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    out.write_text(text, encoding="utf-8")
+                    saved = " Raw report saved to logs/ibkr_flex_last.xml."
+                except Exception:
+                    pass
+                if rows:
+                    missing = flex_missing_fields(text)
+                    if missing:
+                        error = (f"Your Flex Query returned {rows} trades but is missing the "
+                                 f"field(s): {', '.join(missing)}. In IBKR → Flex Queries → "
+                                 f"edit your query → Trades section, tick those (Trade Price "
+                                 f"is required), save, then Fetch again.")
+                    else:
+                        error = (f"The report contains {rows} trade row(s) but none could be "
+                                 f"read.{saved}")
+                else:
+                    error = ("The report came back with no trades. Check that the Flex "
+                             "Query includes the Trades section, that its date period "
+                             "covers your trades, and that it's an Activity Flex Query "
+                             "(not Trade Confirmation)." + saved)
         except BaseException as exc:
             fills, error = [], str(exc)
         try:
@@ -3048,8 +3076,8 @@ class JournalPanel(QWidget):
     tag. Round-trips can be imported from the paper-trading account. Analysis
     and practice only; nothing here places orders."""
 
-    _COLS = ["Symbol", "Side", "Qty", "Entry", "Stop", "Exit", "P&L", "P&L %",
-             "R", "Status", "Strategy", "Tags"]
+    _COLS = ["Symbol", "Side", "Qty", "Entry", "Entry date", "Stop", "Exit", "Exit date",
+             "P&L", "P&L %", "R", "Days", "Status", "Strategy", "Tags"]
 
     def __init__(self, chart: ChartWidget, cfg: ScannerConfig):
         super().__init__()
@@ -3095,6 +3123,11 @@ class JournalPanel(QWidget):
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.cellDoubleClicked.connect(self._chart_row)
+        # Click any header to sort (numeric columns sort by value, not text).
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setToolTip("Click a column header to sort; click again to reverse.")
+        self._default_sort_col = self._COLS.index("Entry date")
+        self.table.sortItems(self._default_sort_col, Qt.DescendingOrder)
         layout.addWidget(self.table, 1)
 
         controls = QHBoxLayout()
@@ -3122,6 +3155,8 @@ class JournalPanel(QWidget):
         self.breakdown = QTableWidget(0, 5)
         self.breakdown.setHorizontalHeaderLabels(["Group", "Trades", "Win %", "Total P&L", "Avg R"])
         self.breakdown.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.breakdown.setSortingEnabled(True)
+        self.breakdown.horizontalHeader().setToolTip("Click a column header to sort.")
         self.breakdown.setMaximumHeight(180)
         layout.addWidget(self.breakdown)
 
@@ -3229,47 +3264,76 @@ class JournalPanel(QWidget):
                                 "(already imported, or not a recognized Flex/Activity export).")
         self.refresh()
 
+    # Custom dialog result for "Save without fetching".
+    _FLEX_SAVE = 2
+
+    @staticmethod
+    def _flex_settings():
+        return QSettings("TradeLabPro", "TradeLabPro")
+
+    def _save_flex_credentials(self, token, query, settings=None):
+        """Persist the Flex token + query id. QSettings lives in the OS store
+        (Windows registry under TradeLabPro), independent of the app folder, so
+        credentials survive app updates/reinstalls. Injectable for testing."""
+        settings = settings or self._flex_settings()
+        settings.setValue("ibkr/flex_token", token)
+        settings.setValue("ibkr/flex_query", query)
+
+    def _start_flex_fetch(self, token, query):
+        self.status.setText("Fetching your Flex report from IBKR…")
+        self._flex_worker = IbkrFlexWorker(token, query)
+        self._flex_worker.done.connect(self._on_flex_done)
+        self._flex_worker.start()
+
     def import_ibkr_flex(self):
         """Direct pull via IBKR's Flex Web Service. The user supplies their own
-        read-only Flex token + query id (stored locally, token masked). The
-        fetch runs off the UI thread. Read-only: no login, no orders, no funds."""
+        read-only Flex token + query id, kept locally (token masked) and reused
+        next time. 'Save' stores them without fetching (handy when the token
+        changes); 'Fetch & import' stores and pulls. The fetch runs off the UI
+        thread. Read-only: no login, no orders, no funds."""
         if self._flex_worker is not None and self._flex_worker.isRunning():
             self.status.setText("An IBKR Flex fetch is already running…")
             return
-        settings = QSettings("TradeLabPro", "TradeLabPro")
+        settings = self._flex_settings()
         dlg = QDialog(self)
-        dlg.setWindowTitle("Import from IBKR — Flex Web Service")
+        dlg.setWindowTitle("IBKR Flex Web Service — token & query id")
         form = QFormLayout(dlg)
         info = QLabel(
-            "Fetches your Flex Query report directly (read-only — no login, no orders).\n"
-            "In IBKR Client Portal: Performance & Reports → Flex Queries → create a "
-            "Trades query, then enable the Flex Web Service to get a token.")
+            "Your read-only Flex token + Query ID (stored on this PC, kept across "
+            "app updates — you only enter them once, and update here if the token "
+            "changes).\nIn IBKR Client Portal: Performance & Reports → Flex Queries "
+            "→ create a Trades query, then enable the Flex Web Service for a token.")
         info.setWordWrap(True)
         form.addRow(info)
         token_edit = QLineEdit(str(settings.value("ibkr/flex_token", "") or ""))
         token_edit.setEchoMode(QLineEdit.Password)
         token_edit.setPlaceholderText("Flex Web Service token")
+        show = QCheckBox("Show token")
+        show.toggled.connect(lambda on: token_edit.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password))
         query_edit = QLineEdit(str(settings.value("ibkr/flex_query", "") or ""))
         query_edit.setPlaceholderText("Flex Query ID")
         form.addRow("Flex token", token_edit)
+        form.addRow("", show)
         form.addRow("Query id", query_edit)
         buttons = QHBoxLayout()
-        ok_btn = QPushButton("Fetch && import"); cancel_btn = QPushButton("Cancel")
-        ok_btn.clicked.connect(dlg.accept); cancel_btn.clicked.connect(dlg.reject)
-        buttons.addStretch(); buttons.addWidget(cancel_btn); buttons.addWidget(ok_btn)
+        cancel_btn = QPushButton("Cancel"); cancel_btn.clicked.connect(dlg.reject)
+        save_btn = QPushButton("Save"); save_btn.clicked.connect(lambda: dlg.done(self._FLEX_SAVE))
+        ok_btn = QPushButton("Fetch && import"); ok_btn.clicked.connect(dlg.accept)
+        buttons.addStretch(); buttons.addWidget(cancel_btn); buttons.addWidget(save_btn); buttons.addWidget(ok_btn)
         form.addRow(buttons)
-        if dlg.exec() != QDialog.Accepted:
+
+        result = dlg.exec()
+        if result == QDialog.Rejected:
             return
         token, query = token_edit.text().strip(), query_edit.text().strip()
         if not token or not query:
             self.status.setText("Flex token and query id are both required.")
             return
-        settings.setValue("ibkr/flex_token", token)
-        settings.setValue("ibkr/flex_query", query)
-        self.status.setText("Fetching your Flex report from IBKR…")
-        self._flex_worker = IbkrFlexWorker(token, query)
-        self._flex_worker.done.connect(self._on_flex_done)
-        self._flex_worker.start()
+        self._save_flex_credentials(token, query, settings)
+        if result == QDialog.Accepted:          # Fetch & import
+            self._start_flex_fetch(token, query)
+        else:                                   # Save only
+            self.status.setText("IBKR Flex token & query id saved — kept for next time.")
 
     def _on_flex_done(self, fills, error):
         if error and not fills:
@@ -3317,7 +3381,18 @@ class JournalPanel(QWidget):
         return item
 
     def refresh(self):
-        entries = self.journal.all()
+        # Newest trades first - after importing a year of IBKR history the
+        # recent ones are what you want to see.
+        entries = sorted(self.journal.all(),
+                         key=lambda e: (e.entry_date or "", e.created_at), reverse=True)
+        # Repopulating with sorting live would shuffle rows mid-insert, so turn
+        # it off and restore the user's chosen column/direction afterwards.
+        header = self.table.horizontalHeader()
+        sort_col = header.sortIndicatorSection()
+        sort_order = header.sortIndicatorOrder()
+        if sort_col < 0 or sort_col >= len(self._COLS):
+            sort_col, sort_order = self._default_sort_col, Qt.DescendingOrder
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(entries))
         for r, e in enumerate(entries):
             cells = [
@@ -3325,11 +3400,14 @@ class JournalPanel(QWidget):
                 QTableWidgetItem(e.side),
                 self._num(e.qty),
                 self._num(e.entry_price, money=True),
+                QTableWidgetItem(e.entry_date or "—"),
                 self._num(e.stop, money=True),
                 self._num(e.exit_price, money=True),
+                QTableWidgetItem(e.exit_date or "—"),
                 self._num(e.pnl, money=True),
                 self._num(e.pnl_pct, pct=True),
                 self._num(e.r_multiple, suffix="R"),
+                self._num(e.holding_days),
                 QTableWidgetItem("Open" if e.is_open else "Closed"),
                 QTableWidgetItem(e.strategy),
                 QTableWidgetItem(", ".join(e.tags)),
@@ -3337,6 +3415,8 @@ class JournalPanel(QWidget):
             cells[0].setData(Qt.UserRole, e.id)
             for c, item in enumerate(cells):
                 self.table.setItem(r, c, item)
+        self.table.setSortingEnabled(True)
+        self.table.sortItems(sort_col, sort_order)
         self.table.resizeColumnsToContents()
         self._refresh_stats(entries)
         self._refresh_breakdown()
@@ -3358,6 +3438,11 @@ class JournalPanel(QWidget):
     def _refresh_breakdown(self):
         key = {"Strategy": "strategy", "Tag": "tag", "Symbol": "symbol"}[self.group_by.currentText()]
         groups = group_stats(self.journal.all(), key)
+        bh = self.breakdown.horizontalHeader()
+        b_col, b_order = bh.sortIndicatorSection(), bh.sortIndicatorOrder()
+        if b_col < 0 or b_col >= self.breakdown.columnCount():
+            b_col, b_order = 3, Qt.DescendingOrder      # default: biggest P&L first
+        self.breakdown.setSortingEnabled(False)
         self.breakdown.setRowCount(len(groups))
         for r, (label, s) in enumerate(groups):
             pnl_item = SortableTableWidgetItem(f"{s['total_pnl']:,.2f}", sort_value=s["total_pnl"])
@@ -3365,12 +3450,14 @@ class JournalPanel(QWidget):
             avg_r = "—" if s["avg_r"] is None else f"{s['avg_r']:+.2f}"
             for c, item in enumerate([
                 QTableWidgetItem(label or "—"),
-                QTableWidgetItem(str(s["closed"])),
-                QTableWidgetItem(f"{s['win_rate']:.0f}%"),
+                SortableTableWidgetItem(str(s["closed"]), sort_value=s["closed"]),
+                SortableTableWidgetItem(f"{s['win_rate']:.0f}%", sort_value=s["win_rate"]),
                 pnl_item,
-                QTableWidgetItem(avg_r),
+                SortableTableWidgetItem(avg_r, sort_value=(s["avg_r"] if s["avg_r"] is not None else -1e18)),
             ]):
                 self.breakdown.setItem(r, c, item)
+        self.breakdown.setSortingEnabled(True)
+        self.breakdown.sortItems(b_col, b_order)
         self.breakdown.resizeColumnsToContents()
 
 
