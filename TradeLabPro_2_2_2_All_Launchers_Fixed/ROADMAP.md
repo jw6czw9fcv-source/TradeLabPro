@@ -21,8 +21,9 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 
 - Phase 11: Trade Journal (tag/note trades, win-rate/R-multiple/expectancy review, import paper fills) — DONE 2.18.0
 
+- Phase 12: Risk & position-sizing (risk %/stop -> shares, R-targets, sector exposure) — DONE 2.19.0
+
 ## Candidate next
-- Risk & position-sizing panel (risk % + stop -> shares, sector exposure)
 - Chart replay / bar-by-bar practice mode
 - Data-source abstraction (Alpaca/Polygon/IBKR) to harden the yfinance dependency
 - Heatmap follow-ups: auto-refresh timer (DONE 2.14.2), index/ETF maps (DONE 2.15.0), click-through from Scanner results

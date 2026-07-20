@@ -24,6 +24,7 @@ from tradelab.core.scanner import scan_symbols
 from tradelab.core.alerts import Alert, AlertStore
 from tradelab.core.filters import FilterCondition
 from tradelab.core.journal import Journal, JournalEntry, summarize, group_stats
+from tradelab.core.risk import size_position, r_targets
 from tradelab.core import heatmap as hm
 from tradelab.data.universe import US_NASDAQ, US_NYSE, US_AMEX, CAN_TSX, CAN_TSX_EXPANDED
 from tradelab.strategies import strategy_choices
@@ -3017,6 +3018,183 @@ class AlertsPanel(QWidget):
             self._tray.hide()
 
 
+class SectorExposureWorker(QThread):
+    """Computes portfolio sector exposure off the UI thread (sector lookups can
+    hit the network on first use)."""
+    done = Signal(object, float)   # rows [(sector, value, pct)], total
+
+    def __init__(self, positions):
+        super().__init__()
+        self.positions = positions
+
+    def run(self):
+        try:
+            from tradelab.core.risk import sector_exposure
+            rows, total = sector_exposure(self.positions)
+        except BaseException:
+            rows, total = [], 0.0
+        try:
+            self.done.emit(rows, total)
+        except RuntimeError:
+            pass
+
+
+class RiskPanel(QWidget):
+    """Position-sizing calculator + R-multiple targets + portfolio sector
+    exposure. Pure planning math - it never places orders."""
+
+    def __init__(self, db: Database):
+        super().__init__()
+        self.db = db
+        self._exposure_worker = None
+        layout = QVBoxLayout(self)
+        layout.addWidget(_hint(
+            "Size a trade by risk, not by gut: set how much of your account you'll "
+            "risk and where your stop is, and get the share count that risks exactly "
+            "that. See your R-multiple targets and how concentrated your portfolio is "
+            "by sector. Planning tool only — it places no orders."))
+
+        # --- position sizing ----------------------------------------------
+        box = QGroupBox("Position sizing")
+        grid = QFormLayout(box)
+        self.equity = QDoubleSpinBox(); self.equity.setRange(0, 1e12); self.equity.setPrefix("$"); self.equity.setGroupSeparatorShown(True); self.equity.setValue(100_000)
+        self.risk_pct = QDoubleSpinBox(); self.risk_pct.setRange(0, 100); self.risk_pct.setDecimals(2); self.risk_pct.setValue(1.0); self.risk_pct.setSuffix(" %")
+        self.side = QComboBox(); self.side.addItems(["Long", "Short"])
+        self.entry = QDoubleSpinBox(); self.entry.setRange(0, 1e9); self.entry.setDecimals(2); self.entry.setPrefix("$"); self.entry.setValue(100.0)
+        self.stop = QDoubleSpinBox(); self.stop.setRange(0, 1e9); self.stop.setDecimals(2); self.stop.setPrefix("$"); self.stop.setValue(95.0)
+        self.max_pos = QDoubleSpinBox(); self.max_pos.setRange(0, 100); self.max_pos.setDecimals(1); self.max_pos.setSuffix(" %"); self.max_pos.setSpecialValueText("off")
+        self.max_pos.setToolTip("Optional cap on position size as % of account (0 = off).")
+        use_paper = QPushButton("Use paper account equity")
+        use_paper.setToolTip("Fill Account equity from your paper-trading account.")
+        use_paper.clicked.connect(self._use_paper_equity)
+        grid.addRow("Account equity", self.equity)
+        grid.addRow("Risk per trade", self.risk_pct)
+        grid.addRow("Side", self.side)
+        grid.addRow("Entry price", self.entry)
+        grid.addRow("Stop price", self.stop)
+        grid.addRow("Max position", self.max_pos)
+        grid.addRow("", use_paper)
+        layout.addWidget(box)
+        for w in (self.equity, self.risk_pct, self.entry, self.stop, self.max_pos):
+            w.valueChanged.connect(self._recompute)
+        self.side.currentTextChanged.connect(self._recompute)
+
+        self.result = QLabel(); self.result.setWordWrap(True)
+        self.result.setStyleSheet("padding:6px; font-size:13px;")
+        layout.addWidget(self.result)
+
+        # --- R targets ----------------------------------------------------
+        layout.addWidget(QLabel("Targets (R = your stop distance):"))
+        self.targets = QTableWidget(0, 4)
+        self.targets.setHorizontalHeaderLabels(["R", "Target price", "$ / share", "Position $"])
+        self.targets.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.targets.setMaximumHeight(150)
+        layout.addWidget(self.targets)
+
+        # --- sector exposure ----------------------------------------------
+        exp = QHBoxLayout()
+        load_btn = QPushButton("Load portfolio exposure"); load_btn.clicked.connect(self.load_exposure)
+        exp.addWidget(QLabel("Portfolio sector exposure")); exp.addStretch(); exp.addWidget(load_btn)
+        layout.addLayout(exp)
+        self.exposure = QTableWidget(0, 3)
+        self.exposure.setHorizontalHeaderLabels(["Sector", "Value", "% of portfolio"])
+        self.exposure.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.exposure.setSortingEnabled(True)
+        layout.addWidget(self.exposure)
+        self.exposure_status = QLabel("Positions come from the Portfolio tab.")
+        layout.addWidget(self.exposure_status)
+
+        self._recompute()
+
+    # --- sizing -----------------------------------------------------------
+    def _use_paper_equity(self):
+        path = DATA_DIR / "paper_account.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            # Equity ~= cash + cost basis of open positions (offline, no marks).
+            equity = float(data.get("cash", 0.0))
+            for p in data.get("positions", []):
+                equity += float(p.get("qty", 0) or 0) * float(p.get("avg_price", 0) or 0)
+            self.equity.setValue(equity)
+            self.result.setText(self.result.text())  # keep; _recompute fired via valueChanged
+        except Exception:
+            self.exposure_status.setText("No paper account found yet.")
+
+    def _recompute(self):
+        entry, stop, side = self.entry.value(), self.stop.value(), self.side.currentText()
+        res = size_position(self.equity.value(), self.risk_pct.value(), entry, stop,
+                            side=side, max_position_pct=(self.max_pos.value() or None))
+        if not res.valid:
+            self.result.setText(f"<span style='color:#f0553a'>{res.reason or 'Enter valid inputs.'}</span>")
+            self._fill_targets(entry, stop, side, 0)
+            return
+        verb = "Buy" if side == "Long" else "Short"
+        cap = f" &nbsp;·&nbsp; <span style='color:#f0a020'>capped by {res.capped_by}</span>" if res.capped_by else ""
+        self.result.setText(
+            f"<b style='font-size:15px'>{verb} {res.shares:,} shares</b>{cap}<br>"
+            f"Position <b>${res.position_value:,.0f}</b> ({res.position_pct:.1f}% of account) &nbsp;·&nbsp; "
+            f"Risk <b>${res.actual_risk:,.0f}</b> ({res.actual_risk_pct:.2f}% of account)<br>"
+            f"Stop {res.stop_pct:.1f}% away &nbsp;·&nbsp; ${res.risk_per_share:.2f}/share at risk")
+        self._fill_targets(entry, stop, side, res.shares)
+
+    def _fill_targets(self, entry, stop, side, shares):
+        tgs = r_targets(entry, stop, side, multiples=(1, 2, 3), shares=shares)
+        self.targets.setRowCount(len(tgs))
+        for r, t in enumerate(tgs):
+            for c, item in enumerate([
+                QTableWidgetItem(f"{t.r:g}R"),
+                QTableWidgetItem(f"${t.price:,.2f}"),
+                QTableWidgetItem(f"${t.pnl_per_share:,.2f}"),
+                QTableWidgetItem(f"${t.pnl:,.0f}" if shares else "—"),
+            ]):
+                self.targets.setItem(r, c, item)
+        self.targets.resizeColumnsToContents()
+
+    # --- exposure ---------------------------------------------------------
+    def load_exposure(self):
+        if self._exposure_worker is not None and self._exposure_worker.isRunning():
+            return
+        positions = []
+        for p in self.db.positions():
+            sym = str(p.get("symbol", "")).upper().strip()
+            shares = float(p.get("shares", 0) or 0)
+            entry = float(p.get("entry_price", 0) or 0)
+            if sym and shares and entry:
+                positions.append({"symbol": sym, "market_value": shares * entry})
+        if not positions:
+            self.exposure_status.setText("No portfolio positions — add some in the Portfolio tab.")
+            self.exposure.setRowCount(0)
+            return
+        self.exposure_status.setText("Loading sectors…")
+        self._exposure_worker = SectorExposureWorker(positions)
+        self._exposure_worker.done.connect(self._on_exposure)
+        self._exposure_worker.start()
+
+    def _on_exposure(self, rows, total):
+        self.exposure.setSortingEnabled(False)
+        self.exposure.setRowCount(len(rows))
+        top = rows[0] if rows else None
+        for r, (sector, value, pct) in enumerate(rows):
+            self.exposure.setItem(r, 0, QTableWidgetItem(sector))
+            self.exposure.setItem(r, 1, SortableTableWidgetItem(f"${value:,.0f}", sort_value=value))
+            pct_item = SortableTableWidgetItem(f"{pct:.1f}%", sort_value=pct)
+            # Flag heavy concentration in a single sector.
+            if pct >= 40:
+                pct_item.setForeground(QColor("#f0a020"))
+            self.exposure.setItem(r, 2, pct_item)
+        self.exposure.setSortingEnabled(True)
+        self.exposure.sortItems(1, Qt.DescendingOrder)
+        self.exposure.resizeColumnsToContents()
+        msg = f"Portfolio value ${total:,.0f} across {len(rows)} sector(s)."
+        if top and top[2] >= 40:
+            msg += f"  ⚠ {top[0]} is {top[2]:.0f}% of the book."
+        self.exposure_status.setText(msg)
+
+    def shutdown(self):
+        if self._exposure_worker is not None and self._exposure_worker.isRunning():
+            self._exposure_worker.wait(3000)
+
+
 class IbkrFlexWorker(QThread):
     """Fetches an IBKR Flex Query report off the UI thread and returns the
     parsed fills. Read-only network call; no orders, no funds."""
@@ -3563,6 +3741,8 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(PaperTradingPanel()), "Paper Trading")
         self.journal_panel = JournalPanel(self.chart, self.cfg)
         tabs.addTab(_scroll_tab(self.journal_panel), "Journal")
+        self.risk_panel = RiskPanel(self.db)
+        tabs.addTab(_scroll_tab(self.risk_panel), "Risk")
         tabs.addTab(_scroll_tab(AIAssistantPanel()), "AI Assist")
         settings_text = QTextEdit(); settings_text.setReadOnly(True)
         settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")
@@ -3736,6 +3916,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.journal_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.risk_panel.shutdown()
         except Exception:
             pass
         super().closeEvent(event)

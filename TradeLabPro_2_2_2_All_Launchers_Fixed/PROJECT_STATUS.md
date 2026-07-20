@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.18.4
-Current phase: Phase 11 - Trade Journal (done)
+Current version: 2.19.0
+Current phase: Phase 12 - Risk & Position Sizing (done)
+
+## Completed in 2.19.0 (Risk & Position Sizing, Phase 12)
+- `tradelab/core/risk.py` (Qt-free): `size_position()` returns a `SizeResult` (shares floored to risk, position value/%, actual risk $/%, stop %, capped_by), supporting fixed-$ risk and max-position-%/buying-power caps; `r_targets()` gives 1R/2R/3R target prices + $ P&L (long up, short down); `sector_exposure(positions, sector_of=)` buckets positions by sector with % of book.
+- New "Risk" tab: live position-sizing calculator, R-target table, and portfolio sector-exposure table (loaded via `SectorExposureWorker` off the UI thread; flags ≥40% concentration). "Use paper account equity" convenience. No orders placed.
+- pytest regression suite now 457 tests, all passing.
 
 ## Completed in 2.18.4 (Journal column sorting)
 - Enabled click-to-sort headers on the Journal trades table and breakdown table (`setSortingEnabled`), with numeric cells using `SortableTableWidgetItem` sort_values so they order by value. `refresh()`/`_refresh_breakdown()` disable sorting while repopulating then restore the user's sort indicator (default: Entry date descending / P&L descending).

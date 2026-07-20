@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.19.0 - Risk & Position Sizing (Phase 12)
+
+### Added
+- **New "Risk" tab.** Size trades by risk instead of by gut:
+  - **Position sizing** — account equity + risk % (or a fixed $) + entry + stop → the **share count** that risks exactly that, live as you type. Long or short, with optional caps by **max position %** and it flags when a cap kicks in. Shows position value, % of account, actual $ and % at risk, stop distance, and $/share risked. "Use paper account equity" fills equity from your paper account.
+  - **R-multiple targets** — a table of 1R / 2R / 3R target prices and the dollar gain for the sized position (1R = your stop distance; longs aim up, shorts down).
+  - **Portfolio sector exposure** — loads your Portfolio-tab positions and breaks them down by sector with % of book, flagging heavy concentration (≥40% in one sector).
+- Planning tool only — it places no orders.
+
+### Verified
+- 457/457 pytest tests pass (new: `tests/test_risk.py` — share-count math, floor rounding, fixed-$ risk, short side, max-position/buying-power caps, invalid inputs, R-target prices for long/short, sector-exposure grouping; `tests/test_risk_panel.py` — headless UI incl. live recompute and exposure handler).
+
 ## 2.18.4 - Journal: click a header to sort
 
 ### Added
