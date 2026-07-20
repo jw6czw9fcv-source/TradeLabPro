@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.19.0
-Current phase: Phase 12 - Risk & Position Sizing (done)
+Current version: 2.20.0
+Current phase: Phase 13 - Chart Replay (done)
+
+## Completed in 2.20.0 (Chart Replay, Phase 13)
+- Rebuilt the dead `ReplayPanel` (was an unregistered "Next candle" stub) into a full bar-by-bar replay and registered it as the "Replay" tab. Play/Pause via `QTimer`, step +/-, reset/to-end, speed 0.5x-8x, a scrub `QSlider`, and a "Start at bar N" spin. `_plot()` charts `data.iloc[:index]` so indicators use only revealed bars (no look-ahead). `set_data()` hook makes it testable without network; `shutdown()` stops the timer (wired into closeEvent).
+- pytest regression suite now 463 tests, all passing.
 
 ## Completed in 2.19.0 (Risk & Position Sizing, Phase 12)
 - `tradelab/core/risk.py` (Qt-free): `size_position()` returns a `SizeResult` (shares floored to risk, position value/%, actual risk $/%, stop %, capped_by), supporting fixed-$ risk and max-position-%/buying-power caps; `r_targets()` gives 1R/2R/3R target prices + $ P&L (long up, short down); `sector_exposure(positions, sector_of=)` buckets positions by sector with % of book.

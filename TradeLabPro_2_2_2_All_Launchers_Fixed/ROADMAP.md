@@ -24,6 +24,6 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 - Phase 12: Risk & position-sizing (risk %/stop -> shares, R-targets, sector exposure) — DONE 2.19.0
 
 ## Candidate next
-- Chart replay / bar-by-bar practice mode
+- Phase 13: Chart replay / bar-by-bar practice mode — DONE 2.20.0
 - Data-source abstraction (Alpaca/Polygon/IBKR) to harden the yfinance dependency
 - Heatmap follow-ups: auto-refresh timer (DONE 2.14.2), index/ETF maps (DONE 2.15.0), click-through from Scanner results

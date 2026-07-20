@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.20.0 - Chart Replay (Phase 13)
+
+### Added
+- **New "Replay" tab.** Practice reading a chart bar-by-bar with the future hidden:
+  - **Play / Pause**, step **forward** / **back**, jump to **start** or **end**, and a **speed** control (0.5×–8×).
+  - Choose where to start (**Start at bar N**) and **scrub** anywhere with the slider.
+  - Indicators recompute **only on revealed bars**, so there's genuinely no look-ahead.
+- (This replaces a dead, never-wired-in "Next candle" stub with a full transport.)
+
+### Verified
+- 463/463 pytest tests pass (new: reveals only the start bars, step/scrub stay in bounds, auto-play pauses at the end, reset returns to the start, controls disabled until loaded).
+
 ## 2.19.0 - Risk & Position Sizing (Phase 12)
 
 ### Added

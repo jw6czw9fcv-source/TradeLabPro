@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QTextEdit, QFileDialog, QProgressBar, QScrollArea, QHeaderView,
     QMenu, QToolButton, QSizePolicy, QDialog, QTextBrowser, QSystemTrayIcon, QStyle,
     QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem, QFrame,
-    QInputDialog
+    QInputDialog, QSlider
 )
 
 from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR, ROOT_DIR
@@ -1999,23 +1999,172 @@ class BacktestPanel(QWidget):
 
 
 class ReplayPanel(QWidget):
-    def __init__(self, chart: ChartWidget):
-        super().__init__(); self.chart=chart; self.data=None; self.index=80; self.symbol_text="AAPL"; self.cfg=ScannerConfig()
-        layout=QVBoxLayout(self)
-        row=QHBoxLayout(); self.symbol=QLineEdit("AAPL"); self.period=QComboBox(); self.period.addItems(["1y","2y","5y","10y"]); self.period.setCurrentText("2y")
-        load=QPushButton("Load replay"); load.clicked.connect(self.load_replay); step=QPushButton("Next candle"); step.clicked.connect(self.next_candle)
-        row.addWidget(QLabel("Symbol")); row.addWidget(self.symbol); row.addWidget(QLabel("Period")); row.addWidget(self.period); row.addWidget(load); row.addWidget(step); row.addStretch(); layout.addLayout(row)
-        self.status=QLabel("Replay mode hides future candles. Load a symbol, then step candle by candle."); self.status.setWordWrap(True); layout.addWidget(self.status); layout.addStretch()
+    """Bar-by-bar chart replay: load history, hide the future, and step or
+    auto-play forward one candle at a time to practice reading a chart as it
+    develops. Indicators recompute only on the revealed bars, so there is no
+    look-ahead."""
+
+    # Label -> milliseconds between bars while playing.
+    _SPEEDS = {"0.5×": 1600, "1×": 800, "2×": 400, "4×": 200, "8×": 100}
+
+    def __init__(self, chart: ChartWidget, cfg: ScannerConfig):
+        super().__init__()
+        self.chart = chart
+        self.cfg = ScannerConfig()
+        self.cfg.interval = "1d"
+        self.data = None
+        self.symbol_text = ""
+        self.index = 0
+        layout = QVBoxLayout(self)
+        layout.addWidget(_hint(
+            "Practice reading a chart with the future hidden. Load a symbol, pick where "
+            "to start, then Play or step candle by candle. Indicators only use the "
+            "revealed bars — no peeking ahead."))
+
+        row = QHBoxLayout()
+        self.symbol = QLineEdit("AAPL"); self.symbol.setMaximumWidth(110)
+        self.period = QComboBox(); self.period.addItems(["1y", "2y", "5y", "10y", "max"]); self.period.setCurrentText("2y")
+        self.start_bars = QSpinBox(); self.start_bars.setRange(2, 5000); self.start_bars.setValue(60)
+        self.start_bars.setToolTip("How many bars to reveal before you start stepping.")
+        load = QPushButton("Load replay"); load.clicked.connect(self.load_replay)
+        row.addWidget(QLabel("Symbol")); row.addWidget(self.symbol)
+        row.addWidget(QLabel("Period")); row.addWidget(self.period)
+        row.addWidget(QLabel("Start at bar")); row.addWidget(self.start_bars)
+        row.addWidget(load); row.addStretch()
+        layout.addLayout(row)
+
+        controls = QHBoxLayout()
+        self.reset_btn = QToolButton(); self.reset_btn.setText("⏮"); self.reset_btn.setToolTip("Back to the start bar"); self.reset_btn.clicked.connect(self.reset)
+        self.back_btn = QToolButton(); self.back_btn.setText("◀"); self.back_btn.setToolTip("Step back one bar"); self.back_btn.clicked.connect(lambda: self.step(-1))
+        self.play_btn = QToolButton(); self.play_btn.setText("▶ Play"); self.play_btn.clicked.connect(self.toggle_play)
+        self.fwd_btn = QToolButton(); self.fwd_btn.setText("▶"); self.fwd_btn.setToolTip("Step forward one bar"); self.fwd_btn.clicked.connect(lambda: self.step(1))
+        self.end_btn = QToolButton(); self.end_btn.setText("⏭"); self.end_btn.setToolTip("Reveal all bars"); self.end_btn.clicked.connect(self.to_end)
+        self.speed = QComboBox(); self.speed.addItems(list(self._SPEEDS.keys())); self.speed.setCurrentText("1×")
+        self.speed.currentTextChanged.connect(self._on_speed_changed)
+        for w in (self.reset_btn, self.back_btn, self.play_btn, self.fwd_btn, self.end_btn):
+            controls.addWidget(w)
+        controls.addWidget(QLabel("Speed")); controls.addWidget(self.speed)
+        controls.addStretch()
+        layout.addLayout(controls)
+
+        self.slider = QSlider(Qt.Horizontal); self.slider.setEnabled(False)
+        self.slider.valueChanged.connect(self._on_slider)
+        layout.addWidget(self.slider)
+
+        self.status = QLabel("Load a symbol to begin.")
+        layout.addWidget(self.status)
+        layout.addStretch()
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._advance)
+        self._set_controls_enabled(False)
+
+    # --- loading ----------------------------------------------------------
     def load_replay(self):
-        self.symbol_text=self.symbol.text().strip().upper(); self.cfg.period=self.period.currentText(); self.cfg.interval="1d"; self.data=get_history(self.symbol_text,self.cfg.period,self.cfg.interval); self.index=min(80,len(self.data)); self._plot()
-    def next_candle(self):
-        if self.data is None: self.load_replay(); return
-        self.index=min(len(self.data),self.index+1); self._plot()
+        self.symbol_text = self.symbol.text().strip().upper()
+        if not self.symbol_text:
+            self.status.setText("Enter a symbol first.")
+            return
+        self.cfg.period = self.period.currentText()
+        self.cfg.interval = "1d"
+        self.data = get_history(self.symbol_text, self.cfg.period, self.cfg.interval)
+        if self.data is None or self.data.empty:
+            self.status.setText(f"No data for {self.symbol_text}.")
+            return
+        n = len(self.data)
+        self.index = max(2, min(self.start_bars.value(), n))
+        self.slider.blockSignals(True)
+        self.slider.setRange(2, n); self.slider.setValue(self.index); self.slider.setEnabled(True)
+        self.slider.blockSignals(False)
+        self._set_controls_enabled(True)
+        self._plot()
+
+    def set_data(self, symbol, df):
+        """Test/programmatic hook: use a supplied DataFrame instead of fetching."""
+        self.symbol_text = symbol.upper()
+        self.data = df
+        n = len(df)
+        self.index = max(2, min(self.start_bars.value(), n))
+        self.slider.blockSignals(True)
+        self.slider.setRange(2, n); self.slider.setValue(self.index); self.slider.setEnabled(True)
+        self.slider.blockSignals(False)
+        self._set_controls_enabled(True)
+        self._plot()
+
+    # --- transport --------------------------------------------------------
+    def reset(self):
+        self.pause()
+        self.index = max(2, min(self.start_bars.value(), self._len()))
+        self._plot()
+
+    def step(self, delta):
+        if self.data is None:
+            return
+        self.index = max(2, min(self._len(), self.index + int(delta)))
+        self._plot()
+        if self.index >= self._len():
+            self.pause()
+
+    def to_end(self):
+        self.pause()
+        self.index = self._len()
+        self._plot()
+
+    def toggle_play(self):
+        if self._timer.isActive():
+            self.pause()
+        else:
+            self.play()
+
+    def play(self):
+        if self.data is None or self.index >= self._len():
+            return
+        self._timer.start(self._SPEEDS[self.speed.currentText()])
+        self.play_btn.setText("⏸ Pause")
+
+    def pause(self):
+        self._timer.stop()
+        self.play_btn.setText("▶ Play")
+
+    def _advance(self):
+        if self.index >= self._len():
+            self.pause(); return
+        self.step(1)
+
+    def _on_speed_changed(self, _label):
+        if self._timer.isActive():
+            self._timer.start(self._SPEEDS[self.speed.currentText()])
+
+    def _on_slider(self, value):
+        if self.data is None:
+            return
+        self.pause()
+        self.index = int(value)
+        self._plot()
+
+    # --- helpers ----------------------------------------------------------
+    def _len(self):
+        return len(self.data) if self.data is not None else 0
+
+    def _set_controls_enabled(self, on):
+        for w in (self.reset_btn, self.back_btn, self.play_btn, self.fwd_btn, self.end_btn, self.speed):
+            w.setEnabled(on)
+
     def _plot(self):
-        if self.data is None or self.data.empty: return
-        view=self.data.iloc[:self.index]
-        self.chart.plot(self.symbol_text,view,self.cfg)
-        self.status.setText(f"Replay: {self.symbol_text} candle {self.index}/{len(self.data)} date {str(view.index[-1])[:10]}")
+        if self.data is None or self.data.empty:
+            return
+        view = self.data.iloc[:self.index]
+        self.chart.plot(self.symbol_text, view, self.cfg)
+        self.slider.blockSignals(True); self.slider.setValue(self.index); self.slider.blockSignals(False)
+        try:
+            last_date = str(view.index[-1])[:10]
+        except Exception:
+            last_date = "?"
+        at_end = " (end)" if self.index >= self._len() else ""
+        self.status.setText(f"{self.symbol_text}  ·  bar {self.index}/{self._len()}  ·  {last_date}{at_end}")
+
+    def shutdown(self):
+        self.pause()
 
 
 class CoachPanel(QWidget):
@@ -3734,6 +3883,8 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(MarketPanel()), "Market")
         self.backtest_panel = BacktestPanel(self.chart, self.cfg)
         tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")
+        self.replay_panel = ReplayPanel(self.chart, self.cfg)
+        tabs.addTab(_scroll_tab(self.replay_panel), "Replay")
         # When a custom strategy is saved/deleted in the builder, refresh the
         # Scanner and Backtest strategy dropdowns so it appears immediately.
         tabs.addTab(_scroll_tab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed)), "Strategies")
@@ -3920,6 +4071,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.risk_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.replay_panel.shutdown()
         except Exception:
             pass
         super().closeEvent(event)
