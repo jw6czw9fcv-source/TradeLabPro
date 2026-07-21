@@ -32,6 +32,15 @@ def synthetic_ohlcv(symbol: str, periods: int = 260) -> pd.DataFrame:
 
 
 def get_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+    """Price history from the active data provider (Yahoo by default). See
+    tradelab.data.providers for source selection."""
+    from tradelab.data import providers
+    return providers.active().get_history(symbol, period, interval)
+
+
+def _yahoo_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+    """Yahoo (yfinance) history with an offline synthetic fallback. This is the
+    Yahoo provider's implementation; call get_history() rather than this."""
     if yf is not None:
         try:
             df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=False, threads=False)
@@ -97,16 +106,21 @@ def _company_name_from_info(info: dict, symbol: str) -> str:
 
 
 def get_quote_meta(symbol: str) -> dict:
-    """Real market cap + sector/industry via yfinance, cached in-process so
-    a symbol is only fetched once per run regardless of how many scans hit
-    it. Was previously a stub returning a fake market cap seeded from
-    hash(symbol) - the "Minimum market cap" filter was never actually
-    filtering on real data.
-    """
+    """Market cap + sector/industry/country/name from the active data provider,
+    cached in-process so a symbol is only fetched once per run. Switching
+    provider clears this cache (see providers.set_active)."""
     cached = _quote_meta_cache.get(symbol)
     if cached is not None:
         return cached
+    from tradelab.data import providers
+    meta = providers.active().get_quote_meta(symbol)
+    _quote_meta_cache[symbol] = meta
+    return meta
 
+
+def _yahoo_quote_meta(symbol: str) -> dict:
+    """Yahoo (yfinance) quote metadata with an offline deterministic fallback.
+    The Yahoo provider's implementation; call get_quote_meta() instead."""
     meta = {"market_cap": 0.0, "sector": "Unknown", "industry": "Unknown",
             "country": "Unknown", "name": symbol, "quote_type": ""}
     if yf is not None:
@@ -133,7 +147,6 @@ def get_quote_meta(symbol: str) -> dict:
         # deterministic per symbol rather than a hard failure.
         meta["market_cap"] = float(3_000_000_000 + (abs(hash(symbol)) % 300_000_000_000))
 
-    _quote_meta_cache[symbol] = meta
     return meta
 
 

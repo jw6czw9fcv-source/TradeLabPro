@@ -18,6 +18,23 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_data_provider():
+    """The active data source is global mutable state; reset it to the default
+    around every test so a provider switch in one test can't leak into another
+    (which would, e.g., make a synthetic source active during a Yahoo test)."""
+    try:
+        from tradelab.data import providers
+        import tradelab.data.market_data as market_data
+        providers.set_active(providers.DEFAULT)
+        market_data._quote_meta_cache.clear()
+        yield
+        providers.set_active(providers.DEFAULT)
+        market_data._quote_meta_cache.clear()
+    except Exception:
+        yield
+
+
 @pytest.fixture
 def ohlcv_df() -> pd.DataFrame:
     rng = np.random.default_rng(42)

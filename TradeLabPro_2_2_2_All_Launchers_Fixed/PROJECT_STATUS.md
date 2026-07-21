@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.21.0
-Current phase: Phase 14 - Heatmap <-> Scanner link (done)
+Current version: 2.22.0
+Current phase: Phase 15 - Data-source abstraction (done)
+
+## Completed in 2.22.0 (Data-source abstraction, Phase 15)
+- `tradelab/data/providers.py`: `DataProvider` ABC + `YahooProvider` (delegates to `market_data._yahoo_history`/`_yahoo_quote_meta`) + `SyntheticProvider` (offline deterministic); registry (`register`/`active`/`set_active`/`provider_names`), default Yahoo. `market_data.get_history`/`get_quote_meta` now delegate to `providers.active()` (cache stays in the wrapper; switch clears it). All existing market_data tests unchanged.
+- New Settings tab (`SettingsPanel`, replaces the plain text tab): Data-source dropdown persisted to QSettings `data/provider`, applied at MainWindow startup before panels fetch. Injectable `settings=` for tests. conftest autouse resets the active provider around every test.
+- pytest regression suite now 481 tests, all passing.
 
 ## Completed in 2.21.0 (Heatmap <-> Scanner link, Phase 14)
 - Scanner: added `on_show_heatmap` callback + "Map results" button + `result_symbols()`/`show_results_in_heatmap()` (drops ERROR rows). MainWindow `_show_scan_in_heatmap()` sets the heatmap source and fronts the tab (`self.tabs`/`self._heatmap_page`).

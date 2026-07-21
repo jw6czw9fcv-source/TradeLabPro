@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.22.0 - Data-source abstraction (Phase 15)
+
+### Added
+- **Pluggable data sources.** The app no longer hard-codes Yahoo/yfinance: prices & fundamentals now flow through a `DataProvider` interface. Two are built in — **Yahoo Finance** (default, live, with the existing synthetic fallback) and **Offline (synthetic)** (deterministic generated data, no network — handy for demos/testing or when a feed is down).
+- **Settings → Data source** dropdown to switch providers; the choice is remembered across launches. New sources (Alpaca, Polygon, an IBKR feed) can be added by subclassing `DataProvider` and registering it — no changes to any tab.
+
+### Changed
+- `market_data.get_history()` / `get_quote_meta()` now delegate to the active provider (behaviour unchanged on the default Yahoo source). Switching source clears the in-process quote cache.
+
+### Verified
+- 481/481 pytest tests pass (new: `tests/test_providers.py` — registry, default/active/switch, synthetic offline history & meta determinism, cache invalidation on switch; `tests/test_settings_panel.py` — selector lists/switches providers). Existing `market_data` tests unchanged and green.
+
 ## 2.21.0 - Heatmap ↔ Scanner link (Phase 14)
 
 ### Added

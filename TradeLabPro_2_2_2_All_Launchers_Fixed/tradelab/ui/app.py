@@ -4023,6 +4023,62 @@ class ManualBrowser(QTextBrowser):
         _scale_doc_images(self.document(), avail * self._zoom_factor(), self._native_size)
 
 
+class SettingsPanel(QWidget):
+    """App settings — currently the data-source (provider) selector plus
+    database/info. The provider abstraction lets the app swap where prices &
+    fundamentals come from without touching any other tab."""
+
+    def __init__(self, db: Database, settings=None):
+        super().__init__()
+        self.db = db
+        self._settings = settings or QSettings("TradeLabPro", "TradeLabPro")
+        from tradelab.data import providers
+        layout = QVBoxLayout(self)
+
+        box = QGroupBox("Data source")
+        v = QVBoxLayout(box)
+        v.addWidget(_hint(
+            "Where the app gets prices and fundamentals. Switch to Offline (synthetic) "
+            "to run with no network (demos/testing) — new data loads use the selected "
+            "source. The architecture supports adding more sources (Alpaca, Polygon, "
+            "IBKR feed) later."))
+        row = QHBoxLayout()
+        self.source = QComboBox(); self.source.addItems(providers.provider_names())
+        self.source.setCurrentText(providers.active_name())
+        self.source.currentTextChanged.connect(self._on_source_changed)
+        row.addWidget(QLabel("Provider")); row.addWidget(self.source, 1)
+        v.addLayout(row)
+        self.source_desc = QLabel(); self.source_desc.setWordWrap(True)
+        self.source_desc.setStyleSheet("color:#8b98a5;")
+        v.addWidget(self.source_desc)
+        layout.addWidget(box)
+
+        self.info = QTextEdit(); self.info.setReadOnly(True)
+        layout.addWidget(self.info, 1)
+        self._refresh_info()
+        self._update_desc()
+
+    def _on_source_changed(self, name):
+        from tradelab.data import providers
+        if providers.set_active(name):
+            self._settings.setValue("data/provider", name)
+        self._update_desc()
+
+    def _update_desc(self):
+        from tradelab.data import providers
+        p = providers.get(self.source.currentText())
+        text = p.description if p else ""
+        if p and p.requires_network and not p.available():
+            text += "  ⚠ yfinance is not installed — this source falls back to synthetic data."
+        self.source_desc.setText(text)
+
+    def _refresh_info(self):
+        self.info.setText(
+            f"Database: {self.db.path}\nData folder: {DATA_DIR}\n"
+            f"Scan history rows: {self.db.scan_history_count()}\n"
+            f"Scan result rows: {self.db.scan_result_count()}")
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -4031,6 +4087,11 @@ class MainWindow(QMainWindow):
         self._settings = QSettings("TradeLabPro", "TradeLabPro")
         self.db = Database()
         self.cfg = ScannerConfig()
+        # Apply the saved data source before any panel fetches data.
+        saved_provider = self._settings.value("data/provider")
+        if saved_provider:
+            from tradelab.data import providers
+            providers.set_active(str(saved_provider))
         # Discover indicator plugins before building panels, so their field
         # dropdowns include any plugin-provided indicators.
         from tradelab.core import plugins
@@ -4070,9 +4131,7 @@ class MainWindow(QMainWindow):
         self.risk_panel = RiskPanel(self.db)
         tabs.addTab(_scroll_tab(self.risk_panel), "Risk")
         tabs.addTab(_scroll_tab(AIAssistantPanel()), "AI Assist")
-        settings_text = QTextEdit(); settings_text.setReadOnly(True)
-        settings_text.setText(f"Database: {self.db.path}\nData folder: {DATA_DIR}\nScan history rows: {self.db.scan_history_count()}\nScan result rows: {self.db.scan_result_count()}\n\nPhase 2.3 adds scanner setup save/load, scan export, watchlist import/export, portfolio export and scan history storage.")
-        tabs.addTab(settings_text, "Settings")
+        tabs.addTab(_scroll_tab(SettingsPanel(self.db)), "Settings")
         # UI-001: keep the left control area usable.  The splitter may still
         # be resized, but the scanner/watchlist/settings column will not
         # collapse to an unreadable width.

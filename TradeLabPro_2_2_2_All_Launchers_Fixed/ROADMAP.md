@@ -25,5 +25,5 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 
 ## Candidate next
 - Phase 13: Chart replay / bar-by-bar practice mode — DONE 2.20.0
-- Data-source abstraction (Alpaca/Polygon/IBKR) to harden the yfinance dependency
+- Phase 15: Data-source abstraction (provider interface; Yahoo + Offline synthetic; ready for Alpaca/Polygon/IBKR) — DONE 2.22.0
 - Heatmap follow-ups: auto-refresh timer (DONE 2.14.2), index/ETF maps (DONE 2.15.0), click-through from Scanner results (DONE 2.21.0)
