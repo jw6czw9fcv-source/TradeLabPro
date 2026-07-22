@@ -27,3 +27,12 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 - Phase 13: Chart replay / bar-by-bar practice mode — DONE 2.20.0
 - Phase 15: Data-source abstraction (provider interface; Yahoo + Offline synthetic; ready for Alpaca/Polygon/IBKR) — DONE 2.22.0
 - Heatmap follow-ups: auto-refresh timer (DONE 2.14.2), index/ETF maps (DONE 2.15.0), click-through from Scanner results (DONE 2.21.0)
+
+## Requested / backlog
+- **Links page** — a tab to manually add named site links / web-page URLs (personal
+  bookmarks of research sites, broker pages, news, etc.), stored locally; click to
+  open in the default browser. Optional grouping/tags and import/export.
+- **Security hardening** (optional): encrypt-at-rest for stored credentials
+  (Anthropic API key, IBKR Flex token) instead of plaintext registry values; a
+  one-click "clear stored credentials"; opt-in toggle for saving the raw IBKR Flex
+  report to logs/.
