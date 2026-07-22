@@ -69,12 +69,16 @@ blanks out. You can also **choose the data source** in **Settings → Data sourc
 
 The window is split into two halves:
 
-- **Left — the tabbed control panel.** Tabs: Scanner, Watchlists, Portfolio,
-  **Alerts**, **Heatmap**, Market, Backtest, **Replay**, Strategies, Plugins,
-  Paper Trading, **Journal**, **Risk**, AI Assist, Settings.
+- **Left — the tabbed control panel.** The tabs are ordered to follow the
+  trading process: **Market → Heatmap → News** (market context) → **Scanner →
+  Watchlists → Alerts** (find & watch) → **AI Assist → Risk → Paper Trading**
+  (analyse, size & act) → **Portfolio → Journal** (track & review) → **Backtest
+  → Strategies → Replay → Plugins** (research/build) → **Notes → Links →
+  Settings** (utilities). The tab bar wraps to two rows so every tab is visible.
 - **Right — the chart workspace.** Always visible. Charts you open from the
   Scanner, Heatmap, Journal, or Replay (or type in directly) appear here as
-  dockable panels.
+  dockable panels. A **⛶ Full screen** button expands the chart to the whole
+  monitor (Esc to retract).
 
 Drag the divider between the two halves to rebalance the space. Each tab scrolls
 internally if it needs more room than the window height, so the bottom of a tab

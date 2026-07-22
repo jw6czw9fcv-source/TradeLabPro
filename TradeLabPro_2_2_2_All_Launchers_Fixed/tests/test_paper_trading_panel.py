@@ -42,7 +42,8 @@ def test_placing_a_market_order_updates_positions_table(qapp):
     assert panel.pos_table.item(0, 0).text() == "AAPL"
     assert panel.pos_table.item(0, 1).text() == "5"
     assert panel.ord_table.rowCount() == 1
-    assert panel.ord_table.item(0, 6).text() == "FILLED"
+    # Columns: ID, Symbol, Side, Qty, Type, Limit, Stop, Status, Fill price
+    assert panel.ord_table.item(0, 7).text() == "FILLED"
 
 
 def test_limit_field_enables_only_for_limit_orders(qapp):
@@ -62,3 +63,41 @@ def test_summary_shows_pnl_after_a_round_trip(qapp):
     panel._place()                       # sell 10 @ 120 -> +200 realized
     panel.refresh()
     assert "200" in panel._summary.text()
+
+
+def test_order_type_fields_enable_correctly(qapp):
+    panel = _panel(qapp, AAPL=100.0)
+    panel.o_type.setCurrentText(panel._STOP)
+    assert panel.o_stop.isEnabled() and not panel.o_limit.isEnabled()
+    panel.o_type.setCurrentText(panel._STOP_LIMIT)
+    assert panel.o_stop.isEnabled() and panel.o_limit.isEnabled()
+    panel.o_type.setCurrentText(panel._TRAIL)
+    assert panel.o_trail.isEnabled() and panel.o_trail_unit.isEnabled()
+
+
+def test_placing_a_stop_order_rests_until_triggered(qapp):
+    panel = _panel(qapp, AAPL=100.0)
+    panel.o_qty.setValue(10); panel._place()          # long 10 @ 100 (market)
+    panel.o_side.setCurrentText(panel._SELL)
+    panel.o_type.setCurrentText(panel._STOP)
+    panel.o_stop.setValue(95.0)
+    panel._place()
+    stops = [o for o in panel.broker.orders() if o.order_type == panel._STOP]
+    assert len(stops) == 1 and stops[0].status == "PENDING"
+    panel.broker._price_fn = lambda s: 94.0
+    panel.refresh()                                    # poll triggers the stop
+    assert stops[0].status == "FILLED"
+    assert panel.broker.positions() == []              # flat
+
+
+def test_bracket_places_entry_plus_two_exits(qapp):
+    panel = _panel(qapp, AAPL=100.0)
+    panel.o_qty.setValue(10)
+    panel.o_bracket.setChecked(True)
+    panel.o_tp.setValue(110.0)
+    panel.o_sl.setValue(95.0)
+    panel._place()
+    entries = [o for o in panel.broker.orders() if o.parent_id is None]
+    children = [o for o in panel.broker.orders() if o.parent_id is not None]
+    assert len(entries) == 1 and entries[0].status == "FILLED"
+    assert len(children) == 2 and all(c.active for c in children)

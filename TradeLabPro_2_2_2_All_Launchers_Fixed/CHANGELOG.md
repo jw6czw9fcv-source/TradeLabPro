@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.25.0 - Stop/bracket orders + News feed
+
+### Added
+- **Stop, stop-limit & trailing-stop orders in Paper Trading.** The paper broker now supports **STOP** (stop-market), **STOP-LIMIT**, and **TRAILING STOP** (by $ or %), alongside market/limit. A sell-stop triggers as price falls through it, a buy-stop as it rises; trailing stops ratchet with the favourable move and never loosen. Rest until triggered, then fill; the Orders table shows the live Stop level, and you can **Cancel** a resting order.
+- **Bracket / OCO orders.** Attach a **take-profit** and a **stop-loss** to a market or limit entry — the exits activate once the entry fills and are **one-cancels-the-other** (filling one cancels the other).
+- **Tabs reordered to the trading workflow.** Left-panel tabs now flow the way you actually trade: Market → Heatmap → News (context) → Scanner → Watchlists → Alerts (find & watch) → AI Assist → Risk → Paper Trading (analyse, size, act) → Portfolio → Journal (track & review) → Backtest → Strategies → Replay → Plugins (research) → Notes → Links → Settings.
+- **New "News" tab.** Recent headlines by **source** — a **Symbol**, the broad **Market**, a **Sector** (any of the 11 SPDR sectors), or **Geopolitical** news (war, sanctions, tariffs, OPEC, elections…) — newest-first and de-duplicated from the market-data feed. **Macro / political** stories are flagged (⚑) and can be filtered; the Geopolitical source is inherently filtered. Double-click a headline to open it in your browser.
+
+### Verified
+- 528/528 pytest tests pass (new: `tests/test_broker_stops.py` — stop/stop-limit/trailing/bracket-OCO trigger & cancel logic + persistence; `tests/test_news.py` — headline parsing (old & new Yahoo shapes), macro flagging, dedupe/sort, resilience; plus paper-trading & news panel UI tests).
+
 ## 2.24.0 - Notes tab, two-row tabs, chart full screen
 
 ### Added

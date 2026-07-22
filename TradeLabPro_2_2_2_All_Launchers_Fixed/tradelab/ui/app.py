@@ -27,6 +27,7 @@ from tradelab.core.journal import Journal, JournalEntry, summarize, group_stats
 from tradelab.core.risk import size_position, r_targets
 from tradelab.core.links import Link, LinkStore
 from tradelab.core.notes import load_notes, save_notes
+from tradelab.core.news import fetch_news, MARKET_SYMBOLS, GEO_SYMBOLS, SECTOR_ETFS
 from tradelab.core import heatmap as hm
 from tradelab.data.universe import US_NASDAQ, US_NYSE, US_AMEX, CAN_TSX, CAN_TSX_EXPANDED
 from tradelab.strategies import strategy_choices
@@ -2531,9 +2532,11 @@ class PaperTradingPanel(QWidget):
 
     def __init__(self):
         super().__init__()
-        from tradelab.core.broker import PaperBroker, BUY, SELL, MARKET, LIMIT
+        from tradelab.core.broker import (PaperBroker, BUY, SELL, MARKET, LIMIT,
+                                          STOP, STOP_LIMIT, TRAILING_STOP)
         self._BUY, self._SELL = BUY, SELL
         self._MARKET, self._LIMIT = MARKET, LIMIT
+        self._STOP, self._STOP_LIMIT, self._TRAIL = STOP, STOP_LIMIT, TRAILING_STOP
         self.broker = PaperBroker(starting_cash=100_000.0,
                                   persist_path=DATA_DIR / "paper_account.json")
         layout = QVBoxLayout(self)
@@ -2551,28 +2554,46 @@ class PaperTradingPanel(QWidget):
 
         # --- order entry ---
         entry = QHBoxLayout()
-        self.o_symbol = QLineEdit("AAPL"); self.o_symbol.setMaximumWidth(90)
+        self.o_symbol = QLineEdit("AAPL"); self.o_symbol.setMaximumWidth(80)
         self.o_side = QComboBox(); self.o_side.addItems([BUY, SELL])
         self.o_qty = QSpinBox(); self.o_qty.setRange(1, 1_000_000); self.o_qty.setValue(10)
-        self.o_type = QComboBox(); self.o_type.addItems([MARKET, LIMIT])
-        self.o_limit = QDoubleSpinBox(); self.o_limit.setRange(0.0, 1_000_000.0)
-        self.o_limit.setDecimals(2); self.o_limit.setMaximumWidth(100); self.o_limit.setEnabled(False)
-        self.o_type.currentTextChanged.connect(
-            lambda t: self.o_limit.setEnabled(t == self._LIMIT))
-        place = QPushButton("Place paper order"); place.clicked.connect(self._place)
+        self.o_type = QComboBox(); self.o_type.addItems([MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP])
+        self.o_limit = QDoubleSpinBox(); self.o_limit.setRange(0.0, 1e7); self.o_limit.setDecimals(2); self.o_limit.setMaximumWidth(90); self.o_limit.setPrefix("$")
+        self.o_stop = QDoubleSpinBox(); self.o_stop.setRange(0.0, 1e7); self.o_stop.setDecimals(2); self.o_stop.setMaximumWidth(90); self.o_stop.setPrefix("$")
+        self.o_trail = QDoubleSpinBox(); self.o_trail.setRange(0.0, 1e7); self.o_trail.setDecimals(2); self.o_trail.setMaximumWidth(80)
+        self.o_trail_unit = QComboBox(); self.o_trail_unit.addItems(["$", "%"]); self.o_trail_unit.setMaximumWidth(48)
+        self.o_type.currentTextChanged.connect(self._sync_order_fields)
+        place = QPushButton("Place order"); place.clicked.connect(self._place)
         for w in (QLabel("Symbol"), self.o_symbol, QLabel("Side"), self.o_side,
                   QLabel("Qty"), self.o_qty, QLabel("Type"), self.o_type,
-                  QLabel("Limit"), self.o_limit, place):
+                  QLabel("Limit"), self.o_limit, QLabel("Stop"), self.o_stop,
+                  QLabel("Trail"), self.o_trail, self.o_trail_unit, place):
             entry.addWidget(w)
         entry.addStretch()
         layout.addLayout(entry)
 
+        # --- bracket (optional attached exits) ---
+        brow = QHBoxLayout()
+        self.o_bracket = QCheckBox("Bracket:")
+        self.o_bracket.setToolTip("Attach a take-profit and/or stop-loss to a Market or Limit entry (one cancels the other).")
+        self.o_tp = QDoubleSpinBox(); self.o_tp.setRange(0.0, 1e7); self.o_tp.setDecimals(2); self.o_tp.setMaximumWidth(90); self.o_tp.setPrefix("$")
+        self.o_sl = QDoubleSpinBox(); self.o_sl.setRange(0.0, 1e7); self.o_sl.setDecimals(2); self.o_sl.setMaximumWidth(90); self.o_sl.setPrefix("$")
+        self.o_bracket.toggled.connect(self._sync_order_fields)
+        brow.addWidget(self.o_bracket)
+        brow.addWidget(QLabel("Take-profit")); brow.addWidget(self.o_tp)
+        brow.addWidget(QLabel("Stop-loss")); brow.addWidget(self.o_sl)
+        brow.addWidget(_hint("0 = leave that exit off. Bracket uses a Market or Limit entry."))
+        brow.addStretch()
+        layout.addLayout(brow)
+        self._sync_order_fields()
+
         # --- actions ---
         actions = QHBoxLayout()
-        refresh = QPushButton("Refresh (mark-to-market + fill limits)")
+        refresh = QPushButton("Refresh (mark-to-market + trigger stops/limits)")
         refresh.clicked.connect(self.refresh)
+        cancel_btn = QPushButton("Cancel selected order"); cancel_btn.clicked.connect(self._cancel_selected)
         reset = QPushButton("Reset account"); reset.clicked.connect(self._reset)
-        actions.addWidget(refresh); actions.addWidget(reset); actions.addStretch()
+        actions.addWidget(refresh); actions.addWidget(cancel_btn); actions.addWidget(reset); actions.addStretch()
         layout.addLayout(actions)
 
         # --- positions table ---
@@ -2585,26 +2606,65 @@ class PaperTradingPanel(QWidget):
 
         # --- orders table ---
         layout.addWidget(QLabel("Orders"))
-        self.ord_table = QTableWidget(0, 8)
+        self.ord_table = QTableWidget(0, 9)
         self.ord_table.setHorizontalHeaderLabels(
-            ["ID", "Symbol", "Side", "Qty", "Type", "Limit", "Status", "Fill price"])
+            ["ID", "Symbol", "Side", "Qty", "Type", "Limit", "Stop", "Status", "Fill price"])
         self.ord_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.ord_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         layout.addWidget(self.ord_table)
 
         self.refresh()
 
+    def _sync_order_fields(self, *_):
+        t = self.o_type.currentText()
+        bracket = self.o_bracket.isChecked()
+        self.o_limit.setEnabled(t in (self._LIMIT, self._STOP_LIMIT))
+        self.o_stop.setEnabled(t in (self._STOP, self._STOP_LIMIT))
+        self.o_trail.setEnabled(t == self._TRAIL)
+        self.o_trail_unit.setEnabled(t == self._TRAIL)
+        self.o_tp.setEnabled(bracket)
+        self.o_sl.setEnabled(bracket)
+
     def _place(self):
         from tradelab.core.broker import BrokerError
         sym = self.o_symbol.text().strip().upper()
-        limit = self.o_limit.value() if self.o_type.currentText() == self._LIMIT else None
+        side = self.o_side.currentText()
+        qty = self.o_qty.value()
+        otype = self.o_type.currentText()
         try:
-            order = self.broker.place_order(sym, self.o_side.currentText(),
-                                            self.o_qty.value(), self.o_type.currentText(),
-                                            limit_price=limit)
+            if self.o_bracket.isChecked():
+                entry_type = otype if otype in (self._MARKET, self._LIMIT) else self._MARKET
+                entry_price = self.o_limit.value() if entry_type == self._LIMIT else None
+                order = self.broker.place_bracket(
+                    sym, side, qty, entry_type=entry_type, entry_price=entry_price,
+                    take_profit=(self.o_tp.value() or None), stop_loss=(self.o_sl.value() or None))
+            else:
+                limit = self.o_limit.value() if otype in (self._LIMIT, self._STOP_LIMIT) else None
+                stop = self.o_stop.value() if otype in (self._STOP, self._STOP_LIMIT) else None
+                trail_amount = trail_pct = None
+                if otype == self._TRAIL:
+                    if self.o_trail_unit.currentText() == "%":
+                        trail_pct = self.o_trail.value()
+                    else:
+                        trail_amount = self.o_trail.value()
+                order = self.broker.place_order(sym, side, qty, otype, limit_price=limit,
+                                                stop_price=stop, trail_amount=trail_amount,
+                                                trail_pct=trail_pct)
         except BrokerError as e:
             QMessageBox.warning(self, "Order rejected", str(e)); return
         if order.status == "REJECTED":
             QMessageBox.warning(self, "Order rejected", order.note or "Could not fill.")
+        self.refresh()
+
+    def _cancel_selected(self):
+        rows = {idx.row() for idx in self.ord_table.selectionModel().selectedRows()}
+        for row in rows:
+            item = self.ord_table.item(row, 0)
+            if item:
+                try:
+                    self.broker.cancel_order(int(item.text()))
+                except Exception:
+                    pass
         self.refresh()
 
     def _reset(self):
@@ -2638,7 +2698,8 @@ class PaperTradingPanel(QWidget):
         self.ord_table.setRowCount(len(orders))
         for r, o in enumerate(orders):
             cells = [str(o.id), o.symbol, o.side, f"{o.qty:g}", o.order_type,
-                     f"{o.limit_price:.2f}" if o.limit_price else "-", o.status,
+                     f"{o.limit_price:.2f}" if o.limit_price else "-",
+                     f"{o.stop_price:.2f}" if o.stop_price else "-", o.status,
                      f"{o.filled_price:.2f}" if o.filled_price else "-"]
             for c, val in enumerate(cells):
                 self.ord_table.setItem(r, c, QTableWidgetItem(val))
@@ -4160,6 +4221,145 @@ class ManualBrowser(QTextBrowser):
         _scale_doc_images(self.document(), avail * self._zoom_factor(), self._native_size)
 
 
+class NewsWorker(QThread):
+    """Fetches market headlines off the UI thread."""
+    done = Signal(object)   # list[NewsItem]
+
+    def __init__(self, symbols, macro_only, fetcher=None, geo_only=False):
+        super().__init__()
+        self.symbols = symbols
+        self.macro_only = macro_only
+        self.geo_only = geo_only
+        self._fetcher = fetcher
+
+    def run(self):
+        try:
+            items = fetch_news(self.symbols, fetcher=self._fetcher,
+                               macro_only=self.macro_only, geo_only=self.geo_only)
+        except BaseException:
+            items = []
+        try:
+            self.done.emit(items)
+        except RuntimeError:
+            pass
+
+
+class NewsPanel(QWidget):
+    """Recent market headlines for a symbol or the broad market, with
+    macro/political stories flagged. Double-click opens the article in your
+    browser. Read-only — it fetches and displays news, nothing else."""
+
+    _COLS = ["Time", "Source", "Headline", "Tickers"]
+
+    def __init__(self, fetcher=None):
+        super().__init__()
+        self._fetcher = fetcher          # injectable for tests
+        self._worker = None
+        self._items = []
+        layout = QVBoxLayout(self)
+        layout.addWidget(_hint(
+            "Recent headlines by source: a Symbol, the broad Market, a Sector, or "
+            "Geopolitical news. Macro/political stories (Fed, inflation, elections, "
+            "tariffs, war, OPEC…) are flagged ⚑ — a light stand-in for a full "
+            "economic/political calendar. Double-click a headline to open it in your browser."))
+
+        controls = QHBoxLayout()
+        self.mode = QComboBox(); self.mode.addItems(["Symbol", "Market", "Sectors", "Geopolitical"])
+        self.mode.currentTextChanged.connect(self._sync_mode)
+        self.symbol = QLineEdit("AAPL"); self.symbol.setMaximumWidth(110)
+        self.symbol.returnPressed.connect(self.get_news)
+        self.sector = QComboBox(); self.sector.addItems(list(SECTOR_ETFS.keys()))
+        self.macro_only = QCheckBox("Macro / political only")
+        get_btn = QPushButton("Get news"); get_btn.clicked.connect(self.get_news)
+        controls.addWidget(QLabel("Source")); controls.addWidget(self.mode)
+        controls.addWidget(self.symbol)
+        controls.addWidget(self.sector)
+        controls.addWidget(self.macro_only)
+        controls.addWidget(get_btn); controls.addStretch()
+        layout.addLayout(controls)
+
+        self.table = QTableWidget(0, len(self._COLS))
+        self.table.setHorizontalHeaderLabels(self._COLS)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.cellDoubleClicked.connect(self._open_row)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        layout.addWidget(self.table, 1)
+
+        self.status = QLabel("Pick a source and click Get news.")
+        layout.addWidget(self.status)
+        self._sync_mode()
+
+    def _sync_mode(self, *_):
+        mode = self.mode.currentText()
+        self.symbol.setVisible(mode == "Symbol")
+        self.sector.setVisible(mode == "Sectors")
+        # Geopolitical is inherently filtered; the checkbox only applies elsewhere.
+        self.macro_only.setEnabled(mode != "Geopolitical")
+
+    def _symbols(self):
+        mode = self.mode.currentText()
+        if mode == "Market":
+            return list(MARKET_SYMBOLS)
+        if mode == "Geopolitical":
+            return list(GEO_SYMBOLS)
+        if mode == "Sectors":
+            return [SECTOR_ETFS.get(self.sector.currentText(), "SPY")]
+        sym = self.symbol.text().strip().upper()
+        return [sym] if sym else []
+
+    def get_news(self):
+        if self._worker is not None and self._worker.isRunning():
+            return
+        symbols = self._symbols()
+        if not symbols:
+            self.status.setText("Enter a symbol first.")
+            return
+        geo = self.mode.currentText() == "Geopolitical"
+        macro = self.macro_only.isChecked() and not geo
+        self.status.setText("Fetching headlines…")
+        self._worker = NewsWorker(symbols, macro, self._fetcher, geo_only=geo)
+        self._worker.done.connect(self._on_done)
+        self._worker.finished.connect(self._clear_worker)
+        self._worker.start()
+
+    def _clear_worker(self):
+        self._worker = None
+
+    def _on_done(self, items):
+        self._items = items
+        self.table.setRowCount(len(items))
+        for r, it in enumerate(items):
+            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(it.published)) if it.published else ""
+            headline = ("⚑ " + it.title) if it.is_macro else it.title
+            cells = [QTableWidgetItem(when), QTableWidgetItem(it.publisher),
+                     QTableWidgetItem(headline), QTableWidgetItem(", ".join(it.tickers[:4]))]
+            cells[2].setData(Qt.UserRole, r)
+            cells[2].setToolTip(it.summary or it.title)
+            if it.is_macro:
+                cells[2].setForeground(QColor("#f0a020"))
+            for c, item in enumerate(cells):
+                self.table.setItem(r, c, item)
+        self.table.resizeColumnsToContents()
+        macro = sum(1 for i in items if i.is_macro)
+        self.status.setText(f"{len(items)} headlines ({macro} macro/political). "
+                            "Double-click to open." if items else
+                            "No headlines found for that source.")
+
+    def _open_row(self, row, _col):
+        if 0 <= row < len(self._items):
+            url = self._items[row].url
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+                self.status.setText("Opened article in your browser.")
+            else:
+                self.status.setText("No link available for that headline.")
+
+    def shutdown(self):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.wait(3000)
+
+
 class NotesPanel(QWidget):
     """A free-form notes scratchpad, auto-saved to data/notes.txt."""
 
@@ -4439,41 +4639,55 @@ class MainWindow(QMainWindow):
         self.tabs = tabs
         self.chart = ChartWorkspace()
         self.chart.fullscreenRequested.connect(self.toggle_chart_fullscreen)
+
+        # Build every panel first, then add the tabs in the order a trader
+        # actually works through them (see below).
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
         self.portfolio_panel = PortfolioPanel(self.db)
         self.scanner_panel = ScannerPanel(self.db, self.chart, self.watch_panel.refresh,
                                           self.portfolio_panel.refresh,
                                           on_show_heatmap=self._show_scan_in_heatmap)
-        # Each tab page is wrapped in a scroll area (see _scroll_tab) so no
-        # single tall tab can force the whole window past the screen height
-        # and clip the bottom.
-        tabs.addTab(_scroll_tab(self.scanner_panel), "Scanner")
-        tabs.addTab(_scroll_tab(self.watch_panel), "Watchlists")
-        tabs.addTab(_scroll_tab(self.portfolio_panel), "Portfolio")
         self.alerts_panel = AlertsPanel(symbol_provider=self.db.watch_symbols)
-        tabs.addTab(_scroll_tab(self.alerts_panel), "Alerts")
         self.heatmap_panel = HeatmapPanel(self.db, self.chart, self.cfg)
         self._heatmap_page = _scroll_tab(self.heatmap_panel)
-        tabs.addTab(self._heatmap_page, "Heatmap")
-        tabs.addTab(_scroll_tab(MarketPanel()), "Market")
+        self.market_panel = MarketPanel()
+        self.news_panel = NewsPanel()
+        self.ai_panel = AIAssistantPanel()
+        self.risk_panel = RiskPanel(self.db)
+        self.paper_panel = PaperTradingPanel()
+        self.journal_panel = JournalPanel(self.chart, self.cfg)
         self.backtest_panel = BacktestPanel(self.chart, self.cfg)
-        tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")
-        self.replay_panel = ReplayPanel(self.chart, self.cfg)
-        tabs.addTab(_scroll_tab(self.replay_panel), "Replay")
         # When a custom strategy is saved/deleted in the builder, refresh the
         # Scanner and Backtest strategy dropdowns so it appears immediately.
-        tabs.addTab(_scroll_tab(StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed)), "Strategies")
-        tabs.addTab(_scroll_tab(PluginPanel(on_plugins_changed=self._on_plugins_changed)), "Plugins")
-        tabs.addTab(_scroll_tab(PaperTradingPanel()), "Paper Trading")
-        self.journal_panel = JournalPanel(self.chart, self.cfg)
-        tabs.addTab(_scroll_tab(self.journal_panel), "Journal")
-        self.risk_panel = RiskPanel(self.db)
-        tabs.addTab(_scroll_tab(self.risk_panel), "Risk")
-        tabs.addTab(_scroll_tab(AIAssistantPanel()), "AI Assist")
+        self.strategy_panel = StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed)
+        self.replay_panel = ReplayPanel(self.chart, self.cfg)
+        self.plugin_panel = PluginPanel(on_plugins_changed=self._on_plugins_changed)
         self.notes_panel = NotesPanel()
-        tabs.addTab(_scroll_tab(self.notes_panel), "Notes")
-        tabs.addTab(_scroll_tab(LinksPanel()), "Links")
-        tabs.addTab(_scroll_tab(SettingsPanel(self.db)), "Settings")
+        self.links_panel = LinksPanel()
+        self.settings_panel = SettingsPanel(self.db)
+
+        # Tabs follow the trading process (each page wrapped in a scroll area so
+        # a tall tab can't force the window past the screen height):
+        #   1) Market context  2) Find & watch  3) Analyze, size & act
+        #   4) Track & review  5) Research/build  6) Utilities.
+        tabs.addTab(_scroll_tab(self.market_panel), "Market")          # is it a good day?
+        tabs.addTab(self._heatmap_page, "Heatmap")                    # where's the strength?
+        tabs.addTab(_scroll_tab(self.news_panel), "News")             # any catalysts?
+        tabs.addTab(_scroll_tab(self.scanner_panel), "Scanner")       # find setups
+        tabs.addTab(_scroll_tab(self.watch_panel), "Watchlists")      # shortlist
+        tabs.addTab(_scroll_tab(self.alerts_panel), "Alerts")         # get notified
+        tabs.addTab(_scroll_tab(self.ai_panel), "AI Assist")          # analyse a setup
+        tabs.addTab(_scroll_tab(self.risk_panel), "Risk")             # size the trade
+        tabs.addTab(_scroll_tab(self.paper_panel), "Paper Trading")   # place the order
+        tabs.addTab(_scroll_tab(self.portfolio_panel), "Portfolio")   # holdings
+        tabs.addTab(_scroll_tab(self.journal_panel), "Journal")       # review results
+        tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")     # research: test ideas
+        tabs.addTab(_scroll_tab(self.strategy_panel), "Strategies")   # research: build
+        tabs.addTab(_scroll_tab(self.replay_panel), "Replay")         # research: practice
+        tabs.addTab(_scroll_tab(self.plugin_panel), "Plugins")        # research: custom indicators
+        tabs.addTab(_scroll_tab(self.notes_panel), "Notes")           # utilities
+        tabs.addTab(_scroll_tab(self.links_panel), "Links")
+        tabs.addTab(_scroll_tab(self.settings_panel), "Settings")
         # UI-001: keep the left control area usable.  The splitter may still
         # be resized, but the scanner/watchlist/settings column will not
         # collapse to an unreadable width.
@@ -4690,6 +4904,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.notes_panel.shutdown()   # flush unsaved notes
+        except Exception:
+            pass
+        try:
+            self.news_panel.shutdown()
         except Exception:
             pass
         super().closeEvent(event)

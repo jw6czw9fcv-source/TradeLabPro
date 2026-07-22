@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.24.0
-Current phase: Notes tab + 2-row tabs + chart full screen (done)
+Current version: 2.25.0
+Current phase: Stop/bracket orders + News feed (done)
+
+## Completed in 2.25.0 (Stop/bracket orders + News feed)
+- Paper broker (`core/broker.py`): added STOP, STOP_LIMIT, TRAILING_STOP order types (+ trail_amount/trail_pct, live stop_price), and bracket/OCO (`place_bracket`, parent_id/oco_group/active plumbing; `_after_fill` activates children + cancels OCO siblings). `poll()`/`_should_trigger()`/`_trail_level()` handle triggering; `_new_order()` factored out. PaperTradingPanel: type dropdown (5 types) with dynamic Limit/Stop/Trail fields, a Bracket row (take-profit/stop-loss), Cancel-selected, Stop column.
+- News: `core/news.py` (`fetch_news(symbols, fetcher=, macro_only=)`, `NewsItem`, `is_macro`, `MACRO_KEYWORDS`, `MARKET_SYMBOLS`; parses old flat + new nested Yahoo shapes, dedupe/sort). New "News" tab (`NewsPanel` + `NewsWorker`): Symbol vs Market&macro source, macro-only filter, macro headlines flagged ⚑, double-click opens the article. Read-only.
+- pytest regression suite now 525 tests, all passing.
 
 ## Completed in 2.24.0 (Notes tab, multi-row tabs, chart full screen)
 - New "Notes" tab: `tradelab/core/notes.py` (`load_notes`/`save_notes` -> `data/notes.txt`, gitignored) + `NotesPanel` (plain-text QTextEdit, debounced autosave via QTimer, `shutdown()` flush wired into closeEvent).
