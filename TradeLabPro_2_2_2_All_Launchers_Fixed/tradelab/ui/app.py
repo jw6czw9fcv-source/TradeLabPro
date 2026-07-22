@@ -4,7 +4,7 @@ import traceback
 import time
 from pathlib import Path
 import pandas as pd
-from PySide6.QtCore import Qt, QThread, Signal, QSettings, QTimer, QUrl
+from PySide6.QtCore import Qt, QThread, Signal, QSettings, QTimer, QUrl, QSize, QRect, QPoint
 from PySide6.QtGui import QAction, QImage, QTextCursor, QColor, QIcon, QPainter, QFont, QPen, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QTextEdit, QFileDialog, QProgressBar, QScrollArea, QHeaderView,
     QMenu, QToolButton, QSizePolicy, QDialog, QTextBrowser, QSystemTrayIcon, QStyle,
     QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem, QFrame,
-    QInputDialog, QSlider, QGraphicsItem
+    QInputDialog, QSlider, QGraphicsItem, QLayout, QStackedWidget, QButtonGroup
 )
 
 from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR, ROOT_DIR
@@ -26,6 +26,7 @@ from tradelab.core.filters import FilterCondition
 from tradelab.core.journal import Journal, JournalEntry, summarize, group_stats
 from tradelab.core.risk import size_position, r_targets
 from tradelab.core.links import Link, LinkStore
+from tradelab.core.notes import load_notes, save_notes
 from tradelab.core import heatmap as hm
 from tradelab.data.universe import US_NASDAQ, US_NYSE, US_AMEX, CAN_TSX, CAN_TSX_EXPANDED
 from tradelab.strategies import strategy_choices
@@ -1803,6 +1804,141 @@ def _scroll_tab(widget):
     sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
     sa.setWidget(widget)
     return sa
+
+
+class FlowLayout(QLayout):
+    """A layout that lays its items left-to-right and wraps to new rows as
+    width runs out (the classic Qt flow-layout). Used for the tab bar so every
+    tab button stays visible across two (or more) rows instead of overflowing
+    into a scroll arrow."""
+
+    def __init__(self, parent=None, margin=0, hspacing=3, vspacing=3):
+        super().__init__(parent)
+        self._hspace = hspacing
+        self._vspace = vspacing
+        self._items = []
+        self.setContentsMargins(margin, margin, margin, margin)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientations(Qt.Orientation(0))
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        return size + QSize(m.left() + m.right(), m.top() + m.bottom())
+
+    def _do_layout(self, rect, test_only):
+        x, y, line_height = rect.x(), rect.y(), 0
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width() + self._hspace
+            if next_x - self._hspace > rect.right() and line_height > 0:
+                x = rect.x()
+                y = y + line_height + self._vspace
+                next_x = x + hint.width() + self._hspace
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = next_x
+            line_height = max(line_height, hint.height())
+        return y + line_height - rect.y()
+
+
+class MultiRowTabs(QWidget):
+    """A drop-in-ish replacement for QTabWidget whose tab bar **wraps to
+    multiple rows** (via FlowLayout), so all tabs stay visible with no overflow
+    arrows. Implements the subset of the QTabWidget API this app uses."""
+
+    def __init__(self):
+        super().__init__()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(2)
+        self._bar = QWidget()
+        sp = self._bar.sizePolicy(); sp.setHeightForWidth(True); self._bar.setSizePolicy(sp)
+        # Compact buttons (small font/padding = more per row = fewer rows) with
+        # a clear "current tab" highlight (works light/dark).
+        self._bar.setStyleSheet(
+            "QToolButton{padding:2px 6px; font-size:11px; border:1px solid palette(mid); border-radius:3px;}"
+            "QToolButton:hover{border-color:#2d5aa0;}"
+            "QToolButton:checked{background:#2d5aa0; color:white; border:1px solid #2d5aa0;}")
+        self._flow = FlowLayout(self._bar, hspacing=2, vspacing=2)
+        outer.addWidget(self._bar)
+        self._stack = QStackedWidget()
+        outer.addWidget(self._stack, 1)
+        self._buttons = []
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+
+    def addTab(self, widget, label):
+        index = self._stack.count()
+        self._stack.addWidget(widget)
+        btn = QToolButton()
+        btn.setText(label)
+        btn.setCheckable(True)
+        btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(lambda _checked=False, i=index: self.setCurrentIndex(i))
+        self._group.addButton(btn, index)
+        self._flow.addWidget(btn)
+        self._buttons.append(btn)
+        if index == 0:
+            btn.setChecked(True)
+            self._stack.setCurrentIndex(0)
+        return index
+
+    # --- QTabWidget-compatible surface used by the app/tests ---
+    def setCurrentIndex(self, index):
+        if 0 <= index < self._stack.count():
+            self._stack.setCurrentIndex(index)
+            self._buttons[index].setChecked(True)
+
+    def currentIndex(self):
+        return self._stack.currentIndex()
+
+    def currentWidget(self):
+        return self._stack.currentWidget()
+
+    def setCurrentWidget(self, widget):
+        i = self._stack.indexOf(widget)
+        if i >= 0:
+            self.setCurrentIndex(i)
+
+    def count(self):
+        return self._stack.count()
+
+    def widget(self, index):
+        return self._stack.widget(index)
+
+    def tabText(self, index):
+        return self._buttons[index].text() if 0 <= index < len(self._buttons) else ""
 
 
 class BacktestPanel(QWidget):
@@ -4024,6 +4160,45 @@ class ManualBrowser(QTextBrowser):
         _scale_doc_images(self.document(), avail * self._zoom_factor(), self._native_size)
 
 
+class NotesPanel(QWidget):
+    """A free-form notes scratchpad, auto-saved to data/notes.txt."""
+
+    def __init__(self, path=None):
+        super().__init__()
+        self._path = path
+        layout = QVBoxLayout(self)
+        top = QHBoxLayout()
+        top.addWidget(_hint(
+            "A free-form scratchpad — your trading plan, ideas, reminders, rules. "
+            "It saves automatically as you type (stored on this PC)."), 1)
+        self.saved_label = QLabel(""); self.saved_label.setStyleSheet("color:#8b98a5;")
+        top.addWidget(self.saved_label)
+        layout.addLayout(top)
+
+        self.editor = QTextEdit(); self.editor.setAcceptRichText(False)
+        self.editor.setPlainText(load_notes(self._path))
+        self.editor.textChanged.connect(self._on_changed)
+        layout.addWidget(self.editor, 1)
+
+        self._timer = QTimer(self); self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.save)
+
+    def _on_changed(self):
+        self.saved_label.setText("Editing…")
+        self._timer.start(800)          # debounce: save shortly after you stop typing
+
+    def save(self):
+        save_notes(self.editor.toPlainText(), self._path)
+        self.saved_label.setText("Saved ✓")
+
+    def shutdown(self):
+        try:
+            self._timer.stop()
+        except Exception:
+            pass
+        self.save()
+
+
 class LinksPanel(QWidget):
     """A personal bookmark list: name + URL (+ optional group) for the research
     sites, broker pages, news and screeners you use. Double-click to open in
@@ -4257,9 +4432,13 @@ class MainWindow(QMainWindow):
         from tradelab.core import plugins
         plugins.discover_plugins()
         splitter = QSplitter(Qt.Horizontal)
-        tabs = QTabWidget()
+        self.splitter = splitter
+        # Multi-row tab bar: every tab stays visible (wraps to 2+ rows) instead
+        # of overflowing into a scroll arrow.
+        tabs = MultiRowTabs()
         self.tabs = tabs
         self.chart = ChartWorkspace()
+        self.chart.fullscreenRequested.connect(self.toggle_chart_fullscreen)
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
         self.portfolio_panel = PortfolioPanel(self.db)
         self.scanner_panel = ScannerPanel(self.db, self.chart, self.watch_panel.refresh,
@@ -4291,6 +4470,8 @@ class MainWindow(QMainWindow):
         self.risk_panel = RiskPanel(self.db)
         tabs.addTab(_scroll_tab(self.risk_panel), "Risk")
         tabs.addTab(_scroll_tab(AIAssistantPanel()), "AI Assist")
+        self.notes_panel = NotesPanel()
+        tabs.addTab(_scroll_tab(self.notes_panel), "Notes")
         tabs.addTab(_scroll_tab(LinksPanel()), "Links")
         tabs.addTab(_scroll_tab(SettingsPanel(self.db)), "Settings")
         # UI-001: keep the left control area usable.  The splitter may still
@@ -4304,7 +4485,10 @@ class MainWindow(QMainWindow):
         splitter.setCollapsible(1, False)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([520, 1080])
+        # Give the left control column more room by default so its tab bar packs
+        # into fewer rows and panel content isn't squeezed. Use the chart's
+        # ⛶ Full screen button when you want the chart to fill the monitor.
+        splitter.setSizes([640, 1000])
         self.setCentralWidget(splitter)
         self.statusBar().showMessage(f"{APP_NAME} {APP_VERSION} ready")
         self._build_menus()
@@ -4424,6 +4608,33 @@ class MainWindow(QMainWindow):
         self.heatmap_panel.set_external_symbols(symbols, "Scanner results")
         self.tabs.setCurrentWidget(self._heatmap_page)
 
+    def toggle_chart_fullscreen(self):
+        """Expand the chart to fill the whole monitor (hiding the left tab
+        panel and window chrome), or retract back to the normal layout."""
+        if not getattr(self, "_chart_full", False):
+            self._chart_full = True
+            self._saved_split_sizes = self.splitter.sizes()
+            self._was_maximized = self.isMaximized()
+            self.tabs.hide()
+            self.chart.set_fullscreen_label(True)
+            self.showFullScreen()
+        else:
+            self._chart_full = False
+            self.tabs.show()
+            self.chart.set_fullscreen_label(False)
+            try:
+                self.splitter.setSizes(self._saved_split_sizes)
+            except Exception:
+                pass
+            self.showMaximized()
+
+    def keyPressEvent(self, event):
+        # Esc also exits chart full-screen.
+        if event.key() == Qt.Key_Escape and getattr(self, "_chart_full", False):
+            self.toggle_chart_fullscreen()
+            return
+        super().keyPressEvent(event)
+
     def _on_strategies_changed(self):
         self.scanner_panel.refresh_strategies()
         self.backtest_panel.refresh_strategies()
@@ -4475,6 +4686,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.replay_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.notes_panel.shutdown()   # flush unsaved notes
         except Exception:
             pass
         super().closeEvent(event)

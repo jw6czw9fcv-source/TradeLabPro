@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.24.0 - Notes tab, two-row tabs, chart full screen
+
+### Added
+- **New "Notes" tab** — a free-form scratchpad for your trading plan, ideas, and rules. It **auto-saves as you type** (to `data/notes.txt`) and reloads next launch.
+- **All tabs stay visible.** The left tab bar now **wraps to multiple rows** (a flow layout) instead of hiding tabs behind a `»` overflow arrow — so every tab is one click away. The current tab is highlighted; drag the splitter wider to pack more per row.
+- **Chart full-screen toggle.** A **⛶ Full screen** button on the chart toolbar expands the chart to fill the whole monitor (hides the left panel and window chrome); click again or press **Esc** to retract.
+
+### Verified
+- 501/501 pytest tests pass (new: `tests/test_notes.py` + `tests/test_notes_panel.py` — notes save/load/autosave/shutdown-flush, the multi-row tab bar shows all tabs & wraps, and the chart full-screen toggle hides/restores the left panel).
+
 ## 2.23.0 - Links page (Phase 16)
 
 ### Added

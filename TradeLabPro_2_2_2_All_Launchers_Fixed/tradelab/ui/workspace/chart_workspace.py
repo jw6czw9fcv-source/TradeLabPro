@@ -48,6 +48,8 @@ class _ChartDock(QDockWidget):
 
 
 class ChartWorkspace(QWidget):
+    fullscreenRequested = Signal()
+
     def __init__(self):
         super().__init__()
         self._db: Optional[Database] = None
@@ -83,6 +85,15 @@ class ChartWorkspace(QWidget):
         toolbar.addWidget(save_btn)
 
         toolbar.addStretch()
+
+        # Expand the chart to fill the whole monitor (and back). Wired by the
+        # main window, which hides the left tab panel and goes full-screen.
+        self._fs_btn = QToolButton()
+        self._fs_btn.setText("⛶ Full screen")
+        self._fs_btn.setToolTip("Expand the chart to the full monitor (Esc or click again to retract)")
+        self._fs_btn.clicked.connect(self.fullscreenRequested.emit)
+        toolbar.addWidget(self._fs_btn)
+
         outer.addLayout(toolbar)
 
         # The native QDockWidget tab bar (from tabifyDockWidget) is easy to
@@ -109,6 +120,9 @@ class ChartWorkspace(QWidget):
 
         self.add_chart("AAPL")
         self._rebuild_chart_tabs()
+
+    def set_fullscreen_label(self, is_full: bool):
+        self._fs_btn.setText("⛶ Exit full screen" if is_full else "⛶ Full screen")
 
     # ------------------------------------------------------------------
     def _get_db(self) -> Database:

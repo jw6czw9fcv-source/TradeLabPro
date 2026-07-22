@@ -31,7 +31,3 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 ## Requested / backlog
 - Phase 16: Links page — named site links / web-page URLs (personal bookmarks),
   stored locally, click to open in the browser, grouping + CSV import/export — DONE 2.23.0
-- **Security hardening** (optional): encrypt-at-rest for stored credentials
-  (Anthropic API key, IBKR Flex token) instead of plaintext registry values; a
-  one-click "clear stored credentials"; opt-in toggle for saving the raw IBKR Flex
-  report to logs/.

@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.23.0
-Current phase: Phase 16 - Links page (done)
+Current version: 2.24.0
+Current phase: Notes tab + 2-row tabs + chart full screen (done)
+
+## Completed in 2.24.0 (Notes tab, multi-row tabs, chart full screen)
+- New "Notes" tab: `tradelab/core/notes.py` (`load_notes`/`save_notes` -> `data/notes.txt`, gitignored) + `NotesPanel` (plain-text QTextEdit, debounced autosave via QTimer, `shutdown()` flush wired into closeEvent).
+- `MultiRowTabs` (+ `FlowLayout`) replaces `QTabWidget` for the left panel so all ~17 tabs wrap to multiple rows and stay visible (no overflow arrow); implements the QTabWidget subset the app uses (addTab/currentWidget/setCurrentWidget/count/widget/tabText). Compact buttons with a checked highlight.
+- Chart full-screen: `ChartWorkspace.fullscreenRequested` signal + "⛶ Full screen" toolbar button; `MainWindow.toggle_chart_fullscreen()` hides the left panel and `showFullScreen()` (Esc/`keyPressEvent` also exits), `set_fullscreen_label()` updates the button. `self.splitter` stored to restore sizes.
+- pytest regression suite now 501 tests, all passing.
 
 ## Completed in 2.23.0 (Links page, Phase 16)
 - `tradelab/core/links.py` (Qt-free): `normalize_url` (defaults https://), `Link` dataclass, `LinkStore` -> `data/links.json` (gitignored) with add/update/remove/persist.
