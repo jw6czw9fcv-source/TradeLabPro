@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.23.0 - Links page (Phase 16)
+
+### Added
+- **New "Links" tab — a personal bookmark list.** Save the research sites, broker pages, news and screeners you use: enter a **name + URL** (https:// is added automatically if you omit it) with an optional **group**. Double-click a row (or Open selected) to open it in your default browser. Select a row to edit it in place; Remove, and Import/Export CSV. Stored locally in `data/links.json` (gitignored) — it only opens links, it sends nothing.
+
+### Verified
+- 493/493 pytest tests pass (new: `tests/test_links.py` — URL normalization, store add/update/remove/persist, corrupt-file safety; `tests/test_links_panel.py` — add/normalize, edit-in-place, remove, and double-click opens the browser).
+
 ## 2.22.0 - Data-source abstraction (Phase 15)
 
 ### Added

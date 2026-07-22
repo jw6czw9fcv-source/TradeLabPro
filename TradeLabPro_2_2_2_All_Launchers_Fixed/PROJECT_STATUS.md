@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.22.0
-Current phase: Phase 15 - Data-source abstraction (done)
+Current version: 2.23.0
+Current phase: Phase 16 - Links page (done)
+
+## Completed in 2.23.0 (Links page, Phase 16)
+- `tradelab/core/links.py` (Qt-free): `normalize_url` (defaults https://), `Link` dataclass, `LinkStore` -> `data/links.json` (gitignored) with add/update/remove/persist.
+- New "Links" tab (`LinksPanel`, before Settings): add/edit-in-place form (name/URL/group), table sorted by group+name, double-click / Open selected -> `QDesktopServices.openUrl`, Remove, Import/Export CSV. Opens links only; sends nothing.
+- pytest regression suite now 493 tests, all passing.
 
 ## Completed in 2.22.0 (Data-source abstraction, Phase 15)
 - `tradelab/data/providers.py`: `DataProvider` ABC + `YahooProvider` (delegates to `market_data._yahoo_history`/`_yahoo_quote_meta`) + `SyntheticProvider` (offline deterministic); registry (`register`/`active`/`set_active`/`provider_names`), default Yahoo. `market_data.get_history`/`get_quote_meta` now delegate to `providers.active()` (cache stays in the wrapper; switch clears it). All existing market_data tests unchanged.

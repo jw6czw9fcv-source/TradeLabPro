@@ -29,9 +29,8 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 - Heatmap follow-ups: auto-refresh timer (DONE 2.14.2), index/ETF maps (DONE 2.15.0), click-through from Scanner results (DONE 2.21.0)
 
 ## Requested / backlog
-- **Links page** — a tab to manually add named site links / web-page URLs (personal
-  bookmarks of research sites, broker pages, news, etc.), stored locally; click to
-  open in the default browser. Optional grouping/tags and import/export.
+- Phase 16: Links page — named site links / web-page URLs (personal bookmarks),
+  stored locally, click to open in the browser, grouping + CSV import/export — DONE 2.23.0
 - **Security hardening** (optional): encrypt-at-rest for stored credentials
   (Anthropic API key, IBKR Flex token) instead of plaintext registry values; a
   one-click "clear stored credentials"; opt-in toggle for saving the raw IBKR Flex
