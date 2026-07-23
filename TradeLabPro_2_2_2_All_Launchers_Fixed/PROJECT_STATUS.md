@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.27.0
-Current phase: Chart date axis + Scanner sector baskets (done)
+Current version: 2.28.0
+Current phase: US/Canada separation for Scanner sectors (done)
+
+## Completed in 2.28.0 (Scanner sectors separated by market)
+- `core/sectors.py` restructured by region, mirroring the Market tab: `US_SECTORS` + **new `CANADA_SECTORS`** (all 11 GICS sectors on the TSX — Technology CSU/SHOP/OTEX, Financials the Big Six + insurers, Materials ABX/AEM/K/FNV/WPM, etc.), `INDUSTRIES` kept as one mixed source and **split by suffix at read time**, `ETF_BASKETS` keyed by region.
+- API: `REGIONS`, `is_canadian()`, `region_baskets(region)`, `basket_choices(region)`, `basket_symbols(name, region)`, `universe_name(region, basket)`, `split_universe_name()`, `scanner_universes()`. Universe keys carry the region (`Sector - Canada - Banks`); Canada drops baskets with no domestic names (no TSX Semiconductors/Social Media). 43 US + 30 Canada = 73 baskets.
+- Scanner: new **Sector market** dropdown (US/Canada) above the universe checkboxes; only the selected market's baskets are listed, labels drop the redundant region. No basket mixes markets (test-enforced).
+- pytest regression suite now 596 tests, all passing.
 
 ## Completed in 2.27.0 (Chart date axis + Scanner sector baskets)
 - `pg_chart_widget.BarDateAxis`: bottom axis maps bar index -> the bar's real timestamp (candles plot at index so weekends/holidays leave no gap, which had left the axis labelling `0, 50, 100`). Format adapts to span (intraday `%H:%M` / `%d %b %H:%M`, daily `%d %b`, multi-year `%b %Y`); out-of-range ticks blank. `_date_axes`/`_set_date_index()`/`_sync_date_axes()` feed all four panes and show values only on the lowest showing pane (driven by `_sub_panel_flags`, not `isVisible()`).

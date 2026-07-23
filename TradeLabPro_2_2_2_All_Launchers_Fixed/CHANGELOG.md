@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.28.0 - Scanner sectors separated by market (US / Canada)
+
+### Added
+- **Pick the market before the sector.** The Scanner's universe box has a new **Sector market** dropdown (US / Canada) above the checkbox list, mirroring the Market tab: choose the market first, then the sector, so a scan is never a silent blend of two exchanges. Switching markets swaps the whole basket list.
+- **Canada now has all 11 GICS sectors** — Technology (CSU, SHOP, OTEX, DSG, CLS), Financials (the Big Six plus the insurers), Materials (ABX, AEM, K, FNV, WPM, TECK-B), Energy, Industrials, Consumer Staples/Discretionary, Utilities, Real Estate, Communication Services and a Health Care basket. Previously the 11 sectors were US-only and Canadian names appeared solely inside a handful of mixed sub-sectors.
+- **73 baskets in total** — 43 US, 30 Canada. Canada deliberately omits baskets with no domestic names (there is no TSX semiconductor or social-media basket) rather than showing empty ones.
+
+### Changed
+- Sub-sector lists (gold, banks, uranium, REITs…) stay a **single definition** and are split by listing suffix at read time, so a symbol is only ever recorded once and the two markets cannot drift apart. Universe keys now carry their region (`Sector - Canada - Banks`), while the checkbox label drops it since the dropdown above already states the market.
+- `tradelab/core/sectors.py` is now region-based: `REGIONS`, `US_SECTORS`, `CANADA_SECTORS`, `is_canadian()`, `region_baskets()`, `basket_choices(region)`, `basket_symbols(name, region)`, `universe_name()`, `split_universe_name()`.
+
+### Verified
+- 596/596 pytest tests pass, including a guard that walks every basket in both markets and fails on a single cross-market symbol, plus Scanner UI tests that the market selector swaps the listed baskets and that scanning Canadian "Gold & Precious Metals" yields only TSX names.
+
 ## 2.27.0 - Chart date axis + Scanner sector baskets
 
 ### Fixed

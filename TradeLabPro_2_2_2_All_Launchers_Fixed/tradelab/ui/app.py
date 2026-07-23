@@ -334,6 +334,21 @@ class ScannerPanel(QWidget):
         self.universe_box = QGroupBox("Exchanges / My Lists")
         universe_box = self.universe_box
         u_layout = QVBoxLayout(universe_box)
+        # US and Canadian sector baskets are kept apart - you pick the market
+        # first, then the sector - so a scan is never a silent blend of both
+        # exchanges (same separation as the Market tab).
+        from tradelab.core.sectors import REGIONS as _SECTOR_REGIONS
+        sector_row = QHBoxLayout()
+        self.sector_region = QComboBox(); self.sector_region.addItems(list(_SECTOR_REGIONS))
+        self.sector_region.setToolTip(
+            "Which market's sector baskets to list. US and Canadian sectors are "
+            "separate lists, so a scan never mixes the two exchanges.")
+        self.sector_region.currentTextChanged.connect(self.on_sector_region_changed)
+        self.sector_region_label = QLabel("Sector market")
+        sector_row.addWidget(self.sector_region_label)
+        sector_row.addWidget(self.sector_region)
+        sector_row.addStretch()
+        u_layout.addLayout(sector_row)
         self.universe_checks = []
         self.universe_scroll = QScrollArea(); self.universe_scroll.setWidgetResizable(True); self.universe_scroll.setMaximumHeight(120)
         self.universe_inner = QWidget(); self.universe_checks_layout = QVBoxLayout(self.universe_inner)
@@ -803,9 +818,16 @@ class ScannerPanel(QWidget):
 
         def add_sector_items(checked=False):
             # Each basket is its own checkbox so you can scan just "Gold &
-            # Precious Metals" rather than a whole exchange.
+            # Precious Metals" rather than a whole exchange. Only the selected
+            # market's baskets are listed; the region lives in the universe key
+            # ("Sector - Canada - Banks") but is dropped from the label, since
+            # the dropdown right above already says which market you're in.
+            from tradelab.core.sectors import BASKET_PREFIX
+            region = self.sector_region.currentText() if hasattr(self, "sector_region") else "US"
+            tag = f"{BASKET_PREFIX}{region} - "
             for name in sorted(grouped.get("Sectors", [])):
-                add(name, [name], checked)
+                if name.startswith(tag):
+                    add(f"{BASKET_PREFIX}{name[len(tag):]}", [name], checked)
 
         def add_list_items(checked=False):
             # SCN-035: ETFs are a list/category, not an exchange. They are
@@ -835,6 +857,10 @@ class ScannerPanel(QWidget):
             add_list_items(False)
             add_sector_items(False)
         return choices
+
+    def on_sector_region_changed(self, _text=None):
+        """Switching US <-> Canada relists the sector baskets for that market."""
+        self.rebuild_universe_checks()
 
     def on_market_changed(self, _text=None):
         self.rebuild_universe_checks()
