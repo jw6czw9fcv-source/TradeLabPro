@@ -167,9 +167,17 @@ class ScannerPanel(QWidget):
         self.parameter_scroll.setWidget(self.parameter_inner)
         controls_layout.addWidget(self.parameter_scroll)
         self.scan_name = QLineEdit("My Scan")
-        self.country = QComboBox(); self.country.addItems(["All Exchanges", "All USA", "All Canada", "My Lists", "Sectors / Industries"])
-        self.country.setToolTip("Which universe to scan. 'Sectors / Industries' lists curated "
-                                "sector, sub-sector (gold, banks, uranium…) and ETF baskets.")
+        # Country first: one selector at the top decides which market (and which
+        # kind of universe) everything below lists - exchanges, sector baskets
+        # or your own lists. Sector baskets are per-market, so choosing the
+        # country here is what keeps a scan from blending two exchanges.
+        self.country = QComboBox()
+        self.country.addItems(["All Exchanges", "All USA", "All Canada", "My Lists",
+                               "Sectors — US", "Sectors — Canada"])
+        self.country.setToolTip(
+            "Which universe to scan. 'Sectors — US' / 'Sectors — Canada' list that "
+            "market's curated sector, sub-sector (gold, banks, uranium…) and ETF "
+            "baskets; the two are never shown together.")
         self.strategy = QComboBox()
         for key, name in strategy_choices():
             self.strategy.addItem(name, key)
@@ -334,21 +342,6 @@ class ScannerPanel(QWidget):
         self.universe_box = QGroupBox("Exchanges / My Lists")
         universe_box = self.universe_box
         u_layout = QVBoxLayout(universe_box)
-        # US and Canadian sector baskets are kept apart - you pick the market
-        # first, then the sector - so a scan is never a silent blend of both
-        # exchanges (same separation as the Market tab).
-        from tradelab.core.sectors import REGIONS as _SECTOR_REGIONS
-        sector_row = QHBoxLayout()
-        self.sector_region = QComboBox(); self.sector_region.addItems(list(_SECTOR_REGIONS))
-        self.sector_region.setToolTip(
-            "Which market's sector baskets to list. US and Canadian sectors are "
-            "separate lists, so a scan never mixes the two exchanges.")
-        self.sector_region.currentTextChanged.connect(self.on_sector_region_changed)
-        self.sector_region_label = QLabel("Sector market")
-        sector_row.addWidget(self.sector_region_label)
-        sector_row.addWidget(self.sector_region)
-        sector_row.addStretch()
-        u_layout.addLayout(sector_row)
         self.universe_checks = []
         self.universe_scroll = QScrollArea(); self.universe_scroll.setWidgetResizable(True); self.universe_scroll.setMaximumHeight(120)
         self.universe_inner = QWidget(); self.universe_checks_layout = QVBoxLayout(self.universe_inner)
@@ -816,14 +809,13 @@ class ScannerPanel(QWidget):
         usa_groups = ["NASDAQ", "NYSE", "AMEX", "NYSE / AMEX"]
         canada_groups = ["TSX", "TSXV", "CSE"]
 
-        def add_sector_items(checked=False):
+        def add_sector_items(region, checked=False):
             # Each basket is its own checkbox so you can scan just "Gold &
-            # Precious Metals" rather than a whole exchange. Only the selected
+            # Precious Metals" rather than a whole exchange. Only the chosen
             # market's baskets are listed; the region lives in the universe key
             # ("Sector - Canada - Banks") but is dropped from the label, since
-            # the dropdown right above already says which market you're in.
+            # the selector at the top already says which market you're in.
             from tradelab.core.sectors import BASKET_PREFIX
-            region = self.sector_region.currentText() if hasattr(self, "sector_region") else "US"
             tag = f"{BASKET_PREFIX}{region} - "
             for name in sorted(grouped.get("Sectors", [])):
                 if name.startswith(tag):
@@ -841,26 +833,21 @@ class ScannerPanel(QWidget):
             for g in usa_groups:
                 add_group(g, True)
             add_list_items(False)
-            add_sector_items(False)
         elif preset == 'All Canada':
             for g in canada_groups:
                 add_group(g, True)
             add_list_items(False)
-            add_sector_items(False)
         elif preset == 'My Lists':
             add_list_items(True)
-        elif preset == 'Sectors / Industries':
-            add_sector_items(False)
+        elif preset.startswith('Sectors'):
+            # Sector baskets only, for the market named in the preset - the two
+            # markets are never listed together.
+            add_sector_items('Canada' if 'Canada' in preset else 'US', False)
         else:  # All Exchanges
             for g in usa_groups + canada_groups:
                 add_group(g, True)
             add_list_items(False)
-            add_sector_items(False)
         return choices
-
-    def on_sector_region_changed(self, _text=None):
-        """Switching US <-> Canada relists the sector baskets for that market."""
-        self.rebuild_universe_checks()
 
     def on_market_changed(self, _text=None):
         self.rebuild_universe_checks()
@@ -1620,27 +1607,32 @@ class MarketPanel(QWidget):
         # in tests); click-to-chart is simply inert without them.
         self.chart=chart; self.cfg=cfg
         layout=QVBoxLayout(self)
+        # Country first: the whole tab - read, regime symbols and sectors -
+        # follows this one selector, so nothing on screen ever mixes markets.
         top=QHBoxLayout()
+        from tradelab.core.market import SECTOR_REGIONS
+        title=QLabel("Market Dashboard"); title.setStyleSheet("font-weight:bold;")
+        self.country_combo=QComboBox()
+        self.country_combo.addItems(list(SECTOR_REGIONS))
+        self.country_combo.setToolTip("Which market this whole tab describes — the read, "
+                                      "the regime symbols and the sector ranking all follow it.")
+        self.country_combo.currentTextChanged.connect(self._on_region_changed)
         self.refresh_btn=QPushButton("Refresh market dashboard")
         self.refresh_btn.clicked.connect(self.refresh_market)
-        top.addWidget(QLabel("Market Dashboard")); top.addStretch(); top.addWidget(self.refresh_btn)
+        top.addWidget(title)
+        top.addSpacing(12)
+        top.addWidget(QLabel("Market")); top.addWidget(self.country_combo)
+        top.addStretch(); top.addWidget(self.refresh_btn)
         layout.addLayout(top)
         layout.addWidget(_hint("Click any index, regime symbol or sector below to chart it."))
 
-        # Phase 3: "is it a good day to trade" macro read - one card per market
-        # (US and Canada) side by side, each with a big plain headline, a
-        # one-line summary and the transparent reasons that produced it. Both
-        # are always shown so the answer never depends on a selector below.
+        # Phase 3: "is it a good day to trade" macro read - a big plain
+        # headline, a one-line summary and the transparent reasons behind it,
+        # for whichever market is selected above.
         self.read_box=QGroupBox("Is it a good day to trade?")
         read_layout=QHBoxLayout(self.read_box)
-        self.read_cards={}
-        for region,(title,sub) in {
-                "US":("United States  ·  S&P 500","Scored from SPY, the VIX and US sector breadth."),
-                "Canada":("Canada  ·  TSX","Scored from XIC, TSX realised volatility and Canadian sector breadth."),
-        }.items():
-            card=_MarketReadCard(title, sub)
-            self.read_cards[region]=card
-            read_layout.addWidget(card)
+        self.read_card=_MarketReadCard("", "")
+        read_layout.addWidget(self.read_card)
         layout.addWidget(self.read_box)
 
         # Global indices - which regions/markets are favorable to trade, listed
@@ -1660,24 +1652,19 @@ class MarketPanel(QWidget):
         })
         layout.addWidget(self.global_table)
 
-        layout.addWidget(QLabel("Regime symbols"))
+        self.regime_label=QLabel("Regime symbols")
+        layout.addWidget(self.regime_label)
         self.table=QTableWidget(0,5); self.table.setHorizontalHeaderLabels(["Item","Symbol","Last","Change %","Purpose"])
         layout.addWidget(self.table)
 
         # Sector favorability - ranked best -> worst with a transparent score,
-        # for either the US (SPDR sectors vs SPY) or Canada (TSX sectors vs XIC).
+        # for whichever market the selector at the top of the tab is set to.
         sec_header=QHBoxLayout()
-        sec_label=QLabel("Sector favorability — which sectors to trade (best → worst)")
-        self.region_combo=QComboBox()
-        from tradelab.core.market import SECTOR_REGIONS
-        self.region_combo.addItems(list(SECTOR_REGIONS))
-        self.region_combo.setToolTip("Which market's sectors to rank.")
-        self.region_combo.currentTextChanged.connect(self._on_region_changed)
+        self.sector_label=QLabel("Sector favorability — which sectors to trade (best → worst)")
         self.scoring_btn=QToolButton(); self.scoring_btn.setText("How this is scored ▾")
         self.scoring_btn.setCheckable(True)
         self.scoring_btn.toggled.connect(self._toggle_scoring)
-        sec_header.addWidget(sec_label); sec_header.addStretch()
-        sec_header.addWidget(QLabel("Market")); sec_header.addWidget(self.region_combo)
+        sec_header.addWidget(self.sector_label); sec_header.addStretch()
         sec_header.addWidget(self.scoring_btn)
         layout.addLayout(sec_header)
 
@@ -1706,7 +1693,9 @@ class MarketPanel(QWidget):
         self.status=QLabel("Refresh to update the dashboard. Data uses yfinance when available.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.rows=[('VIX','^VIX','Market fear / volatility'),('S&P 500','SPY','US market regime'),('NASDAQ 100','QQQ','Growth/technology regime'),('Russell 2000','IWM','Small-cap risk appetite'),('TSX','^GSPTSE','Canada market regime'),('USD/CAD','CAD=X','Currency for Canada exposure'),('Gold','GC=F','Risk/inflation proxy'),('Oil','CL=F','Energy/cyclical proxy'),('US 10Y','^TNX','Rates pressure')]
+        # Regime rows follow the selected market (see core.market.REGIME_ROWS).
+        from tradelab.core.market import regime_rows
+        self.rows=regime_rows(self.current_region())
         # Regime trends from the last refresh, reused when only the sector
         # region changes so switching US <-> Canada doesn't refetch everything.
         self._regime_trends={}
@@ -1722,6 +1711,7 @@ class MarketPanel(QWidget):
         self._chart_worker=None
         self._pending_symbol=None
         self._refresh_worker=None
+        self._prefetch_worker=None
 
         # Click any row to chart that symbol. The symbol lives in a different
         # column per table, so each is wired with its own column index.
@@ -1736,11 +1726,16 @@ class MarketPanel(QWidget):
         self.populate_static()
 
     def _chart_row(self, table, row, sym_col):
-        """Chart the symbol on the clicked row, in the main chart pane."""
+        """Chart the symbol on the clicked row, in the main chart pane.
+
+        The cell's stored symbol wins over its text: a sector with no tracking
+        fund displays something like "6 stocks", which is a description rather
+        than something you can chart, so it carries its lead constituent.
+        """
         item = table.item(row, sym_col)
         if item is None or self.chart is None or self.cfg is None:
             return
-        symbol = item.text().strip()
+        symbol = (item.data(Qt.UserRole) or item.text() or "").strip()
         if symbol:
             self.chart_symbol(symbol)
 
@@ -1780,10 +1775,11 @@ class MarketPanel(QWidget):
 
     def shutdown(self):
         """Stop in-flight fetches so closing the app doesn't hang."""
-        refresh = getattr(self, "_refresh_worker", None)
-        if refresh is not None:
-            refresh.stop()          # finish the current symbol, then bail out
-        for attr in ("_chart_worker", "_refresh_worker"):
+        for attr in ("_refresh_worker", "_prefetch_worker"):
+            worker = getattr(self, attr, None)
+            if worker is not None:
+                worker.stop()       # finish the current symbol, then bail out
+        for attr in ("_chart_worker", "_refresh_worker", "_prefetch_worker"):
             worker = getattr(self, attr, None)
             if worker is None:
                 continue
@@ -1805,22 +1801,29 @@ class MarketPanel(QWidget):
         self.scoring_btn.setText("How this is scored ▴" if checked else "How this is scored ▾")
 
     def current_region(self):
-        return self.region_combo.currentText() or "US"
-
+        combo = getattr(self, "country_combo", None)
+        return (combo.currentText() if combo is not None else "") or "US"
 
     def _on_region_changed(self, _region):
-        """Switching US <-> Canada re-labels the benchmark columns and redraws
-        the sector rows. Both markets are loaded on every refresh, so this is a
-        pure re-render - no refetching, and no downloads before a first
-        refresh."""
+        """Switching market re-points the whole tab: regime rows, sector rows,
+        labels and the read card. Re-renders from cache when that market has
+        already been downloaded, and fetches it if not."""
+        from tradelab.core.market import regime_rows
+        region = self.current_region()
+        self.rows = regime_rows(region)
         self._apply_region_labels()
-        self.render_sectors()
+        self.populate_static()
+        if region in self._region_data:
+            self._render_region(region)
+        elif self._refreshed_once:
+            self.refresh_market()      # this market hasn't been downloaded yet
 
     def _apply_region_labels(self):
-        """Point the benchmark-dependent labels (RS column, scoring criteria,
-        region note) at the selected market."""
+        """Point every market-dependent label (read card, RS column, scoring
+        criteria, section headings) at the selected market."""
         from tradelab.core.market import sector_region, sector_score_criteria
-        cfg = sector_region(self.current_region())
+        region = self.current_region()
+        cfg = sector_region(region)
         label = cfg["benchmark_label"]
         header = self.sector_table.horizontalHeaderItem(6)
         if header is not None:
@@ -1830,10 +1833,17 @@ class MarketPanel(QWidget):
         self.scoring_criteria.setText(
             "\n".join(f"•  {line}" for line in sector_score_criteria(label))
             + f"\n\n{cfg['note']}")
-        self.region_combo.setToolTip(cfg["note"])
+        self.country_combo.setToolTip(cfg["note"])
+        self.read_box.setTitle(f"Is it a good day to trade {region}?")
+        self.read_card.setTitle(
+            "United States  ·  S&P 500" if region == "US" else "Canada  ·  TSX")
+        self.read_card.summary.setText(cfg["note"])
+        self.sector_label.setText(
+            f"{region} sector favorability — which sectors to trade (best → worst)")
+        self.regime_label.setText(f"{region} regime symbols")
 
     def populate_static(self):
-        from tradelab.core.market import GLOBAL_INDICES, sector_region
+        from tradelab.core.market import GLOBAL_INDICES, sector_instruments
         self.global_table.setRowCount(len(GLOBAL_INDICES))
         for r,(name,sym,region,_open_utc,open_local) in enumerate(GLOBAL_INDICES):
             name_item=QTableWidgetItem(name)
@@ -1849,33 +1859,61 @@ class MarketPanel(QWidget):
             for c,v in enumerate(vals): self.table.setItem(r,c,QTableWidgetItem(str(v)))
         self.table.resizeColumnsToContents()
 
-        sectors = sector_region(self.current_region())["sectors"]
+        sectors = sector_instruments(self.current_region())
         self.sector_table.setRowCount(len(sectors))
-        for r,(name,sym) in enumerate(sectors):
-            for c,v in enumerate([str(r+1),name,sym,"","","","",""]):
+        for r,spec in enumerate(sectors):
+            for c,v in enumerate([str(r+1),spec["name"],spec["label"],"","","","",""]):
                 self.sector_table.setItem(r,c,QTableWidgetItem(v))
+            self._tag_sector_symbol(r, spec)
         self.sector_table.resizeColumnsToContents()
 
+    def _tag_sector_symbol(self, row, spec):
+        """Give a sector row the symbol its instrument cell should chart, and
+        spell out a basket proxy in the tooltip."""
+        item = self.sector_table.item(row, 2)
+        if item is None:
+            return
+        symbols = spec.get("symbols") or []
+        item.setData(Qt.UserRole, spec.get("etf") or (symbols[0] if symbols else ""))
+        if not spec.get("etf") and symbols:
+            item.setToolTip("No tradable sector fund on this exchange — equal-weighted from "
+                            + ", ".join(symbols) + ". Click charts the first.")
+
     def required_symbols(self):
-        """Every symbol a full dashboard refresh needs, de-duplicated and in
-        the order they are fetched (regime first, so the read cards can be
-        scored as soon as the batch lands)."""
-        from tradelab.core.market import GLOBAL_INDICES, SECTOR_REGIONS, sector_region
-        syms=[sym for _,sym,_ in self.rows]
-        syms+=[row[1] for row in GLOBAL_INDICES]
-        for region in SECTOR_REGIONS:
-            cfg=sector_region(region)
-            syms.append(cfg["benchmark"])
-            syms+=[sym for _,sym in cfg["sectors"]]
+        """Every symbol a refresh needs for the selected market, de-duplicated
+        and in fetch order (regime first, so the read can be scored as soon as
+        the batch lands). Only the selected market is downloaded - the tab
+        follows the country selector, so the other one isn't on screen."""
+        from tradelab.core.market import GLOBAL_INDICES, sector_region, sector_instruments
+        return self._dedup([row[1] for row in GLOBAL_INDICES]
+                           + self.region_symbols(self.current_region()))
+
+    def region_symbols(self, region):
+        """Everything one market needs: its regime rows, its benchmark and its
+        sector instruments (an ETF, or the constituents of a sector with no
+        fund)."""
+        from tradelab.core.market import regime_rows, sector_region, sector_instruments
+        syms=[sym for _,sym,_ in regime_rows(region)]
+        syms.append(sector_region(region)["benchmark"])
+        for spec in sector_instruments(region):
+            syms+=spec["symbols"]
+        return self._dedup(syms)
+
+    @staticmethod
+    def _dedup(symbols):
         seen=set(); ordered=[]
-        for s in syms:
+        for s in symbols:
             if s not in seen:
                 seen.add(s); ordered.append(s)
         return ordered
 
+    def _other_region(self):
+        from tradelab.core.market import SECTOR_REGIONS
+        return next((r for r in SECTOR_REGIONS if r != self.current_region()), None)
+
     def refresh_market(self):
-        """Kick off a dashboard refresh. All ~37 downloads happen on a worker
-        thread - the window stays responsive and shows progress."""
+        """Kick off a dashboard refresh on a worker thread - the window stays
+        responsive and shows progress."""
         if self._refresh_worker is not None and self._refresh_worker.isRunning():
             return
         symbols=self.required_symbols()
@@ -1892,34 +1930,50 @@ class MarketPanel(QWidget):
     def _on_refresh_progress(self, done, total):
         self.progress.setValue(done)
 
+    def _cache_history(self, history):
+        for sym,df in history.items():
+            if df is not None:
+                self._history_cache[(sym,"1y","1d")]=df
+
     def _on_refresh_done(self, history):
         """Render everything from the downloaded batch. No network here."""
         self.progress.setVisible(False)
         self.refresh_btn.setEnabled(True)
-        # Keep the batch so clicking a row charts straight from memory.
-        for sym,df in history.items():
-            if df is not None:
-                self._history_cache[(sym,"1y","1d")]=df
+        self._cache_history(history)   # so clicking a row charts from memory
         try:
             self._render(history)
         finally:
             self._refreshed_once=True
+        # Quietly load the other market too, so switching to it is instant.
+        self._prefetch_other_region()
+
+    def _prefetch_other_region(self):
+        """Download the market you are not looking at, in the background.
+
+        The visible refresh only covers the selected market, so it stays fast;
+        this fills the other one in afterwards so flipping the country selector
+        is instant rather than triggering a fresh download. Silent - no
+        progress bar, no button state, and failures simply leave it uncached.
+        """
+        region=self._other_region()
+        if not region or region in self._region_data:
+            return
+        if self._prefetch_worker is not None and self._prefetch_worker.isRunning():
+            return
+        worker=_MarketRefreshWorker(self.region_symbols(region))
+        worker.done.connect(lambda history, r=region: self._on_prefetch_done(r, history))
+        self._prefetch_worker=worker
+        worker.start()
+
+    def _on_prefetch_done(self, region, history):
+        self._cache_history(history)
+        try:
+            self._region_data[region]=self._score_region(region, history)
+        except Exception:
+            pass       # a failed prefetch just means that market loads on demand
 
     def _render(self, history):
-        from tradelab.core.market import (GLOBAL_INDICES, SECTOR_REGIONS,
-                                          analyze_trend, market_read)
-        # Regime symbols - they feed the US read (SPY + VIX).
-        regime_trends={}
-        for r,(name,sym,purpose) in enumerate(self.rows):
-            trend=analyze_trend(history.get(sym))
-            regime_trends[sym]=trend
-            last=trend["last"]; ch=trend["change_pct"]
-            self.table.setItem(r,2,QTableWidgetItem(f"{last:.2f}" if last is not None else "—"))
-            self.table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
-        self.table.resizeColumnsToContents()
-        self._regime_trends=regime_trends
-        self._vix_last=(regime_trends.get("^VIX") or {}).get("last")
-
+        from tradelab.core.market import GLOBAL_INDICES, analyze_trend, market_read
         # Global indices, in market-open order, each with its own read.
         favorable_markets=0; measured_markets=0
         for r,(name,sym,region,_open_utc,open_local) in enumerate(GLOBAL_INDICES):
@@ -1939,38 +1993,64 @@ class MarketPanel(QWidget):
         self._market_note=(f" {favorable_markets}/{measured_markets} global markets favorable."
                            if measured_markets else "")
 
-        # Both markets are scored every refresh so the two read cards are
-        # always live - the answer never depends on the sector dropdown.
-        for region in SECTOR_REGIONS:
-            data=self._score_region(region, history)
-            self._region_data[region]=data
-            self.read_cards[region].show_read(data["read"])
+        # Only the selected market is downloaded and scored - the tab follows
+        # the country selector at the top.
+        region=self.current_region()
+        self._region_data[region]=self._score_region(region, history)
+        self._render_region(region)
+
+    def _render_region(self, region):
+        """Show one market entirely from cache: its regime rows, its read and
+        its sector ranking. No fetching, so switching country is instant."""
+        data=self._region_data.get(region)
+        if not data:
+            return
+        regime=data.get("regime") or {}
+        for r,(name,sym,purpose) in enumerate(self.rows):
+            trend=regime.get(sym) or {}
+            last=trend.get("last"); ch=trend.get("change_pct")
+            self.table.setItem(r,2,QTableWidgetItem(f"{last:.2f}" if last is not None else "—"))
+            self.table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
+        self.table.resizeColumnsToContents()
+        self._regime_trends=regime
+        self._vix_last=(regime.get("^VIX") or {}).get("last")
+        self.read_card.show_read(data["read"])
         self.render_sectors()
 
     def _score_region(self, region, history):
-        """Score one market from already-downloaded history. Pure - no fetching
-        - so switching the dropdown later is a re-render, not a reload."""
-        from tradelab.core.market import (analyze_trend, realized_vol, sector_breadth,
-                                          market_condition, rank_sectors, sector_region)
+        """Score one market from already-downloaded history. Self-contained -
+        it reads that market's own regime symbols out of the batch rather than
+        whatever is currently on screen, so it can score the market you are
+        *not* looking at (see _prefetch_other_region)."""
+        from tradelab.core.market import (analyze_trend, aggregate_trend, realized_vol,
+                                          sector_breadth, market_condition, rank_sectors,
+                                          sector_region, sector_instruments, regime_rows)
         cfg=sector_region(region)
+        regime={sym: analyze_trend(history.get(sym)) for _,sym,_ in regime_rows(region)}
 
         # The benchmark drives relative strength and the headline read. We use
         # its price series too - realised volatility needs the raw closes.
         df=history.get(cfg["benchmark"])
-        benchmark_trend=self._regime_trends.get(cfg["benchmark"]) or analyze_trend(df)
+        benchmark_trend=regime.get(cfg["benchmark"]) or analyze_trend(df)
         vol=realized_vol(df)
 
-        sector_trends={name:analyze_trend(history.get(sym)) for name,sym in cfg["sectors"]}
+        # A sector with a tracking fund is read straight off it; one without
+        # (four of Canada's) is equal-weighted from its constituents.
+        sector_trends={}
+        for spec in sector_instruments(region):
+            trends=[analyze_trend(history.get(sym)) for sym in spec["symbols"]]
+            sector_trends[spec["name"]]=trends[0] if spec["etf"] else aggregate_trend(trends)
         breadth=sector_breadth(sector_trends)
         # The VIX only prices US fear, so it scores the US read; every other
         # market is scored on its own realised volatility instead.
-        vix=self._vix_last if region=="US" else None
+        vix=(regime.get("^VIX") or {}).get("last") if region=="US" else None
         read=market_condition(benchmark_trend or {}, vix, breadth,
                               cfg["benchmark_label"], realized_vol_pct=vol)
         return {
             "ranked": rank_sectors(sector_trends, benchmark_trend, region),
             "breadth": breadth,
             "read": read,
+            "regime": regime,
         }
 
     def render_sectors(self):
@@ -1980,6 +2060,8 @@ class MarketPanel(QWidget):
         if not data:
             self.populate_static()
             return
+        from tradelab.core.market import sector_instruments
+        spec_by_name={s["name"]: s for s in sector_instruments(region)}
         ranked=data["ranked"]
         self.sector_table.setRowCount(len(ranked))
         for r,row in enumerate(ranked):
@@ -1987,6 +2069,9 @@ class MarketPanel(QWidget):
             self.sector_table.setItem(r,0,QTableWidgetItem(str(r+1)))
             self.sector_table.setItem(r,1,QTableWidgetItem(row["name"]))
             self.sector_table.setItem(r,2,QTableWidgetItem(row["etf"]))
+            spec=spec_by_name.get(row["name"])
+            if spec:
+                self._tag_sector_symbol(r, spec)
             self.sector_table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
             self.sector_table.setItem(r,4,QTableWidgetItem(_vs_sma_text(trend.get("above_sma50"))))
             self.sector_table.setItem(r,5,QTableWidgetItem(_vs_sma_text(trend.get("above_sma200"))))
@@ -5322,10 +5407,8 @@ class MainWindow(QMainWindow):
             self.showMaximized()
 
     def keyPressEvent(self, event):
-        # Esc also exits chart full-screen.
-        if event.key() == Qt.Key_Escape and getattr(self, "_chart_full", False):
-            self.toggle_chart_fullscreen()
-            return
+        # Esc is reserved for the chart tools (return to the plain cursor);
+        # full-screen is left/entered with the ⤢ / ⛶ toolbar button instead.
         super().keyPressEvent(event)
 
     def _on_strategies_changed(self):

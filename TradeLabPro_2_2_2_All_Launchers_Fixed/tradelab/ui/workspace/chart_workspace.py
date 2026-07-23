@@ -90,7 +90,7 @@ class ChartWorkspace(QWidget):
         # main window, which hides the left tab panel and goes full-screen.
         self._fs_btn = QToolButton()
         self._fs_btn.setText("⛶ Full screen")
-        self._fs_btn.setToolTip("Expand the chart to the full monitor (Esc or click again to retract)")
+        self._fs_btn.setToolTip("Expand the chart to the full monitor. Click the ⤢ button to retract.")
         self._fs_btn.clicked.connect(self.fullscreenRequested.emit)
         toolbar.addWidget(self._fs_btn)
 
@@ -122,7 +122,11 @@ class ChartWorkspace(QWidget):
         self._rebuild_chart_tabs()
 
     def set_fullscreen_label(self, is_full: bool):
-        self._fs_btn.setText("⛶ Exit full screen" if is_full else "⛶ Full screen")
+        # A distinct retract icon while full-screen, so exiting is obvious now
+        # that Esc no longer does it.
+        self._fs_btn.setText("⤢ Exit full screen" if is_full else "⛶ Full screen")
+        self._fs_btn.setToolTip("Retract the chart to the normal layout." if is_full
+                                else "Expand the chart to the full monitor. Click the ⤢ button to retract.")
 
     # ------------------------------------------------------------------
     def _get_db(self) -> Database:

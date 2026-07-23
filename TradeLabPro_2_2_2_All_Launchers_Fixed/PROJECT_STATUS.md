@@ -1,7 +1,15 @@
 # TradeLab Pro Project Status
 
-Current version: 2.28.0
-Current phase: US/Canada separation for Scanner sectors (done)
+Current version: 2.29.0
+Current phase: Country-first Market tab + chart Measure tool (done)
+
+## Completed in 2.29.0 (Country-first Market tab; Measure tool; Esc-to-cursor)
+- Fix: `analyze_trend`/`realized_vol` crashed (`TypeError: float() ... not 'Series'`) when yfinance returned a frame with duplicate `Close` columns; new `_close_series()` collapses a 2-D Close to its first column.
+- `core/market.py`: `sector_instruments(region)` sources the 11 sectors from `core.sectors` so Market and Scanner share one taxonomy (ETF where a fund exists, else equal-weighted constituents via `aggregate_trend()`); `regime_rows(region)` (Canada gets TSX/XIC/ZEB/USD-CAD/oil/gold); `SECTOR_REGIONS` no longer holds sector lists.
+- Market tab: `country_combo` at top drives the whole tab (one read card, regime rows, sectors); both markets cached and the non-visible one prefetched, so switching country is instant. Sector cells carry a chartable symbol in `Qt.UserRole` (basket rows show "6 stocks").
+- Scanner: single top selector (…/Sectors — US/Sectors — Canada); the separate sector-market dropdown removed.
+- Chart: restored the legacy **Measure** tool (two-click ruler: price, %, bars, dated span) as a `measure` drawing kind; **Esc** returns any drawing tool to Cursor (event filter on the panes); full screen now uses a **⤢ retract icon** button, not Esc; date X-axis retained.
+- pytest regression suite now 613 tests, all passing.
 
 ## Completed in 2.28.0 (Scanner sectors separated by market)
 - `core/sectors.py` restructured by region, mirroring the Market tab: `US_SECTORS` + **new `CANADA_SECTORS`** (all 11 GICS sectors on the TSX — Technology CSU/SHOP/OTEX, Financials the Big Six + insurers, Materials ABX/AEM/K/FNV/WPM, etc.), `INDUSTRIES` kept as one mixed source and **split by suffix at read time**, `ETF_BASKETS` keyed by region.

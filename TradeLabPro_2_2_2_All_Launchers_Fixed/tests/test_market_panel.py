@@ -3,6 +3,8 @@
 get_history is monkeypatched so the dashboard refresh runs deterministically
 offline - see tests/test_market.py for the underlying logic tests.
 """
+import time
+
 import pandas as pd
 import pytest
 
@@ -50,13 +52,11 @@ def test_refresh_market_populates_read_and_breadth(qapp, monkeypatch):
     panel = app.MarketPanel()
     _refresh(panel, qapp)
 
-    us = panel.read_cards["US"]
-    assert "Favorable" in us.headline.text()
-    assert "/100" in us.headline.text()
-    assert us.reasons.text()   # transparent reasons populated
-    assert us.summary.text()   # plain-English summary populated
-    # Canada is scored on the same refresh, without touching the dropdown.
-    assert "/100" in panel.read_cards["Canada"].headline.text()
+    card = panel.read_card
+    assert "Favorable" in card.headline.text()
+    assert "/100" in card.headline.text()
+    assert card.reasons.text()   # transparent reasons populated
+    assert card.summary.text()   # plain-English summary populated
     # Sector table "vs 50-day" column (index 4 now that rank/# is column 0)
     # filled in (rising series -> Above).
     assert panel.sector_table.item(0, 4).text() == "Above"
@@ -67,60 +67,84 @@ def test_refresh_market_populates_read_and_breadth(qapp, monkeypatch):
     assert panel.global_table.item(0, 6).text() in ("Favorable", "Neutral", "Caution")
 
 
-def test_sector_region_dropdown_switches_us_to_canada(qapp, monkeypatch):
+def _fake_history(symbol, period, interval):
+    if symbol == "^VIX":
+        return pd.DataFrame({"Close": [14.0] * 250, "Open": [14.0]*250,
+                             "High": [14.0]*250, "Low": [14.0]*250, "Volume": [0]*250})
+    return _rising()
+
+
+def test_the_whole_tab_follows_the_country_selector(qapp, monkeypatch):
+    """One selector at the top drives the read, the regime rows and the
+    sectors - nothing on screen may mix the two markets."""
     import tradelab.ui.app as app
-    from tradelab.core.market import SECTOR_ETFS, CANADA_SECTOR_ETFS
+    from tradelab.core.market import regime_rows, sector_instruments
 
-    requested = []
-
-    def fake_history(symbol, period, interval):
-        requested.append(symbol)
-        if symbol == "^VIX":
-            return pd.DataFrame({"Close": [14.0] * 250, "Open": [14.0]*250,
-                                 "High": [14.0]*250, "Low": [14.0]*250, "Volume": [0]*250})
-        return _rising()
-
-    monkeypatch.setattr(app, "get_history", fake_history)
+    monkeypatch.setattr(app, "get_history", _fake_history)
     panel = app.MarketPanel()
 
-    # Defaults to the US SPDR sectors, benchmarked against SPY.
     assert panel.current_region() == "US"
-    assert panel.sector_table.rowCount() == len(SECTOR_ETFS)
+    assert panel.sector_table.rowCount() == 11
     assert panel.sector_table.horizontalHeaderItem(6).text() == "RS vs SPY"
-
+    assert [r[1] for r in panel.rows] == [r[1] for r in regime_rows("US")]
     _refresh(panel, qapp)
-    # One refresh scores BOTH markets, fetching each benchmark and sector set.
-    assert "XIC.TO" in requested          # Canadian benchmark
-    assert "XEG.TO" in requested          # Canadian sectors
-    assert panel.read_cards["US"].headline.text()
-    assert panel.read_cards["Canada"].headline.text()
+    assert "US" in panel.read_box.title()
 
-    # Switching to Canada re-ranks the TSX sector ETFs against the TSX, and is
-    # a pure re-render from cache - no further downloads.
-    requested.clear()
-    panel.region_combo.setCurrentText("Canada")
+    panel.country_combo.setCurrentText("Canada")
+    _refresh(panel, qapp)
     assert panel.current_region() == "Canada"
-    assert requested == [], "switching market must not refetch"
-    assert panel.sector_table.rowCount() == len(CANADA_SECTOR_ETFS)
+    # Regime rows swapped to the Canadian set (loonie, banks, TSX).
+    symbols = [r[1] for r in panel.rows]
+    assert symbols == [r[1] for r in regime_rows("Canada")]
+    assert "CAD=X" in symbols and "QQQ" not in symbols
+    # Canada now shows all 11 sectors, same names as the US and the Scanner.
+    assert panel.sector_table.rowCount() == 11
     assert panel.sector_table.horizontalHeaderItem(6).text() == "RS vs TSX"
-    etfs = {panel.sector_table.item(r, 2).text() for r in range(panel.sector_table.rowCount())}
-    assert etfs == {t for _, t in CANADA_SECTOR_ETFS}
+    assert "Canada" in panel.read_box.title()
     assert "Canada breadth" in panel.status.text()
+    names = {panel.sector_table.item(r, 1).text() for r in range(11)}
+    assert names == {s["name"] for s in sector_instruments("Canada")}
+
+
+def test_both_markets_show_the_same_eleven_sector_names(qapp):
+    """The Market tab's sectors must match the Scanner's taxonomy."""
+    from tradelab.core.market import sector_instruments
+    from tradelab.core.sectors import region_baskets
+    for region in ("US", "Canada"):
+        market = [s["name"] for s in sector_instruments(region)]
+        scanner = list(region_baskets(region))[:11]
+        assert market == scanner
+
+
+def test_canada_sectors_without_an_etf_use_a_stock_basket(qapp):
+    from tradelab.core.market import sector_instruments
+    by_name = {s["name"]: s for s in sector_instruments("Canada")}
+    # Seven track an iShares capped-sector fund...
+    assert by_name["Energy"]["etf"] == "XEG.TO"
+    assert by_name["Energy"]["label"] == "XEG.TO"
+    # ...the other four have no liquid TSX fund and are equal-weighted.
+    for name in ("Industrials", "Consumer Discretionary",
+                 "Communication Services", "Health Care"):
+        spec = by_name[name]
+        assert spec["etf"] is None
+        assert len(spec["symbols"]) > 1
+        assert "stocks" in spec["label"]
+    # The US has a fund for every sector.
+    assert all(s["etf"] for s in sector_instruments("US"))
 
 
 def test_region_switch_before_refresh_does_not_fetch(qapp, monkeypatch):
-    """Opening the tab and flipping the dropdown must not trigger downloads."""
+    """Opening the tab and flipping the selector must not trigger downloads."""
     import tradelab.ui.app as app
-    from tradelab.core.market import CANADA_SECTOR_ETFS
 
     calls = []
     monkeypatch.setattr(app, "get_history",
                         lambda s, p, i: calls.append(s) or _rising())
     panel = app.MarketPanel()
-    panel.region_combo.setCurrentText("Canada")
+    panel.country_combo.setCurrentText("Canada")
 
     assert calls == []  # nothing fetched until the user refreshes
-    assert panel.sector_table.rowCount() == len(CANADA_SECTOR_ETFS)
+    assert panel.sector_table.rowCount() == 11
 
 
 class _FakeChart:
@@ -145,13 +169,31 @@ def _settle(panel, qapp):
     qapp.processEvents()
 
 
+def _pump(qapp, until, timeout=20.0):
+    """Deliver queued Qt signals until `until()` holds, or time out.
+
+    A single processEvents() is not enough: the worker's done signal is queued
+    from another thread, and the handler it runs may itself start more work.
+    Polling here is what keeps these tests from being flaky under load.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if until():
+            qapp.processEvents()
+            return True
+        time.sleep(0.01)
+    return False
+
+
 def _refresh(panel, qapp):
     """Run a dashboard refresh and wait for the background batch to land."""
     panel.refresh_market()
     worker = panel._refresh_worker
     if worker is not None:
         worker.wait(15000)
-    qapp.processEvents()
+    assert _pump(qapp, lambda: panel.current_region() in panel._region_data), \
+        "refresh never delivered its results"
 
 
 def test_clicking_a_row_charts_that_symbol(qapp, monkeypatch):
@@ -218,7 +260,9 @@ def test_refresh_fetches_each_symbol_once(qapp, monkeypatch):
     panel = app.MarketPanel()
     symbols = panel.required_symbols()
     assert len(symbols) == len(set(symbols)), "required symbols must be de-duplicated"
-    assert "SPY" in symbols and "XIC.TO" in symbols
+    # Only the selected market is downloaded - the tab follows the selector.
+    assert "SPY" in symbols and "XLK" in symbols
+    assert "XIC.TO" not in symbols and "XEG.TO" not in symbols
 
     _refresh(panel, qapp)
     assert sorted(calls) == sorted(symbols)
@@ -240,7 +284,7 @@ def test_refresh_survives_a_dead_symbol_without_a_worker_crash(qapp, monkeypatch
     hsi = next(r for r in range(panel.global_table.rowCount())
                if panel.global_table.item(r, 1).text() == "^HSI")
     assert panel.global_table.item(hsi, 2).text() == "—"
-    assert "/100" in panel.read_cards["US"].headline.text()
+    assert "/100" in panel.read_card.headline.text()
 
 
 def test_clicking_never_fetches_on_the_ui_thread(qapp, monkeypatch):
@@ -312,7 +356,7 @@ def test_clicking_a_canadian_sector_charts_the_tsx_etf(qapp, monkeypatch):
     monkeypatch.setattr(app, "get_history", lambda s, p, i: _rising())
     chart = _FakeChart()
     panel = app.MarketPanel(chart, _FakeCfg())
-    panel.region_combo.setCurrentText("Canada")
+    panel.country_combo.setCurrentText("Canada")
 
     panel._chart_row(panel.sector_table, 0, 2)
     _settle(panel, qapp)
@@ -361,4 +405,96 @@ def test_refresh_market_survives_a_failing_symbol(qapp, monkeypatch):
     tech_row = next(r for r in range(panel.sector_table.rowCount())
                     if panel.sector_table.item(r, 2).text() == "XLK")
     assert panel.sector_table.item(tech_row, 3).text() == "—"  # no change data
-    assert "/100" in panel.read_cards["US"].headline.text()
+    assert "/100" in panel.read_card.headline.text()
+
+
+def test_clicking_a_basket_sector_charts_a_real_symbol(qapp, monkeypatch):
+    """A sector with no ETF shows "6 stocks" in the instrument column - that
+    is a description, not something you can chart, so the cell carries its
+    lead constituent instead."""
+    import tradelab.ui.app as app
+    from tradelab.core.market import sector_instruments
+
+    monkeypatch.setattr(app, "get_history", _fake_history)
+    chart = _FakeChart()
+    panel = app.MarketPanel(chart, _FakeCfg())
+    panel.country_combo.setCurrentText("Canada")
+
+    basket = next(s for s in sector_instruments("Canada") if s["etf"] is None)
+    row = next(r for r in range(panel.sector_table.rowCount())
+               if panel.sector_table.item(r, 1).text() == basket["name"])
+    assert "stocks" in panel.sector_table.item(row, 2).text()
+
+    panel._chart_row(panel.sector_table, row, 2)
+    _settle(panel, qapp)
+    assert chart.plotted == [basket["symbols"][0]]
+    assert chart.plotted[0].endswith(".TO")
+
+
+def _settle_prefetch(panel, qapp):
+    """Wait for the background prefetch of the other market to start and
+    finish, so no stray download lands in the middle of an assertion."""
+    def done():
+        worker = panel._prefetch_worker
+        return (worker is not None and not worker.isRunning()
+                and len(panel._region_data) >= 2)
+    assert _pump(qapp, done), "prefetch never completed"
+
+
+def test_refresh_prefetches_the_other_market(qapp, monkeypatch):
+    """After a refresh, the market you are NOT looking at is loaded quietly in
+    the background so switching to it is instant."""
+    import tradelab.ui.app as app
+
+    monkeypatch.setattr(app, "get_history", _fake_history)
+    panel = app.MarketPanel()
+    _refresh(panel, qapp)
+    assert set(panel._region_data) == {"US"}      # only the visible one, at first
+
+    _settle_prefetch(panel, qapp)
+    assert set(panel._region_data) == {"US", "Canada"}
+
+
+def test_switching_country_after_a_refresh_fetches_nothing(qapp, monkeypatch):
+    """The whole point: both markets stay in memory, so the switch is a pure
+    re-render with no downloads."""
+    import tradelab.ui.app as app
+
+    calls = []
+
+    def counted(symbol, period, interval):
+        calls.append(symbol)
+        return _fake_history(symbol, period, interval)
+
+    monkeypatch.setattr(app, "get_history", counted)
+    panel = app.MarketPanel()
+    _refresh(panel, qapp)
+    _settle_prefetch(panel, qapp)
+
+    calls.clear()
+    panel.country_combo.setCurrentText("Canada")
+    assert calls == [], "switching to a cached market must not refetch"
+    assert panel.sector_table.item(0, 7).text()          # sectors already scored
+    assert "/100" in panel.read_card.headline.text()     # read already scored
+    assert panel.table.item(0, 3).text() != "—"          # regime rows filled in
+
+    calls.clear()
+    panel.country_combo.setCurrentText("US")
+    assert calls == [], "switching back must not refetch either"
+    assert "/100" in panel.read_card.headline.text()
+
+
+def test_switching_country_shows_that_markets_regime_values(qapp, monkeypatch):
+    """Each market's cached regime rows come back with it, not the other's."""
+    import tradelab.ui.app as app
+    from tradelab.core.market import regime_rows
+
+    monkeypatch.setattr(app, "get_history", _fake_history)
+    panel = app.MarketPanel()
+    _refresh(panel, qapp)
+    _settle_prefetch(panel, qapp)
+
+    panel.country_combo.setCurrentText("Canada")
+    shown = [panel.table.item(r, 1).text() for r in range(panel.table.rowCount())]
+    assert shown == [sym for _, sym, _ in regime_rows("Canada")]
+    assert all(panel.table.item(r, 2).text() != "—" for r in range(panel.table.rowCount()))

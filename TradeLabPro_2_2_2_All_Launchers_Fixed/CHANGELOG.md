@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.29.0 - Country-first Market tab; chart Measure tool; Esc-to-cursor
+
+### Fixed
+- **Market refresh crash.** A refresh could raise `TypeError: float() argument must be ... not 'Series'` when Yahoo returned price history with a duplicated `Close` column (its MultiIndex flattening can emit two). `analyze_trend`/`realized_vol` now collapse any 2-D `Close` to its first column, so one oddly-shaped download never breaks a refresh.
+
+### Added
+- **Restored the chart Measure tool.** The two-point ruler from the old chart is back as **Measure** in the tool dropdown: click two points and it draws a line labelled with the price change, % change, bar count and — now that the axis is dated — the calendar span (green up, red down). Clears with the other drawings.
+- **Escape returns to the cursor.** Pressing **Esc** while any drawing tool is active drops a half-finished shape and switches back to the plain Cursor.
+
+### Changed
+- **The Market tab picks the country first, and the whole tab follows it.** A **Market** selector at the top drives everything below — a single "Is it a good day to trade?" read card, the regime symbols (Canada gets the loonie, banks, oil and gold; the US keeps the VIX, Nasdaq, small caps and the dollar) and the sector ranking. The two side-by-side read cards and the separate sector-market dropdown are gone.
+- **The Market tab's sectors now match the Scanner's**, sourced from one shared taxonomy so the two can't drift. Canada shows all 11 GICS sectors — the seven with a liquid iShares capped-sector ETF use it, the other four (Consumer Discretionary, Industrials, Communication Services, Health Care) are equal-weighted from their constituents.
+- **Switching country is instant.** A refresh loads the selected market and quietly prefetches the other in the background, so flipping US ↔ Canada is a pure re-render — read, regime rows and sectors all come back from cache with no download.
+- **The Scanner uses one selector too.** The exchange preset now reads `… / Sectors — US / Sectors — Canada`; the separate "Sector market" dropdown was removed.
+- **Full screen is exited with a ⤢ retract icon** button rather than Escape (which is now reserved for the chart tools).
+
+### Verified
+- 613/613 pytest tests pass (new: duplicate-`Close` regression, per-market sector instruments and equal-weight aggregation, the whole-tab-follows-country behaviour, cross-market caching/prefetch, the Measure tool and its readout, and Esc-cancels-tool; a chart test that used the shared data DB with a hardcoded symbol was isolated so a real user-drawn annotation can no longer break the suite).
+
 ## 2.28.0 - Scanner sectors separated by market (US / Canada)
 
 ### Added

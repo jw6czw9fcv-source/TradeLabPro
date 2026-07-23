@@ -52,6 +52,26 @@ def test_analyze_trend_empty_or_missing_is_safe():
     assert analyze_trend(None)["last"] is None
 
 
+def test_analyze_trend_survives_a_duplicate_close_column():
+    """yfinance can hand back a frame with two 'Close' columns (adjusted + raw);
+    df['Close'] is then a DataFrame, not a Series. Regression for a real crash
+    (TypeError: float() argument ... not 'Series') on a Market-tab refresh."""
+    rising = _rising_closes()
+    dup = pd.concat([rising, rising.rename(columns={"Close": "Close2"})], axis=1)
+    dup.columns = ["Close", "Close"]          # two columns literally named Close
+    t = analyze_trend(dup)
+    assert t["last"] == pytest.approx(224.5)  # first column, treated as a Series
+    assert t["above_sma50"] is True
+    assert isinstance(t["last"], float)
+
+
+def test_realized_vol_survives_a_duplicate_close_column():
+    rising = _rising_closes()
+    dup = pd.concat([rising, rising], axis=1)
+    dup.columns = ["Close", "Close"]
+    assert realized_vol(dup) is not None
+
+
 def test_sector_breadth_counts_advancers_and_sma():
     trends = {
         "A": {"change_pct": 1.0, "above_sma50": True},
@@ -203,15 +223,16 @@ def test_sector_score_criteria_is_nonempty_text():
 
 def test_sector_regions_offer_us_and_canada():
     assert set(SECTOR_REGIONS) == {"US", "Canada"}
-    assert sector_region("US")["sectors"] is SECTOR_ETFS
-    assert sector_region("Canada")["sectors"] is CANADA_SECTOR_ETFS
     assert sector_region("US")["benchmark"] == "SPY"
     assert sector_region("Canada")["benchmark"] == "XIC.TO"
+    # Both markets now expose all 11 GICS sectors.
+    assert len(sector_region("US")["sectors"]) == 11
+    assert len(sector_region("Canada")["sectors"]) == 11
 
 
 def test_unknown_region_falls_back_to_us():
-    assert sector_region("Atlantis") is SECTOR_REGIONS["US"]
-    assert sector_region("") is SECTOR_REGIONS["US"]
+    assert sector_region("Atlantis") == sector_region("US")
+    assert sector_region("") == sector_region("US")
 
 
 def test_canada_sectors_are_tsx_listed_and_unique():

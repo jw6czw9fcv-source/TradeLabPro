@@ -4,10 +4,17 @@ from tradelab.core.drawings import Drawing, serialize, deserialize, fib_levels
 
 
 def test_valid_kinds_construct_without_error():
-    for kind in ["trendline", "hline", "vline", "rect", "fib", "text", "channel"]:
+    for kind in ["trendline", "hline", "vline", "rect", "fib", "text", "channel", "measure"]:
         d = Drawing(kind=kind, x1=1, y1=2, x2=3, y2=4)
         assert d.kind == kind
         assert d.id  # auto-generated id present
+
+
+def test_measure_drawing_round_trips():
+    payload = serialize([Drawing(kind="measure", x1=5, y1=100.0, x2=25, y2=112.5)])
+    d = deserialize(payload)[0]
+    assert d.kind == "measure"
+    assert (d.x1, d.y1, d.x2, d.y2) == (5, 100.0, 25, 112.5)
 
 
 def test_invalid_kind_raises():

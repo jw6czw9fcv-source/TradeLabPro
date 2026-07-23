@@ -180,24 +180,21 @@ def _sources(panel):
     return out
 
 
-def test_scanner_offers_a_sectors_preset_and_a_market_selector(scanner_panel):
+def test_scanner_picks_the_country_in_one_top_selector(scanner_panel):
+    """Country comes first, from a single control - there is no second
+    sector-market dropdown to keep in sync."""
     items = [scanner_panel.country.itemText(i)
              for i in range(scanner_panel.country.count())]
-    assert "Sectors / Industries" in items
-    regions = [scanner_panel.sector_region.itemText(i)
-               for i in range(scanner_panel.sector_region.count())]
-    assert regions == list(REGIONS)
-    assert scanner_panel.sector_region.currentText() == "US"
+    assert "Sectors — US" in items and "Sectors — Canada" in items
+    assert not hasattr(scanner_panel, "sector_region")
 
 
 def test_market_selector_switches_which_baskets_are_listed(scanner_panel):
-    scanner_panel.country.setCurrentText("Sectors / Industries")
-
-    scanner_panel.sector_region.setCurrentText("US")
+    scanner_panel.country.setCurrentText("Sectors — US")
     us_sources = _sources(scanner_panel)
     assert us_sources and all(f"{BASKET_PREFIX}US - " in s for s in us_sources)
 
-    scanner_panel.sector_region.setCurrentText("Canada")
+    scanner_panel.country.setCurrentText("Sectors — Canada")
     ca_sources = _sources(scanner_panel)
     assert ca_sources and all(f"{BASKET_PREFIX}Canada - " in s for s in ca_sources)
     # Never both at once - that separation is the point.
@@ -205,8 +202,7 @@ def test_market_selector_switches_which_baskets_are_listed(scanner_panel):
 
 
 def test_basket_labels_drop_the_region_the_dropdown_already_states(scanner_panel):
-    scanner_panel.country.setCurrentText("Sectors / Industries")
-    scanner_panel.sector_region.setCurrentText("Canada")
+    scanner_panel.country.setCurrentText("Sectors — Canada")
     labels = _labels(scanner_panel)
     assert f"{BASKET_PREFIX}Banks" in labels
     assert not any("Canada -" in l for l in labels)
@@ -221,7 +217,7 @@ def test_sector_baskets_are_grouped_under_sectors_not_etfs(scanner_panel):
 
 
 def test_sectors_shortcut_selects_only_baskets(scanner_panel):
-    scanner_panel.country.setCurrentText("All Exchanges")
+    scanner_panel.country.setCurrentText("Sectors — US")
     scanner_panel.select_exchange_shortcut("Sectors")
     for cb in scanner_panel.universe_checks:
         label = str(cb.property("universe_name") or "")
@@ -229,8 +225,7 @@ def test_sectors_shortcut_selects_only_baskets(scanner_panel):
 
 
 def test_selecting_a_canadian_sector_scans_only_canadian_symbols(scanner_panel):
-    scanner_panel.country.setCurrentText("Sectors / Industries")
-    scanner_panel.sector_region.setCurrentText("Canada")
+    scanner_panel.country.setCurrentText("Sectors — Canada")
     for cb in scanner_panel.universe_checks:
         cb.setChecked(str(cb.property("universe_name") or "")
                       == f"{BASKET_PREFIX}Gold & Precious Metals")

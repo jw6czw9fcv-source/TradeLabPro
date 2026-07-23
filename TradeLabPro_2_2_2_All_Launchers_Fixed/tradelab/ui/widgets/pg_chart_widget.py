@@ -19,7 +19,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, Signal, QPointF
+from PySide6.QtCore import Qt, Signal, QPointF, QEvent
 from PySide6.QtGui import QPicture, QPainter, QColor, QPen, QBrush
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QComboBox,
@@ -48,7 +48,7 @@ BAR_WIDTH = 0.4  # candle/volume/MACD bar body width; bars sit 1 unit apart, so
                   # anything above ~0.6 makes adjacent bars look like they're touching.
 
 CHART_TYPES = ["Candlestick", "Heikin-Ashi", "Line", "Area"]
-DRAWING_TOOLS = ["Cursor", "Trendline", "H-Line", "V-Line", "Rect", "Fib", "Text"]
+DRAWING_TOOLS = ["Cursor", "Measure", "Trendline", "H-Line", "V-Line", "Rect", "Fib", "Text"]
 PERIOD_OPTIONS = ["3mo", "6mo", "1y", "2y", "5y", "max"]
 INTERVAL_OPTIONS = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo"]
 
@@ -412,6 +412,8 @@ class PGChartWidget(QWidget):
 
         self.tool_combo = QComboBox()
         self.tool_combo.addItems(DRAWING_TOOLS)
+        self.tool_combo.setToolTip("Chart tool. Measure: click two points to read the move "
+                                   "between them (price, %, bars and time span).")
         self.tool_combo.currentTextChanged.connect(self._on_tool_changed)
         toolbar.addWidget(self.tool_combo)
 
@@ -484,6 +486,14 @@ class PGChartWidget(QWidget):
             plot.scene().sigMouseMoved.connect(lambda pos, p=plot: self._on_mouse_moved(pos, p))
         self.price_plot.scene().sigMouseClicked.connect(self._on_mouse_clicked)
 
+        # Esc leaves a drawing tool and returns to the plain cursor. While
+        # drawing, the pyqtgraph plot's viewport holds keyboard focus, so we
+        # watch the panes (and their viewports) for the key rather than relying
+        # on it bubbling up to this widget.
+        for plot in (self.price_plot, self.volume_plot, self.macd_plot, self.rsi_plot):
+            plot.installEventFilter(self)
+            plot.viewport().installEventFilter(self)
+
         # Crosshair readout: date/time + full OHLCV + visible-indicator values
         # at the hovered bar, anchored at the bottom instead of floating over
         # the candles (where it can obscure the very bar it describes).
@@ -550,6 +560,32 @@ class PGChartWidget(QWidget):
     def _on_tool_changed(self, tool: str):
         self.active_tool = tool
         self._pending_point = None
+
+    def cancel_tool(self) -> bool:
+        """Drop any half-finished drawing and return to the plain Cursor.
+
+        Returns True when there was actually something to cancel (an active
+        drawing tool, or a first measure/trendline click awaiting its second),
+        so callers know whether to consume the Escape key or let it bubble up
+        to, e.g., the window's exit-full-screen handler.
+        """
+        if self.active_tool == "Cursor" and self._pending_point is None:
+            return False
+        self._pending_point = None
+        self.tool_combo.setCurrentText("Cursor")   # also resets active_tool
+        return True
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape and self.cancel_tool():
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
+            if self.cancel_tool():
+                return True        # handled; don't also exit full-screen etc.
+        return super().eventFilter(obj, event)
 
     def _new_date_axis(self, key: str) -> "BarDateAxis":
         axis = BarDateAxis(orientation="bottom")
@@ -940,13 +976,13 @@ class PGChartWidget(QWidget):
                 self._plot_drawings(); self._save_drawings_for_symbol()
             return
 
-        # Two-click tools: trendline, rect, fib
+        # Two-click tools: measure, trendline, rect, fib
         if self._pending_point is None:
             self._pending_point = (x_val, y_val)
             return
         x1, y1 = self._pending_point
         self._pending_point = None
-        kind_map = {"Trendline": "trendline", "Rect": "rect", "Fib": "fib"}
+        kind_map = {"Measure": "measure", "Trendline": "trendline", "Rect": "rect", "Fib": "fib"}
         kind = kind_map.get(self.active_tool)
         if kind:
             self.drawings.append(Drawing(kind=kind, x1=x1, y1=y1, x2=x_val, y2=y_val))
@@ -983,6 +1019,21 @@ class PGChartWidget(QWidget):
                     items.append(line)
                 self._drawing_items.extend(items)
                 continue
+            elif d.kind == "measure":
+                # A ruler between two points: the connecting line plus a readout
+                # of the move (price, %, bars, and the time span now that the
+                # axis is dated). Up = green, down = red, like the legacy tool.
+                up = (d.y2 or 0) >= d.y1
+                colour = "#3fb950" if up else "#e5534b"
+                line = pg.PlotDataItem([d.x1, d.x2], [d.y1, d.y2],
+                                       pen=pg.mkPen(colour, width=1.2, style=Qt.DashLine))
+                self.price_plot.addItem(line)
+                label = pg.TextItem(self._measure_label(d), color="#e8edf2", anchor=(0, 1),
+                                    fill=pg.mkBrush(20, 24, 32, 210), border=pg.mkPen(colour))
+                label.setPos(max(d.x1, d.x2), max(d.y1, d.y2))
+                self.price_plot.addItem(label)
+                self._drawing_items.extend([line, label])
+                continue
             elif d.kind == "text":
                 item = pg.TextItem(d.text, color=d.color, anchor=(0, 1))
                 item.setPos(d.x1, d.y1)
@@ -990,6 +1041,36 @@ class PGChartWidget(QWidget):
                 continue
             self.price_plot.addItem(item)
             self._drawing_items.append(item)
+
+    def _measure_label(self, d) -> str:
+        """Readout for a measure drawing: price change, % change, bar count and
+        (when the dates are known) the calendar span between the two points."""
+        dy = (d.y2 or 0.0) - d.y1
+        pct = (dy / d.y1 * 100.0) if d.y1 else 0.0
+        bars = abs(int(round((d.x2 or 0.0) - d.x1)))
+        parts = [f"{dy:+.2f}", f"{pct:+.2f}%", f"{bars} bar{'s' if bars != 1 else ''}"]
+        span = self._measure_calendar_span(d.x1, d.x2)
+        if span:
+            parts.append(span)
+        return "   ".join(parts)
+
+    def _measure_calendar_span(self, x1, x2) -> str:
+        """Days (or a start→end date range) between two bar indices, read off
+        the raw data's own timestamps. Empty when there's no dated index."""
+        df = self.df_raw
+        if df is None or df.empty or not isinstance(df.index, pd.DatetimeIndex):
+            return ""
+        n = len(df)
+        i, j = sorted((int(round(x1)), int(round(x2))))
+        if not (0 <= i < n and 0 <= j < n) or i == j:
+            return ""
+        t0, t1 = df.index[i], df.index[j]
+        days = abs((t1 - t0).days)
+        if days:
+            return f"{days}d ({t0.strftime('%d %b')} → {t1.strftime('%d %b')})"
+        # Intraday: show the clock span instead of "0d".
+        minutes = abs(int((t1 - t0).total_seconds() // 60))
+        return f"{minutes} min" if minutes else ""
 
     def clear_drawings(self):
         self.drawings = []

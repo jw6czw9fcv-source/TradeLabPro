@@ -17,7 +17,7 @@ import json
 import uuid
 
 
-VALID_KINDS = {"trendline", "hline", "vline", "rect", "fib", "text", "channel"}
+VALID_KINDS = {"trendline", "hline", "vline", "rect", "fib", "text", "channel", "measure"}
 
 
 @dataclass

@@ -26,7 +26,7 @@ SECTOR_ETFS = [
     ("Utilities", "XLU"),
     ("Materials", "XLB"),
     ("Real Estate", "XLRE"),
-    ("Communication Svcs", "XLC"),
+    ("Communication Services", "XLC"),
 ]
 
 # Major global equity indices, listed in TRADING-SESSION ORDER - the sequence
@@ -67,30 +67,144 @@ CANADA_SECTOR_ETFS = [
 # benchmark its relative-strength read is measured against.
 SECTOR_REGIONS = {
     "US": {
-        "sectors": SECTOR_ETFS,
         "benchmark": "SPY",
         "benchmark_label": "SPY",
-        "note": "11 SPDR select-sector ETFs vs SPY.",
+        "note": "11 GICS sectors (SPDR select-sector ETFs) vs SPY.",
     },
     "Canada": {
-        "sectors": CANADA_SECTOR_ETFS,
         "benchmark": "XIC.TO",
         "benchmark_label": "TSX",
-        "note": ("7 iShares S&P/TSX capped-sector ETFs vs the TSX composite (XIC). "
-                 "Canada has no liquid sector ETF for Consumer Discretionary, "
-                 "Industrials, Communication Services or Health Care."),
+        "note": ("11 GICS sectors vs the TSX composite (XIC). Seven track an "
+                 "iShares capped-sector ETF; Consumer Discretionary, Industrials, "
+                 "Communication Services and Health Care have no liquid TSX fund, "
+                 "so they are equal-weighted from their constituents instead."),
     },
+}
+
+# How many constituents stand in for a sector with no tradable ETF. Enough to
+# be representative without turning one sector into a dozen extra downloads.
+BASKET_PROXY_MAX = 6
+
+# The fund that tracks each sector, where a liquid one exists.
+SECTOR_ETF_BY_REGION = {
+    "US": dict(SECTOR_ETFS),
+    "Canada": dict(CANADA_SECTOR_ETFS),
 }
 
 
 def sector_region(region: str) -> dict:
     """Config for a sector universe ('US' / 'Canada'), falling back to US so a
     stale saved preference can never break the dashboard."""
-    return SECTOR_REGIONS.get(region) or SECTOR_REGIONS["US"]
+    cfg = SECTOR_REGIONS.get(region) or SECTOR_REGIONS["US"]
+    return dict(cfg, sectors=[(s["name"], s["label"]) for s in sector_instruments(region)])
+
+
+def sector_instruments(region: str) -> list:
+    """What to measure each of the region's 11 GICS sectors with.
+
+    The sector list is taken from tradelab.core.sectors so the Market tab and
+    the Scanner always show the same sectors under the same names. Each entry:
+      name    - the sector
+      etf     - its tracking fund, or None
+      symbols - what to download: the ETF alone, or a handful of constituents
+      label   - what to show in the ETF column ("XLK", or "6 stocks")
+    A sector with a fund uses it (one download, and it is the instrument people
+    actually trade); one without is equal-weighted from its constituents.
+    """
+    from tradelab.core.sectors import US_SECTORS, CANADA_SECTORS
+    if region not in ("US", "Canada"):
+        region = "US"
+    constituents = CANADA_SECTORS if region == "Canada" else US_SECTORS
+    etfs = SECTOR_ETF_BY_REGION.get(region, {})
+    out = []
+    for name, members in constituents.items():
+        etf = etfs.get(name)
+        if etf:
+            out.append({"name": name, "etf": etf, "symbols": [etf], "label": etf})
+        else:
+            proxy = list(members)[:BASKET_PROXY_MAX]
+            out.append({"name": name, "etf": None, "symbols": proxy,
+                        "label": f"{len(proxy)} stocks"})
+    return out
+
+
+def aggregate_trend(trends: list) -> dict:
+    """Equal-weight a sector's constituent trends into one sector trend.
+
+    Used for sectors with no tracking fund. Percentages are averaged across
+    the names that reported one; the above-50/200-day flags become a majority
+    vote. Anything nobody could measure stays None rather than being guessed.
+    """
+    usable = [t for t in (trends or []) if t]
+    result = {"last": None, "change_pct": None, "above_sma50": None,
+              "above_sma200": None, "mom_pct": None}
+    if not usable:
+        return result
+
+    for key in ("change_pct", "mom_pct"):
+        values = [t.get(key) for t in usable if t.get(key) is not None]
+        if values:
+            result[key] = sum(values) / len(values)
+    for key in ("above_sma50", "above_sma200"):
+        votes = [bool(t.get(key)) for t in usable if t.get(key) is not None]
+        if votes:
+            result[key] = sum(votes) * 2 > len(votes)
+    return result
+
+
+# The macro symbols that set the tone for each market. Canada's are genuinely
+# different from the US set: the TSX is concentrated in financials, energy and
+# materials, so the loonie, oil, gold and the banks matter far more to it than
+# small-cap breadth or the Nasdaq do.
+REGIME_ROWS = {
+    "US": [
+        ("VIX", "^VIX", "Market fear / volatility"),
+        ("S&P 500", "SPY", "US market regime"),
+        ("NASDAQ 100", "QQQ", "Growth / technology regime"),
+        ("Russell 2000", "IWM", "Small-cap risk appetite"),
+        ("US 10Y", "^TNX", "Rates pressure"),
+        ("US Dollar", "DX-Y.NYB", "Dollar strength"),
+        ("Gold", "GC=F", "Risk / inflation proxy"),
+        ("Oil (WTI)", "CL=F", "Energy / cyclical proxy"),
+    ],
+    "Canada": [
+        ("VIX", "^VIX", "Global fear / volatility"),
+        ("TSX Composite", "^GSPTSE", "Canada market regime"),
+        ("TSX (XIC)", "XIC.TO", "Investable TSX benchmark"),
+        ("TSX Banks", "ZEB.TO", "Financials dominate the index"),
+        ("USD/CAD", "CAD=X", "Currency backdrop for Canadian exposure"),
+        ("Oil (WTI)", "CL=F", "Energy is a top TSX weight"),
+        ("Gold", "GC=F", "Materials are a top TSX weight"),
+        ("US 10Y", "^TNX", "Rates pressure"),
+    ],
+}
+
+
+def regime_rows(region: str) -> list:
+    """Macro rows for a market, falling back to US for an unknown region."""
+    return list(REGIME_ROWS.get(region) or REGIME_ROWS["US"])
 
 
 # Number of trading days used for the medium-term momentum read (~3 months).
 MOMENTUM_LOOKBACK = 63
+
+
+def _close_series(df) -> pd.Series | None:
+    """The 1-D close price series from an OHLCV frame, or None if there isn't
+    a usable one.
+
+    yfinance sometimes returns a frame with a duplicated 'Close' column (its
+    MultiIndex flattening can produce two, e.g. adjusted + raw). df['Close'] is
+    then a *DataFrame*, and float(close.iloc[-1]) blows up with
+    "float() argument must be ... not 'Series'". Collapse any such 2-D result
+    to its first column so one oddly-shaped download never crashes a refresh.
+    """
+    if df is None or getattr(df, "empty", True) or "Close" not in df:
+        return None
+    close = df["Close"]
+    if isinstance(close, pd.DataFrame):     # duplicate 'Close' columns -> take the first
+        close = close.iloc[:, 0]
+    return pd.to_numeric(close, errors="coerce").dropna()
 
 
 def analyze_trend(df: pd.DataFrame) -> dict:
@@ -100,10 +214,8 @@ def analyze_trend(df: pd.DataFrame) -> dict:
     """
     result = {"last": None, "change_pct": None, "above_sma50": None,
               "above_sma200": None, "mom_pct": None}
-    if df is None or df.empty or "Close" not in df:
-        return result
-    close = df["Close"].dropna()
-    if close.empty:
+    close = _close_series(df)
+    if close is None or close.empty:
         return result
     last = float(close.iloc[-1])
     result["last"] = last
@@ -131,10 +243,8 @@ def realized_vol(df: pd.DataFrame, window: int = 21) -> float | None:
     Roughly comparable to a VIX level for regime purposes - calm equity
     markets sit near 10-15, stressed ones above 25.
     """
-    if df is None or df.empty or "Close" not in df:
-        return None
-    close = df["Close"].dropna()
-    if len(close) < window + 1:
+    close = _close_series(df)
+    if close is None or len(close) < window + 1:
         return None
     returns = close.pct_change().dropna().iloc[-window:]
     if returns.empty:
