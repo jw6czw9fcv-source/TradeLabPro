@@ -7,7 +7,8 @@ from tradelab.core.market import (
     SECTOR_ETFS, GLOBAL_INDICES, SECTOR_SCORE_CRITERIA, CANADA_SECTOR_ETFS,
     SECTOR_REGIONS, analyze_trend, sector_breadth, market_condition,
     market_read, sector_favorability, rank_sectors, sector_region,
-    sector_score_criteria, realized_vol,
+    sector_score_criteria, realized_vol, advance_decline, breadth_universe,
+    BREADTH_PER_SECTOR,
 )
 
 
@@ -336,3 +337,77 @@ def test_market_condition_reasons_use_the_benchmark_label():
     result = market_condition(spy, vix_last=18.0, breadth=breadth, benchmark_label="TSX")
     assert any(r.startswith("TSX above") for r in result["reasons"])
     assert not any("SPY" in r for r in result["reasons"])
+
+
+# --- Advance/decline breadth (stock-level) --------------------------------
+
+def test_breadth_universe_samples_the_largest_per_sector():
+    us = breadth_universe("US")
+    ca = breadth_universe("Canada")
+    # 11 sectors x 6, minus any de-duplication.
+    assert 11 * BREADTH_PER_SECTOR - 6 <= len(us) <= 11 * BREADTH_PER_SECTOR
+    assert len(set(us)) == len(us)          # de-duplicated
+    assert "AAPL" in us and "MSFT" in us    # largest US tech names sampled
+    # Markets don't mix: US has no TSX names, Canada is all TSX.
+    assert not any(s.endswith(".TO") for s in us)
+    assert all(s.endswith((".TO", ".V")) for s in ca)
+
+
+def test_breadth_universe_respects_per_sector_cap():
+    small = breadth_universe("US", per_sector=2)
+    assert len(small) <= 2 * 11
+    assert len(small) < len(breadth_universe("US", per_sector=6))
+
+
+def test_advance_decline_counts_and_percentages():
+    trends = {
+        "a": {"change_pct": 1.0, "above_sma50": True, "above_sma200": True},
+        "b": {"change_pct": 2.0, "above_sma50": True, "above_sma200": False},
+        "c": {"change_pct": -0.5, "above_sma50": False, "above_sma200": False},
+        "d": {"change_pct": 0.0, "above_sma50": True, "above_sma200": None},  # flat, 200 unmeasured
+    }
+    b = advance_decline(trends)
+    assert b["total"] == 4
+    assert b["advancing"] == 2 and b["declining"] == 1 and b["unchanged"] == 1
+    assert b["net"] == 1
+    assert b["ad_ratio"] == pytest.approx(2.0)
+    assert b["above_sma200"] == 1 and b["measured_sma200"] == 3   # d excluded
+    assert b["pct_above_200"] == pytest.approx(100 * 1 / 3)
+    assert b["pct_above_50"] == pytest.approx(75.0)
+
+
+def test_advance_decline_handles_empty_and_all_flat():
+    empty = advance_decline({})
+    assert empty["total"] == 0 and empty["ad_ratio"] is None
+    assert empty["pct_above_200"] is None
+    flat = advance_decline([{"change_pct": 0.0, "above_sma200": None}])
+    assert flat["advancing"] == 0 and flat["declining"] == 0
+    assert flat["ad_ratio"] is None
+
+
+def test_advance_decline_accepts_a_plain_iterable():
+    b = advance_decline([{"change_pct": 1.0, "above_sma200": True},
+                         {"change_pct": -1.0, "above_sma200": True}])
+    assert b["total"] == 2 and b["pct_above_200"] == pytest.approx(100.0)
+
+
+def test_pct_above_200_is_highlighted_in_the_read():
+    """Stock-level 200-day breadth drives the headline read, with the % named
+    in a reason and the summary."""
+    trend = {"above_sma50": True, "above_sma200": True, "mom_pct": 8.0}
+    broad = advance_decline([{"change_pct": 1.0, "above_sma50": True, "above_sma200": True}] * 9
+                            + [{"change_pct": -1.0, "above_sma50": False, "above_sma200": False}] * 1)
+    thin = advance_decline([{"change_pct": 1.0, "above_sma50": True, "above_sma200": True}] * 2
+                           + [{"change_pct": -1.0, "above_sma50": False, "above_sma200": False}] * 8)
+    r_broad = market_condition(trend, 15.0, broad, "SPY", breadth_unit="stocks")
+    r_thin = market_condition(trend, 15.0, thin, "SPY", breadth_unit="stocks")
+    assert r_broad["score"] > r_thin["score"]
+    assert any("stocks above their 200-day avg" in x for x in r_broad["reasons"])
+    assert "% are above their 200-day average" in r_broad["summary"]
+    assert "stocks are above their 50-day average" in r_broad["summary"]
+
+
+def test_breadth_unit_defaults_to_sectors_for_backward_compat():
+    r = market_condition({"above_sma50": True}, 15.0,
+                         {"above_sma50": 8, "measured_sma50": 11})
+    assert any("sectors" in x for x in r["reasons"])

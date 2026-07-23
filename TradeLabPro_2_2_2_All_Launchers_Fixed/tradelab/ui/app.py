@@ -1600,6 +1600,71 @@ class _MarketReadCard(QGroupBox):
         self.reasons.setText("")
 
 
+def _breadth_color(pct):
+    """Traffic-light for a breadth percentage: healthy > 60, weak < 40."""
+    if pct is None:
+        return "#c7d0d8"
+    return "#3fb950" if pct >= 60 else ("#e5534b" if pct < 40 else "#e3b341")
+
+
+class _MarketBreadthCard(QGroupBox):
+    """Stock-level advance/decline breadth for the selected market.
+
+    The share of the sample above its 200-day average is the headline
+    'is the trend broad?' gauge, so it gets the big number; advancers vs
+    decliners (with the A/D ratio) and the 50-day share sit beside it.
+    """
+
+    def __init__(self):
+        super().__init__("Market breadth — advance / decline")
+        self.setToolTip("How broad the move is across individual stocks, not just the index. "
+                        "A durable trend has most stocks above their 200-day average; a thin, "
+                        "top-heavy rally does not.")
+        row = QHBoxLayout(self)
+
+        headline = QVBoxLayout()
+        self.pct200 = QLabel("—")
+        self.pct200.setStyleSheet("font-size:26px; font-weight:bold;")
+        cap = QLabel("of stocks above their 200-day average")
+        cap.setWordWrap(True); cap.setStyleSheet("color:#b8b8b8;")
+        headline.addWidget(self.pct200); headline.addWidget(cap); headline.addStretch()
+        row.addLayout(headline, 1)
+
+        details = QVBoxLayout()
+        self.ad = QLabel("Advancers — · Decliners —")
+        self.pct50 = QLabel("— above their 50-day average")
+        self.sample = QLabel("")
+        self.sample.setStyleSheet("color:#8a939c; font-size:11px;")
+        details.addWidget(self.ad); details.addWidget(self.pct50)
+        details.addWidget(self.sample); details.addStretch()
+        row.addLayout(details, 1)
+
+    def show_breadth(self, b):
+        p200 = b.get("pct_above_200")
+        self.pct200.setText(f"{p200:.0f}%" if p200 is not None else "—")
+        self.pct200.setStyleSheet(
+            f"font-size:26px; font-weight:bold; color:{_breadth_color(p200)};")
+
+        adv, dec = b.get("advancing", 0), b.get("declining", 0)
+        ratio = b.get("ad_ratio")
+        ratio_txt = f"   ·   A/D ratio {ratio:.2f}" if ratio is not None else ""
+        self.ad.setText(
+            f"<span style='color:#3fb950'>▲ {adv} advancing</span>   "
+            f"<span style='color:#e5534b'>▼ {dec} declining</span>{ratio_txt}")
+
+        p50 = b.get("pct_above_50")
+        self.pct50.setText(f"{p50:.0f}% above their 50-day average" if p50 is not None
+                           else "— above their 50-day average")
+        self.sample.setText(f"Sample: {b.get('total', 0)} large-cap stocks (6 per sector)")
+
+    def clear(self):
+        self.pct200.setText("—")
+        self.pct200.setStyleSheet("font-size:26px; font-weight:bold; color:#c7d0d8;")
+        self.ad.setText("Advancers — · Decliners —")
+        self.pct50.setText("— above their 50-day average")
+        self.sample.setText("")
+
+
 class MarketPanel(QWidget):
     def __init__(self, chart=None, cfg=None):
         super().__init__()
@@ -1634,6 +1699,12 @@ class MarketPanel(QWidget):
         self.read_card=_MarketReadCard("", "")
         read_layout.addWidget(self.read_card)
         layout.addWidget(self.read_box)
+
+        # Stock-level advance/decline breadth for the selected market, with the
+        # share above the 200-day average highlighted (the key confirmation
+        # that a bull trend is broad rather than carried by a few names).
+        self.breadth_card=_MarketBreadthCard()
+        layout.addWidget(self.breadth_card)
 
         # Global indices - which regions/markets are favorable to trade, listed
         # in the order their sessions open through the day (Asia -> Europe -> NA).
@@ -1889,14 +1960,16 @@ class MarketPanel(QWidget):
                            + self.region_symbols(self.current_region()))
 
     def region_symbols(self, region):
-        """Everything one market needs: its regime rows, its benchmark and its
+        """Everything one market needs: its regime rows, its benchmark, its
         sector instruments (an ETF, or the constituents of a sector with no
-        fund)."""
-        from tradelab.core.market import regime_rows, sector_region, sector_instruments
+        fund) and the constituent sample used for advance/decline breadth."""
+        from tradelab.core.market import (regime_rows, sector_region,
+                                          sector_instruments, breadth_universe)
         syms=[sym for _,sym,_ in regime_rows(region)]
         syms.append(sector_region(region)["benchmark"])
         for spec in sector_instruments(region):
             syms+=spec["symbols"]
+        syms+=breadth_universe(region)
         return self._dedup(syms)
 
     @staticmethod
@@ -2015,6 +2088,8 @@ class MarketPanel(QWidget):
         self._regime_trends=regime
         self._vix_last=(regime.get("^VIX") or {}).get("last")
         self.read_card.show_read(data["read"])
+        if data.get("stock_breadth"):
+            self.breadth_card.show_breadth(data["stock_breadth"])
         self.render_sectors()
 
     def _score_region(self, region, history):
@@ -2024,7 +2099,8 @@ class MarketPanel(QWidget):
         *not* looking at (see _prefetch_other_region)."""
         from tradelab.core.market import (analyze_trend, aggregate_trend, realized_vol,
                                           sector_breadth, market_condition, rank_sectors,
-                                          sector_region, sector_instruments, regime_rows)
+                                          sector_region, sector_instruments, regime_rows,
+                                          advance_decline, breadth_universe)
         cfg=sector_region(region)
         regime={sym: analyze_trend(history.get(sym)) for _,sym,_ in regime_rows(region)}
 
@@ -2041,14 +2117,23 @@ class MarketPanel(QWidget):
             trends=[analyze_trend(history.get(sym)) for sym in spec["symbols"]]
             sector_trends[spec["name"]]=trends[0] if spec["etf"] else aggregate_trend(trends)
         breadth=sector_breadth(sector_trends)
+
+        # Stock-level advance/decline breadth across a constituent sample. This
+        # is the real participation gauge (% above the 200-day) and drives the
+        # read's breadth component - far more meaningful than 11 sector counts.
+        stock_trends={sym: analyze_trend(history.get(sym)) for sym in breadth_universe(region)}
+        stock_breadth=advance_decline(stock_trends)
+
         # The VIX only prices US fear, so it scores the US read; every other
         # market is scored on its own realised volatility instead.
         vix=(regime.get("^VIX") or {}).get("last") if region=="US" else None
-        read=market_condition(benchmark_trend or {}, vix, breadth,
-                              cfg["benchmark_label"], realized_vol_pct=vol)
+        read=market_condition(benchmark_trend or {}, vix, stock_breadth,
+                              cfg["benchmark_label"], realized_vol_pct=vol,
+                              breadth_unit="stocks")
         return {
             "ranked": rank_sectors(sector_trends, benchmark_trend, region),
             "breadth": breadth,
+            "stock_breadth": stock_breadth,
             "read": read,
             "regime": regime,
         }

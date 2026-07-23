@@ -306,6 +306,68 @@ def sector_breadth(sector_trends: dict) -> dict:
     }
 
 
+# How many of each sector's largest constituents stand in for stock-level
+# advance/decline breadth. Six per sector keeps the sample representative
+# (~66 US / ~55 Canadian names) without turning a refresh into hundreds of
+# downloads.
+BREADTH_PER_SECTOR = 6
+
+
+def breadth_universe(region: str, per_sector: int = BREADTH_PER_SECTOR) -> list:
+    """Constituents used to measure stock-level advance/decline breadth for a
+    market: the `per_sector` largest names from each of its 11 GICS sectors,
+    de-duplicated. Sourced from tradelab.core.sectors so it tracks the same
+    lists the Scanner uses (which are written largest-first)."""
+    from tradelab.core.sectors import US_SECTORS, CANADA_SECTORS
+    sectors = CANADA_SECTORS if region == "Canada" else US_SECTORS
+    seen = set()
+    out = []
+    for members in sectors.values():
+        for sym in list(members)[:per_sector]:
+            if sym not in seen:
+                seen.add(sym)
+                out.append(sym)
+    return out
+
+
+def advance_decline(trends) -> dict:
+    """Advance/decline breadth over any collection of per-symbol trend dicts
+    (analyze_trend results) - a basket of constituents, or the 11 sectors.
+
+    Counts advancers vs decliners on the day and how many sit above their 50-
+    and 200-day averages. The share above the 200-day (`pct_above_200`) is the
+    headline 'is the trend broad?' gauge - healthy markets sit well above 50%,
+    a thin/top-heavy rally well below.
+    """
+    values = list(trends.values()) if isinstance(trends, dict) else list(trends)
+    total = len(values)
+    advancing = sum(1 for t in values if (t.get("change_pct") or 0) > 0)
+    declining = sum(1 for t in values if (t.get("change_pct") or 0) < 0)
+    a50 = sum(1 for t in values if t.get("above_sma50"))
+    m50 = sum(1 for t in values if t.get("above_sma50") is not None)
+    a200 = sum(1 for t in values if t.get("above_sma200"))
+    m200 = sum(1 for t in values if t.get("above_sma200") is not None)
+
+    def pct(n, d):
+        return (n / d * 100.0) if d else None
+
+    return {
+        "total": total,
+        "advancing": advancing,
+        "declining": declining,
+        "unchanged": total - advancing - declining,
+        "net": advancing - declining,
+        # A/D ratio: advancers per decliner (None when nothing declined and
+        # nothing advanced, i.e. there's nothing to compare).
+        "ad_ratio": (advancing / declining) if declining
+                    else (float(advancing) if advancing else None),
+        "above_sma50": a50, "measured_sma50": m50,
+        "above_sma200": a200, "measured_sma200": m200,
+        "pct_above_50": pct(a50, m50),
+        "pct_above_200": pct(a200, m200),
+    }
+
+
 def sector_score_criteria(benchmark_label: str = "SPY") -> list:
     """The exact, on-screen-able rules behind the per-sector favorability score.
     The UI renders this verbatim in a "how this is scored" panel so the number
@@ -416,7 +478,8 @@ def rank_sectors(sector_trends: dict, benchmark_trend: dict | None = None,
 
 def market_condition(spy_trend: dict, vix_last: float | None, breadth: dict,
                      benchmark_label: str = "SPY",
-                     realized_vol_pct: float | None = None) -> dict:
+                     realized_vol_pct: float | None = None,
+                     breadth_unit: str = "sectors") -> dict:
     """Transparent 'is it a good day to trade' read: a 0-100 score, a
     plain-English label, the list of reasons that produced it (so the number is
     never a black box - same philosophy as the scanner's confidence score), and
@@ -478,26 +541,29 @@ def market_condition(spy_trend: dict, vix_last: float | None, breadth: dict,
             score -= 5
             reasons.append(f"Realised volatility moderate at {realized_vol_pct:.1f}%")
 
+    unit = breadth_unit
     measured = breadth.get("measured_sma50", 0)
     if measured:
         frac = breadth.get("above_sma50", 0) / measured
         if frac >= 0.6:
             score += 10
-            reasons.append(f"Broad participation ({breadth['above_sma50']}/{measured} sectors above 50-day avg)")
+            reasons.append(f"Broad participation ({frac*100:.0f}% of {unit} above their 50-day avg)")
         elif frac <= 0.4:
             score -= 10
-            reasons.append(f"Weak participation ({breadth['above_sma50']}/{measured} sectors above 50-day avg)")
+            reasons.append(f"Weak participation ({frac*100:.0f}% of {unit} above their 50-day avg)")
 
-    # Long-term breadth: how much of the market is in a structural uptrend.
+    # Long-term breadth is the headline 'is the trend broad?' gauge: the share
+    # of the market above its 200-day average. Weighted heavily because a rally
+    # only a few names carry rarely lasts.
     measured200 = breadth.get("measured_sma200", 0)
     if measured200:
         frac200 = breadth.get("above_sma200", 0) / measured200
         if frac200 >= 0.6:
-            score += 5
-            reasons.append(f"{breadth['above_sma200']}/{measured200} sectors above their 200-day avg")
+            score += 12
+            reasons.append(f"Strong breadth — {frac200*100:.0f}% of {unit} above their 200-day avg")
         elif frac200 <= 0.4:
-            score -= 5
-            reasons.append(f"Only {breadth['above_sma200']}/{measured200} sectors above their 200-day avg")
+            score -= 12
+            reasons.append(f"Weak breadth — only {frac200*100:.0f}% of {unit} above their 200-day avg")
 
     score = max(0, min(100, score))
     if score >= 70:
@@ -507,10 +573,11 @@ def market_condition(spy_trend: dict, vix_last: float | None, breadth: dict,
     else:
         label = "Caution"
     return {"score": score, "label": label, "reasons": reasons,
-            "summary": _condition_summary(label, spy_trend, breadth, benchmark_label)}
+            "summary": _condition_summary(label, spy_trend, breadth, benchmark_label, unit)}
 
 
-def _condition_summary(label: str, trend: dict, breadth: dict, benchmark_label: str) -> str:
+def _condition_summary(label: str, trend: dict, breadth: dict, benchmark_label: str,
+                       breadth_unit: str = "sectors") -> str:
     """One plain-English line describing the regime behind the score. Purely
     descriptive - it characterises market conditions, it does not tell anyone
     what to do with their money.
@@ -524,8 +591,11 @@ def _condition_summary(label: str, trend: dict, breadth: dict, benchmark_label: 
 
     measured = breadth.get("measured_sma50", 0)
     if measured:
-        base += (f" {breadth.get('above_sma50', 0)} of {measured} sectors are "
+        base += (f" {breadth.get('above_sma50', 0)} of {measured} {breadth_unit} are "
                  "above their 50-day average.")
+    pct200 = breadth.get("pct_above_200")
+    if pct200 is not None:
+        base += f" {pct200:.0f}% are above their 200-day average."
     if trend.get("above_sma200") is False:
         base += " Note it is below its 200-day average (structural downtrend)."
     return base

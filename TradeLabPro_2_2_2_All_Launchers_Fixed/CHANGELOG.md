@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.30.0 - Advance/decline breadth on the Market tab
+
+### Added
+- **Market breadth (advance / decline).** A new card under the "Is it a good day to trade?" read shows how broad the move is across individual stocks, not just the index — the single best confirmation that a bull trend is real rather than carried by a few names. It samples the six largest constituents of each of the 11 GICS sectors (~66 US / ~64 Canadian stocks) and reports:
+  - **% of stocks above their 200-day average** — the headline number, big and colour-coded (green above 60%, amber 40–60%, red below 40%);
+  - **advancers vs decliners** on the day, with the **A/D ratio**;
+  - **% above their 50-day average**.
+- The card follows the country selector like the rest of the tab, and both markets are cached and prefetched so switching stays instant.
+
+### Changed
+- **The read score's breadth now comes from stock-level participation** instead of the coarse 11-sector count. The share above the 200-day average is weighted heavily and named explicitly in the read's reasons and one-line summary (e.g. "Strong breadth — 78% of stocks above their 200-day avg").
+- A full refresh now downloads ~86 symbols per market (up from ~45) to sample the breadth constituents — still off the UI thread with a progress bar, and the other market is still prefetched in the background.
+
+### Verified
+- 623/623 pytest tests pass (new: `breadth_universe` sampling/de-duplication and market separation, `advance_decline` counts/ratio/percentages and empty-safe behaviour, the 200-day breadth highlight in the read, and MarketPanel tests that the breadth card populates, highlights % above 200-day, and follows the country selector).
+
 ## 2.29.0 - Country-first Market tab; chart Measure tool; Esc-to-cursor
 
 ### Fixed

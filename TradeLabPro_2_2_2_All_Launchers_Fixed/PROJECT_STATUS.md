@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.29.0
-Current phase: Country-first Market tab + chart Measure tool (done)
+Current version: 2.30.0
+Current phase: Advance/decline breadth on the Market tab (done)
+
+## Completed in 2.30.0 (Advance/decline breadth on the Market tab)
+- `core/market.py`: `breadth_universe(region, per_sector=6)` (the 6 largest names per GICS sector from `core.sectors`, deduped: ~66 US / ~64 CA) and `advance_decline(trends)` (advancers/decliners, A/D ratio, net, % above 50/200-day). `market_condition` gained `breadth_unit` and now weights the 200-day breadth share heavily (±12), naming the % in a reason and the summary.
+- Market tab: new **_MarketBreadthCard** under the read card — big highlighted **% above 200-day** (green>60/amber/red<40), advancers vs decliners with A/D ratio, % above 50-day, sample size. Follows the country selector; both markets cached + prefetched. The read's breadth component now comes from stock-level participation (`stock_breadth`) rather than the 11-sector count.
+- Refresh grew ~45→~86 symbols per market (still off-thread, progress bar, background prefetch of the other market).
+- pytest regression suite now 623 tests, all passing.
 
 ## Completed in 2.29.0 (Country-first Market tab; Measure tool; Esc-to-cursor)
 - Fix: `analyze_trend`/`realized_vol` crashed (`TypeError: float() ... not 'Series'`) when yfinance returned a frame with duplicate `Close` columns; new `_close_series()` collapses a 2-D Close to its first column.

@@ -498,3 +498,48 @@ def test_switching_country_shows_that_markets_regime_values(qapp, monkeypatch):
     shown = [panel.table.item(r, 1).text() for r in range(panel.table.rowCount())]
     assert shown == [sym for _, sym, _ in regime_rows("Canada")]
     assert all(panel.table.item(r, 2).text() != "—" for r in range(panel.table.rowCount()))
+
+
+def test_breadth_card_populates_and_highlights_pct_above_200(qapp, monkeypatch):
+    """The advance/decline breadth card fills in on refresh, with the
+    % above the 200-day average as its headline number."""
+    import tradelab.ui.app as app
+
+    monkeypatch.setattr(app, "get_history", _fake_history)  # all rising -> broad
+    panel = app.MarketPanel()
+    _refresh(panel, qapp)
+
+    # Rising series for every constituent -> ~100% above the 200-day.
+    assert panel.breadth_card.pct200.text() == "100%"
+    assert "advancing" in panel.breadth_card.ad.text()
+    assert "50-day" in panel.breadth_card.pct50.text()
+    assert "large-cap stocks" in panel.breadth_card.sample.text()
+    # Broad breadth is named in the read reasons.
+    assert any("200-day avg" in r for r in panel._region_data["US"]["read"]["reasons"])
+
+
+def test_breadth_follows_the_country_selector(qapp, monkeypatch):
+    import tradelab.ui.app as app
+
+    monkeypatch.setattr(app, "get_history", _fake_history)
+    panel = app.MarketPanel()
+    _refresh(panel, qapp)
+    _settle_prefetch(panel, qapp)
+
+    us_sample = panel.breadth_card.sample.text()
+    panel.country_combo.setCurrentText("Canada")
+    assert panel.breadth_card.sample.text()           # repopulated from cache
+    # Canada's breadth is scored on Canadian names, cached separately.
+    assert "Canada" in panel.read_box.title()
+    assert panel._region_data["Canada"]["stock_breadth"]["total"] > 0
+
+
+def test_refresh_includes_breadth_constituents(qapp, monkeypatch):
+    import tradelab.ui.app as app
+    from tradelab.core.market import breadth_universe
+
+    monkeypatch.setattr(app, "get_history", _fake_history)
+    panel = app.MarketPanel()
+    symbols = set(panel.required_symbols())
+    for name in breadth_universe("US")[:5]:
+        assert name in symbols
