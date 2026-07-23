@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.25.0
-Current phase: Stop/bracket orders + News feed (done)
+Current version: 2.26.0
+Current phase: Market favorability — global indices + US/Canada sector ranking (done)
+
+## Completed in 2.26.0 (Market favorability: global indices + US/Canada sectors)
+- `core/market.py`: `GLOBAL_INDICES` (8 majors in **session-open order**, each carrying UTC open minutes + local open label), `CANADA_SECTOR_ETFS` (7 liquid iShares TSX capped sectors) + `SECTOR_REGIONS`/`sector_region()` (US→SPDRs vs SPY, Canada→TSX sectors vs XIC.TO), `market_read()` (per-index Favorable/Neutral/Caution vs 50/200-day), `sector_favorability()`/`rank_sectors()` (transparent 0–100 score: trend, RS vs benchmark, momentum, day move) + `sector_score_criteria()`, `realized_vol()` (VIX substitute outside the US), `analyze_trend` gained `mom_pct`, `sector_breadth` gained 200-day counts, `market_condition` gained momentum, 200-day breadth, a realised-vol fallback and a plain-English `summary`.
+- `MarketPanel`: global-indices table in market-open order; sector table ranked best→worst with a **US/Canada dropdown**; **two read cards** (US + Canada) both scored every refresh; collapsible "how this is scored" panel + header/score tooltips; **click any row to chart it**.
+- Threading: `_MarketRefreshWorker` (batch download + progress) and `_HistoryWorker` (click-to-chart) moved every network call off the UI thread — the tab no longer freezes. Fetch and render are separated; render is network-free. `shutdown()` wired into `closeEvent`.
+- pytest regression suite now 565 tests, all passing.
 
 ## Completed in 2.25.0 (Stop/bracket orders + News feed)
 - Paper broker (`core/broker.py`): added STOP, STOP_LIMIT, TRAILING_STOP order types (+ trail_amount/trail_pct, live stop_price), and bracket/OCO (`place_bracket`, parent_id/oco_group/active plumbing; `_after_fill` activates children + cancels OCO siblings). `poll()`/`_should_trigger()`/`_trail_level()` handle triggering; `_new_order()` factored out. PaperTradingPanel: type dropdown (5 types) with dynamic Limit/Stop/Trail fields, a Bracket row (take-profit/stop-loss), Cancel-selected, Stop column.

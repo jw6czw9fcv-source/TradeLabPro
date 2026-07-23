@@ -1437,94 +1437,524 @@ class PortfolioPanel(QWidget):
 
 
 
-class MarketPanel(QWidget):
-    def __init__(self):
+# Colours for the favorable / neutral / caution reads, reused across the
+# Market panel's tables and headline so the traffic-light meaning is consistent.
+_READ_COLORS = {
+    "Favorable": "#3fb950",
+    "Neutral": "#e3b341",
+    "Neutral / mixed": "#e3b341",
+    "Caution": "#e5534b",
+    "Avoid": "#e5534b",
+}
+
+
+def _read_item(label: str) -> QTableWidgetItem:
+    """A table cell whose text is a favorable/neutral/caution read, coloured to
+    match the traffic-light scheme."""
+    item = QTableWidgetItem(label)
+    colour = _READ_COLORS.get(label)
+    if colour:
+        item.setForeground(QColor(colour))
+    return item
+
+
+def _vs_sma_text(above) -> str:
+    return "Above" if above else ("Below" if above is False else "—")
+
+
+class _HistoryWorker(QThread):
+    """Fetches one symbol's price history off the UI thread.
+
+    Clicking a row used to call get_history() inline, which blocks Qt's event
+    loop for the whole network round-trip - the window freezes and the cursor
+    spins until Yahoo answers. Charting now goes through this worker instead.
+    """
+    done = Signal(str, object, str)   # symbol, DataFrame|None, error message
+
+    def __init__(self, symbol, period, interval):
         super().__init__()
+        self.symbol = symbol
+        self.period = period
+        self.interval = interval
+
+    def run(self):
+        df, err = None, ""
+        try:
+            df = get_history(self.symbol, self.period, self.interval)
+        except BaseException as exc:      # never let a bad symbol kill the thread
+            err = str(exc)
+        try:
+            self.done.emit(self.symbol, df, err)
+        except RuntimeError:              # panel already torn down
+            pass
+
+
+class _MarketRefreshWorker(QThread):
+    """Downloads every symbol the Market dashboard needs, off the UI thread.
+
+    The dashboard covers ~37 symbols (regime, global indices, and both regions'
+    benchmarks and sectors). Fetching those inline froze the whole window for
+    the duration; this streams them in the background and reports progress.
+    A failed symbol is recorded as None rather than aborting the batch.
+    """
+    progress = Signal(int, int)      # completed, total
+    done = Signal(object)            # {symbol: DataFrame | None}
+
+    def __init__(self, symbols, period="1y", interval="1d"):
+        super().__init__()
+        self.symbols = list(symbols)
+        self.period = period
+        self.interval = interval
+        self._stop = False
+
+    def stop(self):
+        self._stop = True
+
+    def run(self):
+        history = {}
+        total = len(self.symbols)
+        for i, sym in enumerate(self.symbols, 1):
+            if self._stop:
+                break
+            try:
+                history[sym] = get_history(sym, self.period, self.interval)
+            except BaseException:
+                history[sym] = None
+            try:
+                self.progress.emit(i, total)
+            except RuntimeError:
+                pass
+        try:
+            self.done.emit(history)
+        except RuntimeError:          # panel already torn down
+            pass
+
+
+class _MarketReadCard(QGroupBox):
+    """One market's 'is it a good day to trade?' read: the label + 0-100 score,
+    a one-line plain-English summary, and the transparent list of reasons
+    behind the number. Two of these sit side by side (US and Canada) so the
+    answer is never hidden behind a selector."""
+
+    def __init__(self, title, subtitle=""):
+        super().__init__(title)
+        v = QVBoxLayout(self)
+        self.headline = QLabel("Refresh to compute the read.")
+        self.headline.setStyleSheet("font-size:16px; font-weight:bold;")
+        self.summary = QLabel(subtitle)
+        self.summary.setWordWrap(True)
+        self.reasons = QLabel("")
+        self.reasons.setWordWrap(True)
+        self.reasons.setStyleSheet("color:#b8b8b8;")
+        v.addWidget(self.headline); v.addWidget(self.summary); v.addWidget(self.reasons)
+        v.addStretch()
+
+    def show_read(self, read):
+        colour = _READ_COLORS.get(read["label"], "#c7d0d8")
+        self.headline.setText(f"{read['label']}  ·  {read['score']}/100")
+        self.headline.setStyleSheet(f"font-size:16px; font-weight:bold; color:{colour};")
+        self.summary.setText(read.get("summary", ""))
+        self.reasons.setText("  •  ".join(read["reasons"]) if read["reasons"]
+                             else "Not enough data for a confident read.")
+
+    def show_error(self, message):
+        self.headline.setText("Unavailable")
+        self.headline.setStyleSheet("font-size:16px; font-weight:bold; color:#c7d0d8;")
+        self.summary.setText(message)
+        self.reasons.setText("")
+
+
+class MarketPanel(QWidget):
+    def __init__(self, chart=None, cfg=None):
+        super().__init__()
+        # chart/cfg are optional so the panel stays constructible headless (and
+        # in tests); click-to-chart is simply inert without them.
+        self.chart=chart; self.cfg=cfg
         layout=QVBoxLayout(self)
         top=QHBoxLayout()
         self.refresh_btn=QPushButton("Refresh market dashboard")
         self.refresh_btn.clicked.connect(self.refresh_market)
         top.addWidget(QLabel("Market Dashboard")); top.addStretch(); top.addWidget(self.refresh_btn)
         layout.addLayout(top)
+        layout.addWidget(_hint("Click any index, regime symbol or sector below to chart it."))
 
-        # Phase 3: "is it a good day to trade" macro read - a big, plain
-        # headline plus the transparent reasons that produced it.
+        # Phase 3: "is it a good day to trade" macro read - one card per market
+        # (US and Canada) side by side, each with a big plain headline, a
+        # one-line summary and the transparent reasons that produced it. Both
+        # are always shown so the answer never depends on a selector below.
         self.read_box=QGroupBox("Is it a good day to trade?")
-        read_layout=QVBoxLayout(self.read_box)
-        self.read_headline=QLabel("Refresh to compute the market read.")
-        self.read_headline.setStyleSheet("font-size:16px; font-weight:bold;")
-        self.read_reasons=QLabel("")
-        self.read_reasons.setWordWrap(True)
-        self.read_reasons.setStyleSheet("color:#b8b8b8;")
-        read_layout.addWidget(self.read_headline)
-        read_layout.addWidget(self.read_reasons)
+        read_layout=QHBoxLayout(self.read_box)
+        self.read_cards={}
+        for region,(title,sub) in {
+                "US":("United States  ·  S&P 500","Scored from SPY, the VIX and US sector breadth."),
+                "Canada":("Canada  ·  TSX","Scored from XIC, TSX realised volatility and Canadian sector breadth."),
+        }.items():
+            card=_MarketReadCard(title, sub)
+            self.read_cards[region]=card
+            read_layout.addWidget(card)
         layout.addWidget(self.read_box)
+
+        # Global indices - which regions/markets are favorable to trade, listed
+        # in the order their sessions open through the day (Asia -> Europe -> NA).
+        gi_label=QLabel("Global indices — which markets are favorable (in market-open order)")
+        gi_label.setToolTip("Listed in trading-session order: Tokyo → Hong Kong → London/Frankfurt "
+                            "→ New York/Toronto.\nRead = position vs the 50- and 200-day averages: "
+                            "above both = Favorable, below both = Caution, mixed = Neutral.")
+        layout.addWidget(gi_label)
+        self.global_table=QTableWidget(0,7)
+        self.global_table.setHorizontalHeaderLabels(
+            ["Market","Symbol","Last","Change %","vs 50-day","vs 200-day","Read"])
+        self._tooltip_headers(self.global_table, {
+            4:"Is the index above its 50-day moving average (medium-term trend)?",
+            5:"Is the index above its 200-day moving average (long-term trend)?",
+            6:"Favorable / Neutral / Caution from its position vs the 50/200-day averages.",
+        })
+        layout.addWidget(self.global_table)
 
         layout.addWidget(QLabel("Regime symbols"))
         self.table=QTableWidget(0,5); self.table.setHorizontalHeaderLabels(["Item","Symbol","Last","Change %","Purpose"])
         layout.addWidget(self.table)
 
-        layout.addWidget(QLabel("Sector breadth (SPDR sector ETFs)"))
-        self.sector_table=QTableWidget(0,4); self.sector_table.setHorizontalHeaderLabels(["Sector","ETF","Change %","vs 50-day"])
+        # Sector favorability - ranked best -> worst with a transparent score,
+        # for either the US (SPDR sectors vs SPY) or Canada (TSX sectors vs XIC).
+        sec_header=QHBoxLayout()
+        sec_label=QLabel("Sector favorability — which sectors to trade (best → worst)")
+        self.region_combo=QComboBox()
+        from tradelab.core.market import SECTOR_REGIONS
+        self.region_combo.addItems(list(SECTOR_REGIONS))
+        self.region_combo.setToolTip("Which market's sectors to rank.")
+        self.region_combo.currentTextChanged.connect(self._on_region_changed)
+        self.scoring_btn=QToolButton(); self.scoring_btn.setText("How this is scored ▾")
+        self.scoring_btn.setCheckable(True)
+        self.scoring_btn.toggled.connect(self._toggle_scoring)
+        sec_header.addWidget(sec_label); sec_header.addStretch()
+        sec_header.addWidget(QLabel("Market")); sec_header.addWidget(self.region_combo)
+        sec_header.addWidget(self.scoring_btn)
+        layout.addLayout(sec_header)
+
+        # Collapsible "how this is scored" panel - shows the exact rules on
+        # screen so the number is never a black box (hidden until expanded).
+        self.scoring_box=QGroupBox("How the sector score is computed")
+        sb_layout=QVBoxLayout(self.scoring_box)
+        self.scoring_criteria=QLabel("")
+        self.scoring_criteria.setWordWrap(True); self.scoring_criteria.setStyleSheet("color:#b8b8b8;")
+        sb_layout.addWidget(self.scoring_criteria)
+        self.scoring_box.setVisible(False)
+        layout.addWidget(self.scoring_box)
+
+        self.sector_table=QTableWidget(0,8)
+        self.sector_table.setHorizontalHeaderLabels(
+            ["#","Sector","ETF","Change %","vs 50-day","vs 200-day","RS vs SPY","Score / Read"])
+        self._tooltip_headers(self.sector_table, {
+            6:"Relative strength: sector's ~3-month momentum minus SPY's. "
+              "Positive = leading the market.",
+            7:"0–100 favorability score and label. Click 'How this is scored' for the rules.",
+        })
         layout.addWidget(self.sector_table)
 
+        self.progress=QProgressBar(); self.progress.setVisible(False)
+        layout.addWidget(self.progress)
         self.status=QLabel("Refresh to update the dashboard. Data uses yfinance when available.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.rows=[('VIX','^VIX','Market fear / volatility'),('S&P 500','SPY','US market regime'),('NASDAQ 100','QQQ','Growth/technology regime'),('Russell 2000','IWM','Small-cap risk appetite'),('TSX','^GSPTSE','Canada market regime'),('USD/CAD','CAD=X','Currency for Canada exposure'),('Gold','GC=F','Risk/inflation proxy'),('Oil','CL=F','Energy/cyclical proxy'),('US 10Y','^TNX','Rates pressure')]
+        # Regime trends from the last refresh, reused when only the sector
+        # region changes so switching US <-> Canada doesn't refetch everything.
+        self._regime_trends={}
+        self._vix_last=None
+        self._market_note=""
+        self._refreshed_once=False
+        # Per-region ranked sectors / breadth / read from the last refresh, so
+        # flipping the market dropdown is instant.
+        self._region_data={}
+        # (symbol, period, interval) -> DataFrame. Filled during a refresh so
+        # clicking a row it already downloaded charts instantly, with no fetch.
+        self._history_cache={}
+        self._chart_worker=None
+        self._pending_symbol=None
+        self._refresh_worker=None
+
+        # Click any row to chart that symbol. The symbol lives in a different
+        # column per table, so each is wired with its own column index.
+        for table, sym_col in ((self.global_table,1), (self.table,1), (self.sector_table,2)):
+            table.setSelectionBehavior(QAbstractItemView.SelectRows)
+            table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            table.cellClicked.connect(
+                lambda row, _col, t=table, c=sym_col: self._chart_row(t, row, c))
+            table.setToolTip("Click a row to chart that symbol.")
+
+        self._apply_region_labels()
         self.populate_static()
+
+    def _chart_row(self, table, row, sym_col):
+        """Chart the symbol on the clicked row, in the main chart pane."""
+        item = table.item(row, sym_col)
+        if item is None or self.chart is None or self.cfg is None:
+            return
+        symbol = item.text().strip()
+        if symbol:
+            self.chart_symbol(symbol)
+
+    def chart_symbol(self, symbol):
+        """Chart a symbol, reusing the history the dashboard already downloaded
+        when possible and otherwise fetching it on a worker thread - clicking a
+        row must never block the UI."""
+        key = (symbol, self.cfg.period, self.cfg.interval)
+        cached = self._history_cache.get(key)
+        if cached is not None:
+            self._plot(symbol, cached)
+            return
+        # A newer click supersedes an in-flight one; we just ignore the stale
+        # result rather than cancelling (yfinance has no cancel).
+        self._pending_symbol = symbol
+        self.status.setText(f"Loading {symbol}…")
+        worker = _HistoryWorker(symbol, self.cfg.period, self.cfg.interval)
+        worker.done.connect(self._on_history_loaded)
+        self._chart_worker = worker
+        worker.start()
+
+    def _on_history_loaded(self, symbol, df, err):
+        if symbol != self._pending_symbol:
+            return                        # superseded by a later click
+        if err or df is None or getattr(df, "empty", False):
+            self.status.setText(f"Could not chart {symbol}: {err or 'no data returned'}")
+            return
+        self._history_cache[(symbol, self.cfg.period, self.cfg.interval)] = df
+        self._plot(symbol, df)
+
+    def _plot(self, symbol, df):
+        try:
+            self.chart.plot(symbol, df, self.cfg)
+            self.status.setText(f"Charted {symbol}.")
+        except Exception as exc:
+            self.status.setText(f"Could not chart {symbol}: {exc}")
+
+    def shutdown(self):
+        """Stop in-flight fetches so closing the app doesn't hang."""
+        refresh = getattr(self, "_refresh_worker", None)
+        if refresh is not None:
+            refresh.stop()          # finish the current symbol, then bail out
+        for attr in ("_chart_worker", "_refresh_worker"):
+            worker = getattr(self, attr, None)
+            if worker is None:
+                continue
+            try:
+                worker.done.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            worker.wait(3000)
+            setattr(self, attr, None)
+
+    def _tooltip_headers(self, table, tips):
+        for col, text in tips.items():
+            item = table.horizontalHeaderItem(col)
+            if item is not None:
+                item.setToolTip(text)
+
+    def _toggle_scoring(self, checked):
+        self.scoring_box.setVisible(checked)
+        self.scoring_btn.setText("How this is scored ▴" if checked else "How this is scored ▾")
+
+    def current_region(self):
+        return self.region_combo.currentText() or "US"
+
+
+    def _on_region_changed(self, _region):
+        """Switching US <-> Canada re-labels the benchmark columns and redraws
+        the sector rows. Both markets are loaded on every refresh, so this is a
+        pure re-render - no refetching, and no downloads before a first
+        refresh."""
+        self._apply_region_labels()
+        self.render_sectors()
+
+    def _apply_region_labels(self):
+        """Point the benchmark-dependent labels (RS column, scoring criteria,
+        region note) at the selected market."""
+        from tradelab.core.market import sector_region, sector_score_criteria
+        cfg = sector_region(self.current_region())
+        label = cfg["benchmark_label"]
+        header = self.sector_table.horizontalHeaderItem(6)
+        if header is not None:
+            header.setText(f"RS vs {label}")
+            header.setToolTip(f"Relative strength: sector's ~3-month momentum minus {label}'s. "
+                              "Positive = leading the market.")
+        self.scoring_criteria.setText(
+            "\n".join(f"•  {line}" for line in sector_score_criteria(label))
+            + f"\n\n{cfg['note']}")
+        self.region_combo.setToolTip(cfg["note"])
+
     def populate_static(self):
+        from tradelab.core.market import GLOBAL_INDICES, sector_region
+        self.global_table.setRowCount(len(GLOBAL_INDICES))
+        for r,(name,sym,region,_open_utc,open_local) in enumerate(GLOBAL_INDICES):
+            name_item=QTableWidgetItem(name)
+            name_item.setToolTip(f"Region: {region}  ·  Opens {open_local}")
+            self.global_table.setItem(r,0,name_item)
+            self.global_table.setItem(r,1,QTableWidgetItem(sym))
+            for c in range(2,7): self.global_table.setItem(r,c,QTableWidgetItem(""))
+        self.global_table.resizeColumnsToContents()
+
         self.table.setRowCount(len(self.rows))
         for r,(name,sym,purpose) in enumerate(self.rows):
             vals=[name,sym,"","",purpose]
             for c,v in enumerate(vals): self.table.setItem(r,c,QTableWidgetItem(str(v)))
         self.table.resizeColumnsToContents()
-        from tradelab.core.market import SECTOR_ETFS
-        self.sector_table.setRowCount(len(SECTOR_ETFS))
-        for r,(name,sym) in enumerate(SECTOR_ETFS):
-            for c,v in enumerate([name,sym,"",""]): self.sector_table.setItem(r,c,QTableWidgetItem(str(v)))
+
+        sectors = sector_region(self.current_region())["sectors"]
+        self.sector_table.setRowCount(len(sectors))
+        for r,(name,sym) in enumerate(sectors):
+            for c,v in enumerate([str(r+1),name,sym,"","","","",""]):
+                self.sector_table.setItem(r,c,QTableWidgetItem(v))
         self.sector_table.resizeColumnsToContents()
+
+    def required_symbols(self):
+        """Every symbol a full dashboard refresh needs, de-duplicated and in
+        the order they are fetched (regime first, so the read cards can be
+        scored as soon as the batch lands)."""
+        from tradelab.core.market import GLOBAL_INDICES, SECTOR_REGIONS, sector_region
+        syms=[sym for _,sym,_ in self.rows]
+        syms+=[row[1] for row in GLOBAL_INDICES]
+        for region in SECTOR_REGIONS:
+            cfg=sector_region(region)
+            syms.append(cfg["benchmark"])
+            syms+=[sym for _,sym in cfg["sectors"]]
+        seen=set(); ordered=[]
+        for s in syms:
+            if s not in seen:
+                seen.add(s); ordered.append(s)
+        return ordered
+
     def refresh_market(self):
-        from tradelab.core.market import SECTOR_ETFS, analyze_trend, sector_breadth, market_condition
+        """Kick off a dashboard refresh. All ~37 downloads happen on a worker
+        thread - the window stays responsive and shows progress."""
+        if self._refresh_worker is not None and self._refresh_worker.isRunning():
+            return
+        symbols=self.required_symbols()
         self.refresh_btn.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0,len(symbols)); self.progress.setValue(0)
+        self.status.setText(f"Refreshing {len(symbols)} symbols…")
+        worker=_MarketRefreshWorker(symbols)
+        worker.progress.connect(self._on_refresh_progress)
+        worker.done.connect(self._on_refresh_done)
+        self._refresh_worker=worker
+        worker.start()
+
+    def _on_refresh_progress(self, done, total):
+        self.progress.setValue(done)
+
+    def _on_refresh_done(self, history):
+        """Render everything from the downloaded batch. No network here."""
+        self.progress.setVisible(False)
+        self.refresh_btn.setEnabled(True)
+        # Keep the batch so clicking a row charts straight from memory.
+        for sym,df in history.items():
+            if df is not None:
+                self._history_cache[(sym,"1y","1d")]=df
+        try:
+            self._render(history)
+        finally:
+            self._refreshed_once=True
+
+    def _render(self, history):
+        from tradelab.core.market import (GLOBAL_INDICES, SECTOR_REGIONS,
+                                          analyze_trend, market_read)
+        # Regime symbols - they feed the US read (SPY + VIX).
         regime_trends={}
         for r,(name,sym,purpose) in enumerate(self.rows):
-            try:
-                df=get_history(sym,"1y","1d")
-                trend=analyze_trend(df)
-                regime_trends[sym]=trend
-                last=trend["last"]; ch=trend["change_pct"]
-                self.table.setItem(r,2,QTableWidgetItem(f"{last:.2f}" if last is not None else "—"))
-                self.table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
-            except Exception as exc:
-                self.table.setItem(r,2,QTableWidgetItem("ERR"))
-                self.table.setItem(r,3,QTableWidgetItem(str(exc)[:40]))
+            trend=analyze_trend(history.get(sym))
+            regime_trends[sym]=trend
+            last=trend["last"]; ch=trend["change_pct"]
+            self.table.setItem(r,2,QTableWidgetItem(f"{last:.2f}" if last is not None else "—"))
+            self.table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
         self.table.resizeColumnsToContents()
+        self._regime_trends=regime_trends
+        self._vix_last=(regime_trends.get("^VIX") or {}).get("last")
 
-        sector_trends={}
-        for r,(name,sym) in enumerate(SECTOR_ETFS):
-            try:
-                trend=analyze_trend(get_history(sym,"1y","1d"))
-                sector_trends[name]=trend
-                ch=trend["change_pct"]
-                self.sector_table.setItem(r,2,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
-                above=trend["above_sma50"]
-                self.sector_table.setItem(r,3,QTableWidgetItem("Above" if above else ("Below" if above is False else "—")))
-            except Exception as exc:
-                self.sector_table.setItem(r,2,QTableWidgetItem("ERR"))
-                self.sector_table.setItem(r,3,QTableWidgetItem(str(exc)[:20]))
+        # Global indices, in market-open order, each with its own read.
+        favorable_markets=0; measured_markets=0
+        for r,(name,sym,region,_open_utc,open_local) in enumerate(GLOBAL_INDICES):
+            trend=analyze_trend(history.get(sym))
+            last=trend["last"]; ch=trend["change_pct"]
+            self.global_table.setItem(r,2,QTableWidgetItem(f"{last:,.2f}" if last is not None else "—"))
+            self.global_table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
+            self.global_table.setItem(r,4,QTableWidgetItem(_vs_sma_text(trend["above_sma50"])))
+            self.global_table.setItem(r,5,QTableWidgetItem(_vs_sma_text(trend["above_sma200"])))
+            read=market_read(trend)
+            item=_read_item(read["label"]); item.setToolTip(read["reason"])
+            self.global_table.setItem(r,6,item)
+            if trend.get("above_sma50") is not None:
+                measured_markets+=1
+                if read["label"]=="Favorable": favorable_markets+=1
+        self.global_table.resizeColumnsToContents()
+        self._market_note=(f" {favorable_markets}/{measured_markets} global markets favorable."
+                           if measured_markets else "")
+
+        # Both markets are scored every refresh so the two read cards are
+        # always live - the answer never depends on the sector dropdown.
+        for region in SECTOR_REGIONS:
+            data=self._score_region(region, history)
+            self._region_data[region]=data
+            self.read_cards[region].show_read(data["read"])
+        self.render_sectors()
+
+    def _score_region(self, region, history):
+        """Score one market from already-downloaded history. Pure - no fetching
+        - so switching the dropdown later is a re-render, not a reload."""
+        from tradelab.core.market import (analyze_trend, realized_vol, sector_breadth,
+                                          market_condition, rank_sectors, sector_region)
+        cfg=sector_region(region)
+
+        # The benchmark drives relative strength and the headline read. We use
+        # its price series too - realised volatility needs the raw closes.
+        df=history.get(cfg["benchmark"])
+        benchmark_trend=self._regime_trends.get(cfg["benchmark"]) or analyze_trend(df)
+        vol=realized_vol(df)
+
+        sector_trends={name:analyze_trend(history.get(sym)) for name,sym in cfg["sectors"]}
+        breadth=sector_breadth(sector_trends)
+        # The VIX only prices US fear, so it scores the US read; every other
+        # market is scored on its own realised volatility instead.
+        vix=self._vix_last if region=="US" else None
+        read=market_condition(benchmark_trend or {}, vix, breadth,
+                              cfg["benchmark_label"], realized_vol_pct=vol)
+        return {
+            "ranked": rank_sectors(sector_trends, benchmark_trend, region),
+            "breadth": breadth,
+            "read": read,
+        }
+
+    def render_sectors(self):
+        """Draw the sector table for the selected market from cached data."""
+        region=self.current_region()
+        data=self._region_data.get(region)
+        if not data:
+            self.populate_static()
+            return
+        ranked=data["ranked"]
+        self.sector_table.setRowCount(len(ranked))
+        for r,row in enumerate(ranked):
+            trend=row["trend"]; ch=trend.get("change_pct"); rel=row.get("rel_strength")
+            self.sector_table.setItem(r,0,QTableWidgetItem(str(r+1)))
+            self.sector_table.setItem(r,1,QTableWidgetItem(row["name"]))
+            self.sector_table.setItem(r,2,QTableWidgetItem(row["etf"]))
+            self.sector_table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
+            self.sector_table.setItem(r,4,QTableWidgetItem(_vs_sma_text(trend.get("above_sma50"))))
+            self.sector_table.setItem(r,5,QTableWidgetItem(_vs_sma_text(trend.get("above_sma200"))))
+            self.sector_table.setItem(r,6,QTableWidgetItem(f"{rel:+.1f}%" if rel is not None else "—"))
+            read_item=_read_item(f"{row['score']}  ·  {row['label']}")
+            read_item.setForeground(QColor(_READ_COLORS.get(row["label"],"#c7d0d8")))
+            read_item.setToolTip("  •  ".join(row["reasons"]) if row["reasons"] else "Not enough data.")
+            self.sector_table.setItem(r,7,read_item)
         self.sector_table.resizeColumnsToContents()
 
-        breadth=sector_breadth(sector_trends)
-        spy_trend=regime_trends.get("SPY",{})
-        vix_last=(regime_trends.get("^VIX") or {}).get("last")
-        read=market_condition(spy_trend, vix_last, breadth)
-        colour={"Favorable":"#3fb950","Neutral / mixed":"#e3b341","Caution":"#e5534b"}.get(read["label"],"#c7d0d8")
-        self.read_headline.setText(f"{read['label']}  ·  {read['score']}/100")
-        self.read_headline.setStyleSheet(f"font-size:16px; font-weight:bold; color:{colour};")
-        self.read_reasons.setText("  •  ".join(read["reasons"]) if read["reasons"] else "Not enough data for a confident read.")
-        self.status.setText(f"Dashboard refreshed. Breadth: {breadth['advancing']}/{breadth['total']} sectors up today, {breadth['above_sma50']}/{breadth['measured_sma50']} above their 50-day average.")
-        self.refresh_btn.setEnabled(True)
+        breadth=data["breadth"]
+        top_sectors=", ".join(row["name"] for row in ranked[:3] if row["label"]=="Favorable")
+        sector_note=(f" Leading {region} sectors: {top_sectors}." if top_sectors else "")
+        self.status.setText(
+            f"Dashboard refreshed. {region} breadth: {breadth['advancing']}/{breadth['total']} sectors up today, "
+            f"{breadth['above_sma50']}/{breadth['measured_sma50']} above their 50-day average."
+            + getattr(self,"_market_note","") + sector_note)
 
 
 def _build_condition_row(condition, on_change, on_remove, removable=True):
@@ -4650,7 +5080,7 @@ class MainWindow(QMainWindow):
         self.alerts_panel = AlertsPanel(symbol_provider=self.db.watch_symbols)
         self.heatmap_panel = HeatmapPanel(self.db, self.chart, self.cfg)
         self._heatmap_page = _scroll_tab(self.heatmap_panel)
-        self.market_panel = MarketPanel()
+        self.market_panel = MarketPanel(self.chart, self.cfg)
         self.news_panel = NewsPanel()
         self.ai_panel = AIAssistantPanel()
         self.risk_panel = RiskPanel(self.db)
@@ -4884,6 +5314,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.alerts_panel.shutdown()  # stop poller + worker cleanly
+        except Exception:
+            pass
+        try:
+            self.market_panel.shutdown()  # stop any in-flight chart fetch
         except Exception:
             pass
         try:

@@ -31,3 +31,16 @@ Dockable/resizable panels, PyQtGraph rendering, drawing tools, new overlays, sav
 ## Requested / backlog
 - Phase 16: Links page — named site links / web-page URLs (personal bookmarks),
   stored locally, click to open in the browser, grouping + CSV import/export — DONE 2.23.0
+- **Market tab — expanded favorability read.** — DONE 2.26.0. Give a clearer
+  "which markets & sectors are favorable to trade" view:
+  - Add **global indices**: NIKKEI 225 (^N225), Hang Seng (^HSI), DAX (^GDAXI),
+    FTSE 100 (^FTSE) — plus S&P 500 / Nasdaq / Dow / TSX — each with trend vs
+    50/200-day, % change, and a per-market favorable/neutral/caution read.
+  - **Per-sector favorability**: rank the 11 SPDR sectors best→worst with a
+    transparent score (trend vs 50/200-day, relative strength vs SPY, momentum,
+    breadth) and a favorable/avoid label, so it's obvious which sectors to trade.
+  - **Show the criteria on screen** (tooltips / a "how this is scored" panel):
+    surface the exact rules behind every score (see the current criteria below),
+    not just the number.
+  - Consider adding breadth extras (advance/decline, % above 200-day) and a
+    market-vs-market relative-strength view.
