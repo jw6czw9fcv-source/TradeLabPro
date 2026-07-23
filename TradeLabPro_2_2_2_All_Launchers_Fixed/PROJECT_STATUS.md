@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.26.0
-Current phase: Market favorability — global indices + US/Canada sector ranking (done)
+Current version: 2.27.0
+Current phase: Chart date axis + Scanner sector baskets (done)
+
+## Completed in 2.27.0 (Chart date axis + Scanner sector baskets)
+- `pg_chart_widget.BarDateAxis`: bottom axis maps bar index -> the bar's real timestamp (candles plot at index so weekends/holidays leave no gap, which had left the axis labelling `0, 50, 100`). Format adapts to span (intraday `%H:%M` / `%d %b %H:%M`, daily `%d %b`, multi-year `%b %Y`); out-of-range ticks blank. `_date_axes`/`_set_date_index()`/`_sync_date_axes()` feed all four panes and show values only on the lowest showing pane (driven by `_sub_panel_flags`, not `isVisible()`).
+- `core/sectors.py` (Qt-free): `SECTORS` (11 GICS), `INDUSTRIES` (sub-sectors incl. Gold & Precious Metals, Banks, Uranium, Oil & Gas, REITs... + `heatmap.THEMES` merged in, shared not duplicated), `ETF_BASKETS`; `all_baskets()`/`basket_choices()`/`basket_symbols()`/`scanner_universes()` with `BASKET_PREFIX = "Sector - "`. 43 baskets.
+- Scanner: baskets registered via `available_universes()`, grouped as "Sectors" (checked before the ETF rule), new "Sectors / Industries" exchange preset + "Sectors" shortcut button. `list_symbols()` resolves basket country **per symbol** (`.TO/.V/.CN/.NE` -> Canada) so a mixed basket survives a country filter.
+- pytest regression suite now 588 tests, all passing.
 
 ## Completed in 2.26.0 (Market favorability: global indices + US/Canada sectors)
 - `core/market.py`: `GLOBAL_INDICES` (8 majors in **session-open order**, each carrying UTC open minutes + local open label), `CANADA_SECTOR_ETFS` (7 liquid iShares TSX capped sectors) + `SECTOR_REGIONS`/`sector_region()` (US→SPDRs vs SPY, Canada→TSX sectors vs XIC.TO), `market_read()` (per-index Favorable/Neutral/Caution vs 50/200-day), `sector_favorability()`/`rank_sectors()` (transparent 0–100 score: trend, RS vs benchmark, momentum, day move) + `sector_score_criteria()`, `realized_vol()` (VIX substitute outside the US), `analyze_trend` gained `mom_pct`, `sector_breadth` gained 200-day counts, `market_condition` gained momentum, 200-day breadth, a realised-vol fallback and a plain-English `summary`.

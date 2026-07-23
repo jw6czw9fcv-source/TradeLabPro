@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.27.0 - Chart date axis + Scanner sector baskets
+
+### Fixed
+- **The chart X axis shows dates and times again.** Candles are plotted at bar *index* so weekends and holidays leave no dead space, but nothing mapped those positions back to timestamps — so the bottom axis was labelling bars `0, 50, 100…`. A new `BarDateAxis` translates each tick to its bar's own date, picking a format that suits the span on screen: `09:30` zoomed into intraday, `22 Jul 09:30` over a wider intraday window, `02 Jan` for up to a year of daily bars, `Jan 2018` for multi-year. Dates appear **once, on the lowest visible pane** and move up as you switch Volume/MACD/RSI off; ticks past the end of the data stay blank.
+
+### Added
+- **Sector, sub-sector and ETF baskets in the Scanner.** New `tradelab/core/sectors.py` ships **43 curated baskets** on three levels: the **11 GICS sectors** (Technology, Financials, Energy…), **sub-sectors** (Gold & Precious Metals, Banks, Uranium & Nuclear, Oil & Gas, REITs, Airlines, Insurance, Cannabis, Shipping…) and **ETF groups** (US sector SPDRs, index & assets, commodities & metals, Canada). Reach them from the new **Sectors / Industries** exchange preset or the **Sectors** shortcut button; each basket is its own checkbox, so you can scan just gold. Yahoo only reports a symbol's sector through a per-symbol call, so curated baskets scan instantly where a live sector lookup would mean thousands of round-trips before a scan could start.
+- The Heatmap's theme baskets (Semiconductors, Biotech, Cybersecurity, Fintech…) are **shared** by the Scanner rather than duplicated, so the two features can't drift apart.
+- **Per-symbol country filtering for baskets.** Sector baskets deliberately mix US and Canadian listings (gold miners trade on both), so "All USA" now narrows a basket to its US names instead of dropping the whole basket.
+
+### Verified
+- 588/588 pytest tests pass (new `tests/test_sectors.py` — basket contents, shared themes, name resolution, universe registration and per-symbol country filtering, plus Scanner UI exposure and grouping; new chart-axis tests in `tests/test_chart_engine_ui.py` — date/intraday/multi-year formats, blank out-of-range ticks, per-pane feed and lowest-visible-pane labelling).
+
 ## 2.26.0 - Market favorability: global indices + sector ranking
 
 ### Added

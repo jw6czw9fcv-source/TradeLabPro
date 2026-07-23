@@ -87,6 +87,73 @@ _OVERLAY_COLORS = ["#fbc531", "#e84118", "#4cd137", "#00a8ff", "#9c88ff",
                    "#e056fd", "#badc58", "#ff9f43", "#00cec9", "#74b9ff"]
 
 
+class BarDateAxis(pg.AxisItem):
+    """Bottom axis that labels bar positions with their real dates/times.
+
+    Candles are plotted at x = bar index (0, 1, 2 ...) rather than at a
+    timestamp, so that weekends, holidays and overnight gaps don't leave dead
+    space in the chart. The side effect is that pyqtgraph's default axis
+    labels those positions as bare integers. This maps each tick back to the
+    bar's own timestamp, and picks a format that suits the span on screen:
+    intraday bars get a time, a multi-year daily chart gets month + year.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._stamps = []
+        self._intraday = False
+
+    def set_index(self, index):
+        """Point the axis at the bar timestamps of the series being drawn."""
+        try:
+            stamps = pd.to_datetime(pd.Index(index))
+        except Exception:
+            stamps = pd.Index([])
+        self._stamps = list(stamps)
+        # Intraday if consecutive bars are less than a day apart; use the
+        # median gap so a single weekend jump doesn't fool the check.
+        self._intraday = False
+        if len(self._stamps) >= 3:
+            try:
+                gaps = pd.Series(self._stamps).diff().dropna()
+                self._intraday = bool(gaps.median() < pd.Timedelta(days=1))
+            except Exception:
+                self._intraday = False
+        self.picture = None
+        self.update()
+
+    def _format(self, span_bars):
+        if self._intraday:
+            # Over a long intraday window the day matters as much as the time.
+            return "%H:%M" if span_bars <= 60 else "%d %b %H:%M"
+        if not self._stamps:
+            return "%d %b %y"
+        total_days = 0
+        try:
+            total_days = (self._stamps[-1] - self._stamps[0]).days
+        except Exception:
+            pass
+        if total_days > 900:
+            return "%b %Y"
+        return "%d %b" if total_days <= 400 else "%b %Y"
+
+    def tickStrings(self, values, scale, spacing):
+        if not self._stamps:
+            return super().tickStrings(values, scale, spacing)
+        fmt = self._format(max(values) - min(values) if len(values) > 1 else 0)
+        labels = []
+        for value in values:
+            i = int(round(value))
+            if 0 <= i < len(self._stamps):
+                try:
+                    labels.append(self._stamps[i].strftime(fmt))
+                    continue
+                except Exception:
+                    pass
+            labels.append("")      # ticks past the data get no label
+        return labels
+
+
 class CandlestickItem(pg.GraphicsObject):
     """Efficient OHLC candle renderer using a cached QPicture (the standard
     pyqtgraph pattern for custom high-volume plot items)."""
@@ -365,8 +432,11 @@ class PGChartWidget(QWidget):
         toolbar.addWidget(self.status_label)
         layout.addLayout(toolbar)
 
-        # Price pane + optional sub panes, all sharing the x axis.
-        self.price_plot = pg.PlotWidget()
+        # Price pane + optional sub panes, all sharing the x axis. Each gets a
+        # date axis; only the lowest visible pane actually shows the labels
+        # (see _sync_date_axes), the way every trading platform does it.
+        self._date_axes = {}
+        self.price_plot = pg.PlotWidget(axisItems={"bottom": self._new_date_axis("price")})
         self.price_plot.showGrid(x=True, y=True, alpha=GRID_ALPHA)
         self.price_plot.setMouseEnabled(x=True, y=True)
         self.candle_item = CandlestickItem(pd.DataFrame())
@@ -377,19 +447,19 @@ class PGChartWidget(QWidget):
         self.price_plot.addItem(self.signal_scatter)
         layout.addWidget(self.price_plot, stretch=3)
 
-        self.volume_plot = pg.PlotWidget()
+        self.volume_plot = pg.PlotWidget(axisItems={"bottom": self._new_date_axis("volume")})
         self.volume_plot.showGrid(x=True, y=True, alpha=GRID_ALPHA)
         self.volume_plot.setXLink(self.price_plot)
         self.volume_bars = pg.BarGraphItem(x=[], height=[], width=0.6, brush="#4a6a8a")
         self.volume_plot.addItem(self.volume_bars)
         layout.addWidget(self.volume_plot, stretch=1)
 
-        self.macd_plot = pg.PlotWidget()
+        self.macd_plot = pg.PlotWidget(axisItems={"bottom": self._new_date_axis("macd")})
         self.macd_plot.showGrid(x=True, y=True, alpha=GRID_ALPHA)
         self.macd_plot.setXLink(self.price_plot)
         layout.addWidget(self.macd_plot, stretch=1)
 
-        self.rsi_plot = pg.PlotWidget()
+        self.rsi_plot = pg.PlotWidget(axisItems={"bottom": self._new_date_axis("rsi")})
         self.rsi_plot.showGrid(x=True, y=True, alpha=GRID_ALPHA)
         self.rsi_plot.setXLink(self.price_plot)
         layout.addWidget(self.rsi_plot, stretch=1)
@@ -436,6 +506,7 @@ class PGChartWidget(QWidget):
             self._macd_fast, self._macd_slow, self._macd_signal = dlg.macd_params()
             for key, plot in (("MACD", self.macd_plot), ("RSI", self.rsi_plot), ("Volume", self.volume_plot)):
                 plot.setVisible(self._sub_panel_flags.get(key, True))
+            self._sync_date_axes()   # dates follow the new lowest pane
             if self.symbol:
                 self.replot()
 
@@ -480,10 +551,42 @@ class PGChartWidget(QWidget):
         self.active_tool = tool
         self._pending_point = None
 
+    def _new_date_axis(self, key: str) -> "BarDateAxis":
+        axis = BarDateAxis(orientation="bottom")
+        self._date_axes[key] = axis
+        return axis
+
+    def _set_date_index(self, index):
+        """Feed the bar timestamps to every pane's date axis."""
+        for axis in self._date_axes.values():
+            axis.set_index(index)
+        self._sync_date_axes()
+
+    def _sync_date_axes(self):
+        """Show tick labels only on the lowest showing pane, so the dates sit
+        once at the bottom of the stack rather than between every pane.
+
+        Driven by the sub-panel flags rather than isVisible(): a pane reports
+        itself invisible until the whole window has been shown, which would
+        otherwise leave the labels stranded on the price pane.
+        """
+        # Top to bottom; the price pane is always present.
+        panes = [("price", True),
+                 ("volume", self._sub_panel_flags.get("Volume", True)),
+                 ("macd", self._sub_panel_flags.get("MACD", True)),
+                 ("rsi", self._sub_panel_flags.get("RSI", True))]
+        showing = [key for key, on in panes if on]
+        lowest = showing[-1] if showing else "price"
+        for key, _on in panes:
+            axis = self._date_axes.get(key)
+            if axis is not None:
+                axis.setStyle(showValues=(key == lowest))
+
     def _toggle_subpanel(self, key: str, checked: bool):
         self._sub_panel_flags[key] = checked
         plot_map = {"Volume": self.volume_plot, "MACD": self.macd_plot, "RSI": self.rsi_plot}
         plot_map[key].setVisible(checked)
+        self._sync_date_axes()
         if self.symbol:
             self.replot()
 
@@ -537,6 +640,9 @@ class PGChartWidget(QWidget):
             display = self.df_raw
 
         x = np.arange(len(display))
+        # Candles sit at bar indices; hand the axis the matching timestamps so
+        # the bottom of the chart reads as dates rather than 0, 50, 100 ...
+        self._set_date_index(display.index)
 
         if self.chart_type in ("Candlestick", "Heikin-Ashi"):
             self.candle_item.set_data(display.reset_index(drop=True))

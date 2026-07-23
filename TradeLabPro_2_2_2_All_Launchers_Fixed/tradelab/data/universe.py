@@ -611,6 +611,16 @@ def available_universes(refresh: bool = False) -> Dict[str, List[str]]:
         if k.startswith('Canada') and has_can:
             continue
         out.setdefault(k, list(v))
+    # Sector / industry / ETF baskets, so the Scanner can target "Gold" or
+    # "Technology" directly instead of looking up a sector per symbol.
+    try:
+        from tradelab.core.sectors import scanner_universes
+        for name, symbols in scanner_universes().items():
+            clean = [s for s in symbols if is_tradeable_symbol(s)]
+            if clean:
+                out.setdefault(name, sorted(set(clean)))
+    except Exception:
+        pass
     # User-created universes. This lets the user keep local custom lists even
     # when an exchange website blocks automatic refresh.
     try:
@@ -638,6 +648,17 @@ def list_symbols(exchanges: List[str] | None = None, countries: List[str] | None
     for name in selected:
         syms=sources.get(name, [])
         ex,country=_exchange_country(name)
+        if name.startswith('Sector - '):
+            # Sector/industry baskets deliberately mix US and Canadian
+            # listings (gold miners trade on both), so country - and the
+            # country filter - has to be decided per symbol, not per list.
+            for s in syms:
+                is_can = str(s).upper().endswith(('.TO', '.V', '.CN', '.NE'))
+                c = 'Canada' if is_can else 'US'
+                if countries and c not in countries:
+                    continue
+                out.append(UniverseSymbol(s, s, 'TSX' if is_can else '', c))
+            continue
         if name.startswith('US Exchange'):
             country='US'
         if name.startswith('Canada Exchange'):

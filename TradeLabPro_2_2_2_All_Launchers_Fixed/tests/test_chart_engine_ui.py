@@ -237,3 +237,83 @@ def test_chart_workspace_plot_delegates_to_current_chart(qapp, ohlcv_df):
     workspace = ChartWorkspace()
     workspace.plot("AAPL", ohlcv_df, ScannerConfig())
     assert workspace.current_chart().symbol == "AAPL"
+
+
+# --- X axis dates (regression: the axis labelled bar indices, not dates) ---
+
+def test_bar_date_axis_labels_indices_with_real_dates(qapp, ohlcv_df):
+    """Candles are drawn at x = bar index so weekends leave no gap; the axis
+    must translate those indices back into the bars' own timestamps."""
+    from tradelab.ui.widgets.pg_chart_widget import BarDateAxis
+    axis = BarDateAxis(orientation="bottom")
+    axis.set_index(ohlcv_df.index)
+
+    labels = axis.tickStrings([0, 100, len(ohlcv_df) - 1], 1, 1)
+    assert all(labels), "every in-range tick should carry a date"
+    assert not any(l.isdigit() for l in labels), "must not fall back to bar numbers"
+    assert labels[0] == ohlcv_df.index[0].strftime("%d %b")
+
+
+def test_bar_date_axis_blanks_ticks_past_the_data(qapp, ohlcv_df):
+    from tradelab.ui.widgets.pg_chart_widget import BarDateAxis
+    axis = BarDateAxis(orientation="bottom")
+    axis.set_index(ohlcv_df.index)
+    assert axis.tickStrings([len(ohlcv_df) + 50], 1, 1) == [""]
+    assert axis.tickStrings([-10], 1, 1) == [""]
+
+
+def test_bar_date_axis_shows_times_for_intraday_bars(qapp):
+    from tradelab.ui.widgets.pg_chart_widget import BarDateAxis
+    axis = BarDateAxis(orientation="bottom")
+    axis.set_index(pd.date_range("2026-07-22 09:30", periods=40, freq="5min"))
+    assert ":" in axis.tickStrings([0], 1, 1)[0], "intraday ticks need a clock time"
+
+
+def test_bar_date_axis_uses_month_year_for_multi_year_spans(qapp):
+    from tradelab.ui.widgets.pg_chart_widget import BarDateAxis
+    axis = BarDateAxis(orientation="bottom")
+    axis.set_index(pd.date_range("2018-01-02", periods=1500, freq="B"))
+    assert axis.tickStrings([0], 1, 1)[0] == "Jan 2018"
+
+
+def test_bar_date_axis_without_data_is_safe(qapp):
+    from tradelab.ui.widgets.pg_chart_widget import BarDateAxis
+    axis = BarDateAxis(orientation="bottom")
+    assert axis.tickStrings([0, 1], 1, 1) == ["0", "1"]   # default numbering
+    axis.set_index(pd.Index([]))
+    assert axis.tickStrings([0], 1, 1) == ["0"]
+
+
+def test_plotting_feeds_dates_to_every_pane_axis(qapp, ohlcv_df):
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    widget = PGChartWidget()
+    widget.plot("AAPL", ohlcv_df, ScannerConfig())
+
+    assert set(widget._date_axes) == {"price", "volume", "macd", "rsi"}
+    for axis in widget._date_axes.values():
+        assert axis.tickStrings([0], 1, 1)[0] == ohlcv_df.index[0].strftime("%d %b")
+
+
+def test_only_the_lowest_visible_pane_shows_the_dates(qapp, ohlcv_df):
+    """Dates belong once, at the bottom of the pane stack - not repeated
+    between every sub-panel."""
+    from tradelab.ui.widgets.pg_chart_widget import PGChartWidget
+    widget = PGChartWidget()
+    widget.plot("AAPL", ohlcv_df, ScannerConfig())
+
+    def showing():
+        return {k for k, a in widget._date_axes.items() if a.style["showValues"]}
+
+    # RSI is the lowest pane when every sub-panel is on.
+    widget._toggle_subpanel("Volume", True)
+    widget._toggle_subpanel("MACD", True)
+    widget._toggle_subpanel("RSI", True)
+    assert showing() == {"rsi"}
+
+    # Turn the lower panes off and the labels move up to what's left.
+    widget._toggle_subpanel("RSI", False)
+    assert showing() == {"macd"}
+    widget._toggle_subpanel("MACD", False)
+    assert showing() == {"volume"}
+    widget._toggle_subpanel("Volume", False)
+    assert showing() == {"price"}

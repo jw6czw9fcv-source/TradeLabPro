@@ -167,7 +167,9 @@ class ScannerPanel(QWidget):
         self.parameter_scroll.setWidget(self.parameter_inner)
         controls_layout.addWidget(self.parameter_scroll)
         self.scan_name = QLineEdit("My Scan")
-        self.country = QComboBox(); self.country.addItems(["All Exchanges", "All USA", "All Canada", "My Lists"])
+        self.country = QComboBox(); self.country.addItems(["All Exchanges", "All USA", "All Canada", "My Lists", "Sectors / Industries"])
+        self.country.setToolTip("Which universe to scan. 'Sectors / Industries' lists curated "
+                                "sector, sub-sector (gold, banks, uranium…) and ETF baskets.")
         self.strategy = QComboBox()
         for key, name in strategy_choices():
             self.strategy.addItem(name, key)
@@ -349,6 +351,9 @@ class ScannerPanel(QWidget):
         canada_btn = QPushButton("Canada")
         canada_btn.setToolTip("Select TSX + TSXV + CSE")
         canada_btn.clicked.connect(lambda: self.select_exchange_shortcut("Canada"))
+        sectors_btn = QPushButton("Sectors")
+        sectors_btn.setToolTip("Select every sector / industry / ETF basket shown")
+        sectors_btn.clicked.connect(lambda: self.select_exchange_shortcut("Sectors"))
         select_all = QPushButton("All")
         select_all.setToolTip("Select all exchanges and lists shown")
         select_all.clicked.connect(lambda: self.select_exchange_shortcut("All"))
@@ -357,6 +362,7 @@ class ScannerPanel(QWidget):
         select_none.clicked.connect(lambda: self.select_exchange_shortcut("None"))
         rowu.addWidget(self.refresh_univ_btn)
         rowu.addWidget(paste_univ)
+        rowu.addWidget(sectors_btn)
         rowu.addWidget(usa_btn)
         rowu.addWidget(canada_btn)
         rowu.addWidget(select_all)
@@ -732,6 +738,10 @@ class ScannerPanel(QWidget):
         """
         n = str(name or "")
         u = n.upper()
+        # Checked before the ETF rule below: an ETF basket like
+        # "Sector - ETFs - Commodities & metals" belongs under Sectors.
+        if u.startswith("SECTOR - "):
+            return "Sectors"
         if u.startswith("MY LIST") or u.startswith("CUSTOM"):
             return "My Lists"
         if "ALL US LISTED" in u:
@@ -791,6 +801,12 @@ class ScannerPanel(QWidget):
         usa_groups = ["NASDAQ", "NYSE", "AMEX", "NYSE / AMEX"]
         canada_groups = ["TSX", "TSXV", "CSE"]
 
+        def add_sector_items(checked=False):
+            # Each basket is its own checkbox so you can scan just "Gold &
+            # Precious Metals" rather than a whole exchange.
+            for name in sorted(grouped.get("Sectors", [])):
+                add(name, [name], checked)
+
         def add_list_items(checked=False):
             # SCN-035: ETFs are a list/category, not an exchange. They are
             # shown under My Lists along with user-created lists.
@@ -803,16 +819,21 @@ class ScannerPanel(QWidget):
             for g in usa_groups:
                 add_group(g, True)
             add_list_items(False)
+            add_sector_items(False)
         elif preset == 'All Canada':
             for g in canada_groups:
                 add_group(g, True)
             add_list_items(False)
+            add_sector_items(False)
         elif preset == 'My Lists':
             add_list_items(True)
+        elif preset == 'Sectors / Industries':
+            add_sector_items(False)
         else:  # All Exchanges
             for g in usa_groups + canada_groups:
                 add_group(g, True)
             add_list_items(False)
+            add_sector_items(False)
         return choices
 
     def on_market_changed(self, _text=None):
@@ -897,6 +918,8 @@ class ScannerPanel(QWidget):
                 cb.setChecked(group in {"NYSE", "NASDAQ", "AMEX", "NYSE / AMEX"})
             elif mode == "canada":
                 cb.setChecked(group in {"TSX", "TSXV", "CSE"})
+            elif mode == "sectors":
+                cb.setChecked(group == "Sectors")
             elif mode == "all":
                 cb.setChecked(True)
             elif mode == "none":
