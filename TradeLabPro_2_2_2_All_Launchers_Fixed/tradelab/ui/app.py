@@ -5527,6 +5527,204 @@ class SettingsPanel(QWidget):
             f"Scan result rows: {self.db.scan_result_count()}")
 
 
+class _SeasonalityWorker(QThread):
+    """Fetches a symbol's long history off the UI thread for seasonality."""
+    done = Signal(str, object, str)      # symbol, DataFrame|None, error
+
+    def __init__(self, symbol, period):
+        super().__init__()
+        self.symbol = symbol
+        self.period = period
+
+    def run(self):
+        df, err = None, ""
+        try:
+            df = get_history(self.symbol, self.period, "1d")
+        except BaseException as exc:
+            err = str(exc)
+        try:
+            self.done.emit(self.symbol, df, err)
+        except RuntimeError:
+            pass
+
+
+class SeasonalityPanel(QWidget):
+    """Seasonality analysis for one symbol: how each calendar month and weekday
+    has historically treated the stock, plus a year-by-year performance table.
+    Purely descriptive of the past — it summarizes what price did in prior
+    calendars, it does not predict the next one. All numbers come from
+    tradelab.core.seasonality (offline-testable)."""
+
+    def __init__(self):
+        super().__init__()
+        self._worker = None
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(_hint(
+            "Seasonality: how a stock has behaved by calendar. Enter a symbol and the app "
+            "measures the average return and win rate for each month and weekday over its "
+            "history, and its year-by-year performance — so you can see whether the current "
+            "month has tended to be kind or cruel to that name. Descriptive of the past, not "
+            "a prediction of the future."))
+
+        row = QHBoxLayout()
+        self.symbol = QLineEdit("SPY"); self.symbol.setMaximumWidth(120)
+        self.symbol.returnPressed.connect(self.analyze)
+        self.period = QComboBox(); self.period.addItems(["2y", "5y", "10y", "max"])
+        self.period.setCurrentText("10y")
+        go = QPushButton("Analyze"); go.clicked.connect(self.analyze)
+        row.addWidget(QLabel("Symbol")); row.addWidget(self.symbol)
+        row.addWidget(QLabel("History")); row.addWidget(self.period)
+        row.addWidget(go); row.addStretch()
+        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        row.addWidget(self.status)
+        layout.addLayout(row)
+
+        self.headline = QLabel("Enter a symbol and click Analyze.")
+        self.headline.setWordWrap(True)
+        self.headline.setStyleSheet("font-size:14px;")
+        layout.addWidget(self.headline)
+
+        # Monthly seasonality — the centrepiece.
+        layout.addWidget(QLabel("By month"))
+        self.month_table = QTableWidget(0, 6)
+        self.month_table.setHorizontalHeaderLabels(
+            ["Month", "Avg %", "Win %", "Best %", "Worst %", "Years"])
+        self.month_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.month_table.verticalHeader().setVisible(False)
+        self._tooltip_headers(self.month_table, {
+            1: "Average month-over-month return for this calendar month across all years.",
+            2: "Share of those years this month closed higher.",
+            5: "How many years of this month are in the sample.",
+        })
+        layout.addWidget(self.month_table)
+
+        # Weekday + annual, side by side.
+        split = QHBoxLayout()
+        dow_box = QVBoxLayout()
+        dow_box.addWidget(QLabel("By weekday"))
+        self.dow_table = QTableWidget(0, 3)
+        self.dow_table.setHorizontalHeaderLabels(["Day", "Avg %", "Win %"])
+        self.dow_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.dow_table.verticalHeader().setVisible(False)
+        dow_box.addWidget(self.dow_table)
+        split.addLayout(dow_box, 1)
+
+        yr_box = QVBoxLayout()
+        yr_box.addWidget(QLabel("By year"))
+        self.year_table = QTableWidget(0, 2)
+        self.year_table.setHorizontalHeaderLabels(["Year", "Return %"])
+        self.year_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.year_table.verticalHeader().setVisible(False)
+        yr_box.addWidget(self.year_table)
+        split.addLayout(yr_box, 1)
+        layout.addLayout(split)
+
+        disclaimer = QLabel("Descriptive of past calendars only — not a forecast and not "
+                            "financial advice.")
+        disclaimer.setStyleSheet("color:#8a9099; font-size:11px;")
+        layout.addWidget(disclaimer)
+
+    def _tooltip_headers(self, table, tips):
+        for col, text in tips.items():
+            item = table.horizontalHeaderItem(col)
+            if item is not None:
+                item.setToolTip(text)
+
+    def analyze(self):
+        if self._worker is not None and self._worker.isRunning():
+            return
+        sym = self.symbol.text().strip().upper()
+        if not sym:
+            return
+        self.status.setText(f"Loading {sym}…")
+        self._worker = _SeasonalityWorker(sym, self.period.currentText())
+        self._worker.done.connect(self._on_loaded)
+        self._worker.start()
+
+    def _on_loaded(self, symbol, df, err):
+        from tradelab.core import seasonality as sz
+        if err or df is None or getattr(df, "empty", True):
+            self.status.setText(f"Could not load {symbol}: {err or 'no data'}")
+            return
+        self.status.setText("")
+        data = sz.summarize(df)
+        self._render(symbol, data)
+
+    def _pct_item(self, value, colorize=True, bold=False):
+        item = QTableWidgetItem(f"{value:+.1f}%" if value is not None else "—")
+        item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        if colorize and value is not None:
+            item.setForeground(QColor("#3fb950" if value >= 0 else "#f85149"))
+        if bold:
+            f = item.font(); f.setBold(True); item.setFont(f)
+        return item
+
+    def _render(self, symbol, data):
+        read_col = {"historically strong": "#3fb950", "historically weak": "#f85149"}
+        cur = data.get("current") or {}
+        colour = read_col.get(cur.get("read"), "#c7d0d8")
+        self.headline.setText(f"<b>{symbol}</b> — {data['text']}")
+        self.headline.setStyleSheet(f"font-size:14px; color:{colour};")
+
+        months = data["months"]
+        best = data.get("best_month") or {}
+        worst = data.get("worst_month") or {}
+        self.month_table.setRowCount(len(months))
+        for r, m in enumerate(months):
+            is_extreme = m["label"] in (best.get("label"), worst.get("label")) and m["count"]
+            name = QTableWidgetItem(m["label"])
+            if is_extreme:
+                f = name.font(); f.setBold(True); name.setFont(f)
+            self.month_table.setItem(r, 0, name)
+            # Avg cell is a heatmap cell: green→red by the average return.
+            avg = m["avg"]
+            avg_item = QTableWidgetItem(f"{avg:+.1f}%" if avg is not None else "—")
+            avg_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            if avg is not None:
+                avg_item.setBackground(QColor(hm.color_for_change(avg)))
+                avg_item.setForeground(QColor("#0b0e14"))
+            self.month_table.setItem(r, 1, avg_item)
+            wr = m["win_rate"]
+            wr_item = QTableWidgetItem(f"{wr:.0f}%" if wr is not None else "—")
+            wr_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.month_table.setItem(r, 2, wr_item)
+            self.month_table.setItem(r, 3, self._pct_item(m["best"]))
+            self.month_table.setItem(r, 4, self._pct_item(m["worst"]))
+            cnt = QTableWidgetItem(str(m["count"]))
+            cnt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.month_table.setItem(r, 5, cnt)
+        self.month_table.resizeColumnsToContents()
+
+        dows = data["weekdays"]
+        self.dow_table.setRowCount(len(dows))
+        for r, d in enumerate(dows):
+            self.dow_table.setItem(r, 0, QTableWidgetItem(d["label"]))
+            self.dow_table.setItem(r, 1, self._pct_item(d["avg"]))
+            wr = d["win_rate"]
+            wr_item = QTableWidgetItem(f"{wr:.0f}%" if wr is not None else "—")
+            wr_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.dow_table.setItem(r, 2, wr_item)
+        self.dow_table.resizeColumnsToContents()
+
+        annual = list(reversed(data["annual"]))     # most recent year first
+        self.year_table.setRowCount(len(annual))
+        for r, a in enumerate(annual):
+            self.year_table.setItem(r, 0, QTableWidgetItem(str(a["year"])))
+            self.year_table.setItem(r, 1, self._pct_item(a["return_pct"]))
+        self.year_table.resizeColumnsToContents()
+
+    def shutdown(self):
+        worker = self._worker
+        if worker is not None:
+            try:
+                worker.done.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            worker.wait(3000)
+            self._worker = None
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -5575,6 +5773,7 @@ class MainWindow(QMainWindow):
         # Scanner and Backtest strategy dropdowns so it appears immediately.
         self.strategy_panel = StrategyBuilderPanel(on_strategies_changed=self._on_strategies_changed)
         self.replay_panel = ReplayPanel(self.chart, self.cfg)
+        self.seasonality_panel = SeasonalityPanel()
         self.plugin_panel = PluginPanel(on_plugins_changed=self._on_plugins_changed)
         self.notes_panel = NotesPanel()
         self.links_panel = LinksPanel()
@@ -5599,6 +5798,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")     # research: test ideas
         tabs.addTab(_scroll_tab(self.strategy_panel), "Strategies")   # research: build
         tabs.addTab(_scroll_tab(self.replay_panel), "Replay")         # research: practice
+        tabs.addTab(_scroll_tab(self.seasonality_panel), "Seasonality")  # research: patterns
         tabs.addTab(_scroll_tab(self.plugin_panel), "Plugins")        # research: custom indicators
         tabs.addTab(_scroll_tab(self.notes_panel), "Notes")           # utilities
         tabs.addTab(_scroll_tab(self.links_panel), "Links")
@@ -5821,6 +6021,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.replay_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.seasonality_panel.shutdown()
         except Exception:
             pass
         try:

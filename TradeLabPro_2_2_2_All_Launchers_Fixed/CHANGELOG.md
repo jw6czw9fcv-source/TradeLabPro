@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.33.0 - Seasonality analysis
+
+### Added
+- **New "Seasonality" tab — how a stock has behaved by the calendar.** Enter a symbol and pick how much history to use; the app measures its recurring calendar patterns so you can see whether the current month has tended to be kind or cruel to that name.
+  - **By month** — the centrepiece: for each of the 12 calendar months, the average month-over-month return, the win rate (how often that month closed higher), the best and worst occurrences, and how many years are in the sample. The average-return column is a green→red heatmap, and the historically strongest and weakest months are highlighted.
+  - **By weekday** — the same average-return and win-rate read for Monday through Friday (day-of-week seasonality).
+  - **By year** — a year-by-year performance table (each year's return from its first to its last close).
+  - **Plain-English headline** — e.g. "Over 10 years of history, July has been historically strong: it averaged +1.8% with a 70% win rate…", plus the strongest and weakest months overall.
+- Everything is computed **offline** from the price history with plain math (no API key, no extra services), on a background thread so the window stays responsive.
+- Purely **descriptive and backward-looking**: seasonality summarizes what price did in past calendars — it is clearly labelled as not a forecast and not financial advice.
+
+### Verified
+- Full pytest suite passes, including new coverage of the month-over-month return series, per-month averaging/win-rate/extremes across years, weekday and intra-year annual returns, year coverage counting, the strong/weak month reads and summary, and the Seasonality tab UI (all three tables populate; a bad symbol is handled gracefully).
+
 ## 2.32.0 - AI Trading Coach
 
 ### Added

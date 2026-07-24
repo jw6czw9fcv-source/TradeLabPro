@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.32.0
-Current phase: AI Trading Coach — process grading + journal review (done)
+Current version: 2.33.0
+Current phase: Seasonality analysis — monthly / weekday / annual patterns (done)
+
+## Completed in 2.33.0 (Seasonality analysis)
+- New `core/seasonality.py` (Qt-free, offline-testable): `monthly_return_series` (month-end resample → month-over-month %), `monthly_stats` (12 rows: avg/median/win-rate/best/worst/count across years), `weekday_stats` (Mon–Fri daily-return seasonality), `annual_returns` (intra-year first→last-close % per year), `years_covered`, `month_context` (per-month strong/weak/mixed read), and `summarize` (headline text + best/worst month + current-month context). Shares the `_close` guard pattern (collapse duplicated 2-D Close, coerce a DatetimeIndex).
+- New **Seasonality** tab (`SeasonalityPanel` in `ui/app.py`, after Replay): symbol + history selector, `_SeasonalityWorker` fetches off-thread; renders a By-month table with a green→red heatmap avg column (reuses `heatmap.color_for_change`) and bolded strongest/weakest months, plus By-weekday and By-year tables and a plain-English headline. `shutdown()` wired into `MainWindow.closeEvent`.
+- Descriptive/backward-looking only — labelled not a forecast, not advice.
+- Tests: `tests/test_seasonality.py` (10) + `tests/test_seasonality_panel.py` (2). Full suite 662 passing.
 
 ## Completed in 2.32.0 (AI Trading Coach)
 - New `core/coach.py` (Qt-free, offline-testable): `grade_trade(entry)` — additive, transparent PROCESS rubric (base 50; stop present +20 / absent −28; stop honored +5 / broken −15; reward-to-risk tiers by R; documented +8 / −6; clamped 0–100 → A/B/C/D/F). Grades execution, not outcome: a lucky no-stop win grades F, a disciplined −1R loss grades B. `coach_report(entries)` — process metrics (no-stop %, stop-honored %, documented %, avg win/loss ratio, holding winners vs losers, grade distribution, best/worst strategy by expectancy) + ranked `suggestions` (warn/good/info, each citing its number). `build_coach_context()` / `offline_coach_report()` / `COACH_SYSTEM_PROMPT` / `coach_answer()` for the LLM path (reuses `ai_assistant.ask`, transport-injectable).
