@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.32.0 - AI Trading Coach
+
+### Added
+- **New "Coach" tab — a retrospective, process-focused review of your own journal trades.** It grades how well each trade was *executed*, not just whether it made money, so a lucky trade taken with no stop still grades poorly and a small, disciplined loss taken with a stop and a plan grades well.
+  - **Per-trade grade (A–F)** on a transparent, additive rubric: risk defined with a protective stop (the cornerstone), whether the stop was honored, the realized reward-to-risk (R-multiple), and whether the trade had a documented plan. Click any trade to see the full point-by-point breakdown.
+  - **Whole-journal process report** with the numbers that actually predict results — % of trades with no stop, % of stopped losers that stayed within the planned risk, average win vs average loss, whether you hold losers longer than winners, and how documented your trades are — followed by concrete, plain-English improvement suggestions, each citing the number behind it.
+  - **Optional AI chat over your history.** Ask "what's my biggest weakness?" or "how's my stop discipline?" and the coach reasons over your compiled grades and stats. It uses your own Anthropic API key (shared with the AI Assist tab); with no key it falls back to the full offline review.
+- The whole tab is **offline-first**: every grade and report is computed locally with plain math and needs no API key or network. The AI only narrates those numbers — it never invents them.
+- Educational and retrospective by design: the Coach reviews the past and gives process feedback; it never recommends a trade or predicts a price, consistent with the app's simulated-only, no-advice safety model.
+
+### Verified
+- Full pytest suite passes, including new coverage of the grading rubric (textbook A, lucky-no-stop-win grades F, honored vs gapped stops, documented vs undocumented), the aggregate process report (no-stop %, stop-honored %, holding-discipline flag, empty/small-sample safety), the offline report and journal context builder, the transport-injected AI-chat path, and CoachPanel UI (grades render, empty journal is safe, chat falls back to the offline review without a key).
+
 ## 2.31.0 - Faster Market refresh: batched downloads, both markets cached
 
 ### Fixed

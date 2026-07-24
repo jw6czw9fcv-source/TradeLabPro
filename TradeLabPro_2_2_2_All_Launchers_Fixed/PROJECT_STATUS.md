@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.31.0
-Current phase: Faster Market refresh — batched downloads, both markets cached (done)
+Current version: 2.32.0
+Current phase: AI Trading Coach — process grading + journal review (done)
+
+## Completed in 2.32.0 (AI Trading Coach)
+- New `core/coach.py` (Qt-free, offline-testable): `grade_trade(entry)` — additive, transparent PROCESS rubric (base 50; stop present +20 / absent −28; stop honored +5 / broken −15; reward-to-risk tiers by R; documented +8 / −6; clamped 0–100 → A/B/C/D/F). Grades execution, not outcome: a lucky no-stop win grades F, a disciplined −1R loss grades B. `coach_report(entries)` — process metrics (no-stop %, stop-honored %, documented %, avg win/loss ratio, holding winners vs losers, grade distribution, best/worst strategy by expectancy) + ranked `suggestions` (warn/good/info, each citing its number). `build_coach_context()` / `offline_coach_report()` / `COACH_SYSTEM_PROMPT` / `coach_answer()` for the LLM path (reuses `ai_assistant.ask`, transport-injectable).
+- New **Coach** tab (`CoachPanel` in `ui/app.py`, after Journal): graded-trades table (colour-coded grade, R, P&L; click a row for the point-by-point breakdown), live offline process report, and an AI chat over the journal (shares the AI-Assist API key via QSettings `AIAssistant/*`; offline fallback with no key). `_CoachWorker` runs the LLM call off the UI thread; auto-refreshes from the Journal on show; `shutdown()` wired into `MainWindow.closeEvent`.
+- Educational/retrospective only — reviews past trades, never recommends or predicts. Offline-first; the LLM only narrates the locally-computed numbers.
+- Tests: `tests/test_coach.py` (18) + `tests/test_coach_panel.py` (3). Full suite 650 passing.
 
 ## Completed in 2.31.0 (Faster Market refresh: batched downloads, both markets cached)
 - Fix: the US Market refresh no longer stalls. `_MarketRefreshWorker` used to fetch ~90 symbols serially (one `get_history` each), tripping Yahoo's rate limit. New `market_data.get_histories()` / `_yahoo_histories()` / `_yahoo_download_chunk()` batch up to 40 tickers per `yf.download(list, group_by="ticker")` call; the provider abstraction gained `DataProvider.get_histories()` (default serial loop, Yahoo overrides with the real batch). Failed/empty symbols fall back to synthetic per-symbol, same as before.

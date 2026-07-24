@@ -3177,6 +3177,267 @@ class AIAssistantPanel(QWidget):
         self._refresh_status()
 
 
+_COACH_GRADE_COLORS = {"A": "#3fb950", "B": "#5fd657", "C": "#d29922",
+                       "D": "#f0883e", "F": "#f85149"}
+
+
+class _CoachWorker(QThread):
+    """Runs the coach's LLM call off the UI thread. Uses coach.coach_answer so
+    the retrospective-coach system prompt and the journal summary context are
+    applied for us."""
+    done = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, messages, api_key, model, entries):
+        super().__init__()
+        self._messages = messages
+        self._api_key = api_key
+        self._model = model
+        self._entries = entries
+
+    def run(self):
+        from tradelab.core import coach
+        try:
+            self.done.emit(coach.coach_answer(self._messages, self._api_key,
+                                              self._model, self._entries))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+class CoachPanel(QWidget):
+    """AI Trading Coach: a retrospective, process-focused review of the user's
+    OWN journal trades. It grades each closed trade on execution discipline
+    (risk defined, stop honored, reward-to-risk, plan documented) rather than
+    just profit, summarises the habits behind the results, and offers an
+    optional LLM chat to talk them through. Educational only - it reviews the
+    past, never advises the next trade. Fully usable offline; the LLM only
+    narrates the offline numbers, it does not invent them."""
+
+    def __init__(self, journal=None):
+        super().__init__()
+        self.journal = journal or Journal()
+        self._settings = QSettings("TradeLabPro", "TradeLabPro")
+        self._history = []          # [{"role","content"}] chat turns
+        self._worker = None
+        self._trade_by_row = []
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(_hint(
+            "Your AI Trading Coach reviews your OWN past trades from the Journal and grades "
+            "how well each was executed — risk defined, stop honored, reward vs risk, plan "
+            "written down — not just whether it made money. Retrospective and educational: it "
+            "reviews the past, it never tells you what to trade next."))
+
+        disclaimer = QLabel(
+            "⚠ Process feedback, not financial advice. The Coach grades execution discipline "
+            "from your journal; it does not predict prices or recommend trades. The AI chat "
+            "uses your own Anthropic API key (per-use cost); with no key you still get the "
+            "full offline rules-based review.")
+        disclaimer.setWordWrap(True)
+        disclaimer.setStyleSheet("color:#c9a227; font-size:11px;")
+        layout.addWidget(disclaimer)
+
+        # --- API key + model (shared with AI Assist — enter it once) ---
+        from tradelab.core import ai_assistant
+        cfg_row = QHBoxLayout()
+        self.key_edit = QLineEdit(); self.key_edit.setEchoMode(QLineEdit.Password)
+        self.key_edit.setPlaceholderText("Anthropic API key (shared with AI Assist) — stored locally on this machine")
+        saved_key = self._settings.value("AIAssistant/api_key", "", type=str)
+        if saved_key:
+            self.key_edit.setText(saved_key)
+        self.model_combo = QComboBox(); self.model_combo.addItems(ai_assistant.MODELS)
+        self.model_combo.setCurrentText(self._settings.value("AIAssistant/model", ai_assistant.DEFAULT_MODEL, type=str))
+        save_btn = QPushButton("Save"); save_btn.clicked.connect(self._save_config)
+        cfg_row.addWidget(QLabel("API key")); cfg_row.addWidget(self.key_edit, 1)
+        cfg_row.addWidget(QLabel("Model")); cfg_row.addWidget(self.model_combo)
+        cfg_row.addWidget(save_btn)
+        layout.addLayout(cfg_row)
+
+        # --- actions + headline grade ---
+        act_row = QHBoxLayout()
+        refresh_btn = QPushButton("Refresh from journal"); refresh_btn.clicked.connect(self.refresh)
+        self.grade_label = QLabel("—")
+        self.grade_label.setStyleSheet("font-size:20px; font-weight:bold; color:#8a9099;")
+        act_row.addWidget(refresh_btn)
+        act_row.addWidget(QLabel("Overall process grade:"))
+        act_row.addWidget(self.grade_label)
+        act_row.addStretch()
+        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        act_row.addWidget(self.status)
+        layout.addLayout(act_row)
+
+        # --- graded trades (left) + process report (right) ---
+        split = QSplitter(Qt.Horizontal)
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(["Grade", "Symbol", "Side", "Entry", "R", "P&L", "Strategy"])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setToolTip("Each closed trade, graded on how it was executed. "
+                              "Click a row to see the grade breakdown below.")
+        self.table.cellClicked.connect(self._explain_row)
+        split.addWidget(self.table)
+
+        self.report = QTextEdit(); self.report.setReadOnly(True)
+        split.addWidget(self.report)
+        split.setSizes([540, 420])
+        layout.addWidget(split, 1)
+
+        # --- AI chat over the journal ---
+        self.log = QTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(190)
+        layout.addWidget(self.log)
+        ask_row = QHBoxLayout()
+        self.prompt = QLineEdit()
+        self.prompt.setPlaceholderText("Ask your coach — e.g. 'What's my biggest weakness?' or 'How's my stop discipline?'")
+        self.prompt.returnPressed.connect(self._send)
+        self.send_btn = QPushButton("Ask coach"); self.send_btn.clicked.connect(self._send)
+        clear_btn = QPushButton("Clear chat"); clear_btn.clicked.connect(self._clear)
+        ask_row.addWidget(self.prompt, 1); ask_row.addWidget(self.send_btn); ask_row.addWidget(clear_btn)
+        layout.addLayout(ask_row)
+
+        self.refresh()
+
+    # -- config --
+    def _current_key(self):
+        from tradelab.core import ai_assistant
+        return self.key_edit.text().strip() or ai_assistant.api_key_from_env()
+
+    def _save_config(self):
+        self._settings.setValue("AIAssistant/api_key", self.key_edit.text().strip())
+        self._settings.setValue("AIAssistant/model", self.model_combo.currentText())
+        self._refresh_status()
+        self.status.setText(self.status.text() + "  (saved)")
+
+    def _refresh_status(self):
+        from tradelab.core import ai_assistant
+        if ai_assistant.is_configured(self._current_key()):
+            self.status.setText(f"AI chat: on ({self.model_combo.currentText()}).")
+        else:
+            self.status.setText("AI chat: off (no key) — offline review still available.")
+
+    # -- refresh / grading --
+    def refresh(self):
+        """Re-read the journal from disk and re-grade. Called on construction, by
+        the button, and whenever the tab is shown, so it reflects trades logged
+        or imported over in the Journal tab."""
+        from tradelab.core import coach
+        self.journal.load()
+        entries = self.journal.all()
+        self._populate_table(entries)
+        self.report.setPlainText(coach.offline_coach_report(entries))
+        r = coach.coach_report(entries)
+        if r["avg_grade"]:
+            self.grade_label.setText(f"{r['avg_grade']}  ({r['avg_grade_score']:.0f}/100)")
+            colour = _COACH_GRADE_COLORS.get(r["avg_grade"], "#c7d0d8")
+            self.grade_label.setStyleSheet(f"font-size:20px; font-weight:bold; color:{colour};")
+        else:
+            self.grade_label.setText("—")
+            self.grade_label.setStyleSheet("font-size:20px; font-weight:bold; color:#8a9099;")
+        self._refresh_status()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.refresh()
+
+    def _populate_table(self, entries):
+        from tradelab.core import coach
+        closed = [e for e in entries if not e.is_open]
+        closed.sort(key=lambda e: (e.exit_date or e.entry_date or ""), reverse=True)
+        self._trade_by_row = closed
+        self.table.setRowCount(len(closed))
+        for row, e in enumerate(closed):
+            g = coach.grade_trade(e)
+            grade_item = QTableWidgetItem(g["grade"] or "—")
+            grade_item.setForeground(QColor(_COACH_GRADE_COLORS.get(g["grade"], "#c7d0d8")))
+            font = grade_item.font(); font.setBold(True); grade_item.setFont(font)
+            grade_item.setToolTip(g["summary"])
+            self.table.setItem(row, 0, grade_item)
+            self.table.setItem(row, 1, QTableWidgetItem(e.symbol))
+            self.table.setItem(row, 2, QTableWidgetItem(e.side))
+            self.table.setItem(row, 3, QTableWidgetItem(e.entry_date or ""))
+            r_txt = f"{e.r_multiple:+.1f}" if e.r_multiple is not None else "—"
+            self.table.setItem(row, 4, QTableWidgetItem(r_txt))
+            pnl = e.pnl
+            pnl_item = QTableWidgetItem(f"{pnl:,.0f}" if pnl is not None else "—")
+            if pnl is not None:
+                pnl_item.setForeground(QColor("#3fb950" if pnl >= 0 else "#f85149"))
+            self.table.setItem(row, 5, pnl_item)
+            self.table.setItem(row, 6, QTableWidgetItem(e.strategy or ""))
+        self.table.resizeColumnsToContents()
+
+    def _explain_row(self, row, _col):
+        """Show the clicked trade's full grade breakdown in the chat log."""
+        if row < 0 or row >= len(self._trade_by_row):
+            return
+        from tradelab.core import coach
+        e = self._trade_by_row[row]
+        g = coach.grade_trade(e)
+        lines = [f"<b>{e.symbol} {e.side}</b> — grade {g['grade']} ({g['score']}/100). {g['summary']}"]
+        for delta, text in g["reasons"]:
+            if delta > 0:
+                tag = f"<span style='color:#3fb950'>+{delta}</span>"
+            elif delta < 0:
+                tag = f"<span style='color:#f85149'>{delta}</span>"
+            else:
+                tag = "·"
+            lines.append(f"&nbsp;&nbsp;{tag}  {text}")
+        self._append("Coach", "<br>".join(lines))
+
+    # -- chat --
+    def _append(self, who, text):
+        self.log.append(f"<b>{who}:</b> {text}<br>")
+
+    def _clear(self):
+        self._history = []
+        self.log.clear()
+
+    def _send(self):
+        q = self.prompt.text().strip()
+        if not q:
+            return
+        self.prompt.clear()
+        self._append("You", q)
+        from tradelab.core import ai_assistant, coach
+        key = self._current_key()
+        entries = self.journal.all()
+        if not ai_assistant.is_configured(key):
+            self._append("Coach", "AI chat needs an Anthropic API key (field above). Here is the "
+                         "offline rules-based review in the meantime:")
+            self._append("Coach", coach.offline_coach_report(entries).replace(chr(10), "<br>"))
+            return
+        self._history.append({"role": "user", "content": q})
+        self.send_btn.setEnabled(False); self.prompt.setEnabled(False)
+        self.status.setText("Coaching…")
+        self._worker = _CoachWorker(list(self._history), key,
+                                    self.model_combo.currentText(), entries)
+        self._worker.done.connect(self._on_reply)
+        self._worker.failed.connect(self._on_error)
+        self._worker.start()
+
+    def _on_reply(self, reply):
+        self._history.append({"role": "assistant", "content": reply})
+        self._append("Coach", reply.replace(chr(10), "<br>"))
+        self.send_btn.setEnabled(True); self.prompt.setEnabled(True)
+        self._refresh_status()
+
+    def _on_error(self, msg):
+        if self._history and self._history[-1]["role"] == "user":
+            self._history.pop()
+        self._append("System", f"AI error: {msg}")
+        self.send_btn.setEnabled(True); self.prompt.setEnabled(True)
+        self._refresh_status()
+
+    def shutdown(self):
+        worker = self._worker
+        if worker is not None:
+            for sig in (worker.done, worker.failed):
+                try:
+                    sig.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+            worker.wait(3000)
+            self._worker = None
+
+
 class PaperTradingPanel(QWidget):
     """Phase 8: paper-trading desk. A fully simulated account (local ledger,
     no real money, no live order routing) with order entry, positions, and
@@ -5308,6 +5569,7 @@ class MainWindow(QMainWindow):
         self.risk_panel = RiskPanel(self.db)
         self.paper_panel = PaperTradingPanel()
         self.journal_panel = JournalPanel(self.chart, self.cfg)
+        self.coach_panel = CoachPanel()
         self.backtest_panel = BacktestPanel(self.chart, self.cfg)
         # When a custom strategy is saved/deleted in the builder, refresh the
         # Scanner and Backtest strategy dropdowns so it appears immediately.
@@ -5333,6 +5595,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(self.paper_panel), "Paper Trading")   # place the order
         tabs.addTab(_scroll_tab(self.portfolio_panel), "Portfolio")   # holdings
         tabs.addTab(_scroll_tab(self.journal_panel), "Journal")       # review results
+        tabs.addTab(_scroll_tab(self.coach_panel), "Coach")           # grade my process
         tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")     # research: test ideas
         tabs.addTab(_scroll_tab(self.strategy_panel), "Strategies")   # research: build
         tabs.addTab(_scroll_tab(self.replay_panel), "Replay")         # research: practice
@@ -5546,6 +5809,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.journal_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.coach_panel.shutdown()
         except Exception:
             pass
         try:
