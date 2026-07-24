@@ -1,12 +1,13 @@
 # TradeLab Pro — User Manual
 
-**Version 2.22.0**
+**Version 2.32.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: scan the
 market for setups, chart and analyze symbols, keep watchlists and a portfolio,
 set price/indicator **alerts**, see a whole market at a glance on a **heatmap**,
 backtest strategies, build your own strategies and indicators without code,
 **replay** history bar-by-bar, keep a **trade journal** (with IBKR import),
+have an **AI Coach** grade your trades on process and tell you what to work on,
 **size positions by risk**, practice with a simulated paper-trading account, and
 ask a built-in AI assistant to explain what you're looking at.
 
@@ -38,11 +39,12 @@ ask a built-in AI assistant to explain what you're looking at.
 14. [Plugins](#14-plugins)
 15. [Paper trading](#15-paper-trading)
 16. [Trade journal](#16-trade-journal)
-17. [Risk & position sizing](#17-risk--position-sizing)
-18. [AI assist](#18-ai-assist)
-19. [Settings & your data](#19-settings--your-data)
-20. [Tips & FAQ](#20-tips--faq)
-21. [Glossary](#21-glossary)
+17. [Coach](#17-coach)
+18. [Risk & position sizing](#18-risk--position-sizing)
+19. [AI assist](#19-ai-assist)
+20. [Settings & your data](#20-settings--your-data)
+21. [Tips & FAQ](#21-tips--faq)
+22. [Glossary](#22-glossary)
 
 ---
 
@@ -61,7 +63,7 @@ from **Yahoo Finance** (`yfinance`) when you're connected. With no internet, it
 falls back to **deterministic synthetic data** so every screen stays usable for
 practice and demos — the numbers are fake but consistent, so nothing crashes or
 blanks out. You can also **choose the data source** in **Settings → Data source**
-(e.g. force the offline synthetic source for a demo); see section 19.
+(e.g. force the offline synthetic source for a demo); see section 20.
 
 ---
 
@@ -72,9 +74,10 @@ The window is split into two halves:
 - **Left — the tabbed control panel.** The tabs are ordered to follow the
   trading process: **Market → Heatmap → News** (market context) → **Scanner →
   Watchlists → Alerts** (find & watch) → **AI Assist → Risk → Paper Trading**
-  (analyse, size & act) → **Portfolio → Journal** (track & review) → **Backtest
-  → Strategies → Replay → Plugins** (research/build) → **Notes → Links →
-  Settings** (utilities). The tab bar wraps to two rows so every tab is visible.
+  (analyse, size & act) → **Portfolio → Journal → Coach** (track & review) →
+  **Backtest → Strategies → Replay → Plugins** (research/build) → **Notes →
+  Links → Settings** (utilities). The tab bar wraps to two rows so every tab is
+  visible.
 - **Right — the chart workspace.** Always visible. Charts you open from the
   Scanner, Heatmap, Journal, or Replay (or type in directly) appear here as
   dockable panels. A **⛶ Full screen** button expands the chart to the whole
@@ -102,7 +105,10 @@ is always reachable on any screen size.
 6. **Practice & journal.** Open **Paper Trading**, buy a few simulated shares,
    then **Journal** to review your win rate and expectancy (or import your real
    IBKR history).
-7. **Ask.** Open **AI Assist**, load a symbol's context, and ask "what is this
+7. **Get coached.** Open the **Coach** tab for a letter grade on how well you
+   *executed* each journaled trade — and a short list of process habits to work
+   on.
+8. **Ask.** Open **AI Assist**, load a symbol's context, and ask "what is this
    setup telling me?" in plain English.
 
 ---
@@ -392,7 +398,7 @@ Extend TradeLab Pro with **custom indicators** written in Python:
 
 > **Plugins vs. data sources.** A *plugin* is a local custom **indicator** — it
 > never connects to anything. Choosing where prices come from is a separate
-> **data source** setting (section 19).
+> **data source** setting (section 20).
 
 ---
 
@@ -466,7 +472,63 @@ re-importing the same data won't create duplicates. You can **Close** open trade
 
 ---
 
-## 17. Risk & position sizing
+## 17. Coach
+
+Your **AI Trading Coach** reviews the trades in your **Journal** and grades how
+well each one was *executed* — not just whether it made money. The whole tab is
+**retrospective**: it reviews what you already did and gives you process
+feedback. It never tells you what to trade next, and it never predicts a price.
+
+> **Process, not outcome.** A trade can be profitable and still be graded poorly,
+> and a losing trade can be graded well. A lucky win taken with **no stop** (so
+> your risk was undefined) grades badly; a small, disciplined **−1R** loss taken
+> *with* a stop and a written plan grades well. The Coach rewards good habits,
+> because good habits are what pay off over many trades.
+
+**How a trade is graded (A–F).** Everything starts at a neutral score and each
+process check moves it up or down, with the reason recorded:
+- **Did you define your risk with a protective stop?** This is the cornerstone —
+  trading with an undefined risk is penalized the most heavily, so a no-stop
+  trade can't grade well no matter how it turned out.
+- **Was the stop honored?** On a losing trade, did the loss stay within the ~1R
+  you planned, or did it run well past it (stop widened, ignored, or gapped
+  through)?
+- **Reward vs. risk (R-multiple).** What you actually captured relative to what
+  you risked — a +2R win scores better than a scrappy sub-1R one.
+- **Did you write down a plan?** A trade with a strategy or notes can be reviewed
+  later; one with neither can't.
+
+**Reading the tab:**
+- **Overall process grade** — a single A–F (and a 0–100 score) across all your
+  closed trades, color-coded.
+- **Graded trades table** — every closed trade with its grade, R-multiple, and
+  P&L. **Click any row** to see its full point-by-point breakdown in the chat log
+  below (what added or subtracted, and why).
+- **Process review** — the plain-text report on the right: your win rate,
+  expectancy, profit factor, the share of trades with **no stop**, how often
+  stops were **honored**, whether you **hold losers longer than winners**, how
+  documented your trades are, and a short list of concrete **"what to work on"**
+  suggestions — each citing the number behind it.
+
+**Optional AI chat.** Ask the coach questions in plain English —
+*"What's my biggest weakness?"*, *"How's my stop discipline?"* — and it reasons
+over your compiled grades and stats. This uses the **same Anthropic API key as
+the AI Assist tab** (enter it once, in either tab); with no key you still get the
+full offline review, and the chat simply shows that report instead.
+
+> **Works fully offline.** Every grade, the process report, and all the
+> suggestions are computed **locally** on your PC with plain math — no API key and
+> no internet required. The AI chat only *narrates* those numbers; it never
+> invents trades or figures. Educational process feedback only — not financial
+> advice.
+
+The Coach reads the same journal you see in the **Journal** tab and refreshes
+automatically whenever you open it (there's also a **Refresh from journal**
+button). Log or import some trades first (section 16), then check the Coach.
+
+---
+
+## 18. Risk & position sizing
 
 Size trades by risk instead of by gut, and see how concentrated your book is.
 
@@ -490,7 +552,7 @@ sector).
 
 ---
 
-## 18. AI assist
+## 19. AI assist
 
 A natural-language assistant that **explains** indicators, scores, and setups in
 plain English.
@@ -531,7 +593,7 @@ price right now"* — that's the data limitation, not the model.
 
 ---
 
-## 19. Settings & your data
+## 20. Settings & your data
 
 The **Settings** tab lets you choose your **Data source** and shows where your
 data lives (database path, data folder, scan-history counts).
@@ -562,7 +624,7 @@ The database uses versioned migrations, so it upgrades cleanly across releases.
 
 ---
 
-## 20. Tips & FAQ
+## 21. Tips & FAQ
 
 **Where is my API key / IBKR token stored?** In the Windows registry under
 `HKEY_CURRENT_USER\Software\TradeLabPro\TradeLabPro` (the API key can instead come
@@ -588,6 +650,15 @@ again.
 fetch failed, etc.), shown distinctly from genuinely weak results. Hover the
 Symbol cell for the error message.
 
+**Why did the Coach give my winning trade a bad grade?** Because it grades your
+*process*, not the outcome. The most common reason is **no protective stop** — if
+your risk was undefined, the trade grades poorly even if it happened to profit.
+Click the trade's row in the Coach to see exactly what added and subtracted.
+
+**Do I need an API key for the Coach?** No. All the grading, the process report,
+and the suggestions run offline with no key or internet. A key only unlocks the
+optional **AI chat** (shared with the AI Assist tab, section 19).
+
 **Nothing loads / I'm offline.** The app falls back to deterministic synthetic
 data so screens stay usable. Reconnect for real Yahoo Finance data, or set
 **Settings → Data source** deliberately.
@@ -601,7 +672,7 @@ switch back to the same interval to see them.
 
 ---
 
-## 21. Glossary
+## 22. Glossary
 
 - **EMA / SMA** — Exponential / Simple Moving Average.
 - **MACD** — Moving Average Convergence Divergence (trend/momentum).
@@ -619,6 +690,9 @@ switch back to the same interval to see them.
 - **Expectancy** — average profit/loss per trade over your journal's closed trades.
 - **R-multiple / 1R** — trade result measured in units of the risk you took; 1R is
   your entry-to-stop distance, so +2R means you made twice what you risked.
+- **Process grade (Coach)** — an A–F score of how well a trade was *executed*
+  (risk defined with a stop, stop honored, reward-to-risk, documented plan),
+  independent of whether it happened to be profitable.
 - **AUM** — Assets Under Management, used to size ETF/fund tiles on the heatmap.
 - **Edge-triggered (alerts)** — fires once as a condition crosses from false to
   true, not repeatedly while it stays true.
