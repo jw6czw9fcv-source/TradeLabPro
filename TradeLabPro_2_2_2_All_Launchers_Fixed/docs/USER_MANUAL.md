@@ -1,15 +1,16 @@
 # TradeLab Pro — User Manual
 
-**Version 2.32.0**
+**Version 2.33.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: scan the
 market for setups, chart and analyze symbols, keep watchlists and a portfolio,
 set price/indicator **alerts**, see a whole market at a glance on a **heatmap**,
 backtest strategies, build your own strategies and indicators without code,
-**replay** history bar-by-bar, keep a **trade journal** (with IBKR import),
-have an **AI Coach** grade your trades on process and tell you what to work on,
-**size positions by risk**, practice with a simulated paper-trading account, and
-ask a built-in AI assistant to explain what you're looking at.
+**replay** history bar-by-bar, study a symbol's **seasonality**, keep a **trade
+journal** (with IBKR import), have an **AI Coach** grade your trades on process
+and tell you what to work on, **size positions by risk**, practice with a
+simulated paper-trading account, and ask a built-in AI assistant to explain what
+you're looking at.
 
 > **Important — what this app is and isn't.** TradeLab Pro is an **analysis and
 > practice** tool. It does **not** place real orders, connect to a live
@@ -35,16 +36,17 @@ ask a built-in AI assistant to explain what you're looking at.
 10. [Market dashboard](#10-market-dashboard)
 11. [Backtest lab](#11-backtest-lab)
 12. [Chart replay](#12-chart-replay)
-13. [Strategy builder](#13-strategy-builder)
-14. [Plugins](#14-plugins)
-15. [Paper trading](#15-paper-trading)
-16. [Trade journal](#16-trade-journal)
-17. [Coach](#17-coach)
-18. [Risk & position sizing](#18-risk--position-sizing)
-19. [AI assist](#19-ai-assist)
-20. [Settings & your data](#20-settings--your-data)
-21. [Tips & FAQ](#21-tips--faq)
-22. [Glossary](#22-glossary)
+13. [Seasonality](#13-seasonality)
+14. [Strategy builder](#14-strategy-builder)
+15. [Plugins](#15-plugins)
+16. [Paper trading](#16-paper-trading)
+17. [Trade journal](#17-trade-journal)
+18. [Coach](#18-coach)
+19. [Risk & position sizing](#19-risk--position-sizing)
+20. [AI assist](#20-ai-assist)
+21. [Settings & your data](#21-settings--your-data)
+22. [Tips & FAQ](#22-tips--faq)
+23. [Glossary](#23-glossary)
 
 ---
 
@@ -63,7 +65,7 @@ from **Yahoo Finance** (`yfinance`) when you're connected. With no internet, it
 falls back to **deterministic synthetic data** so every screen stays usable for
 practice and demos — the numbers are fake but consistent, so nothing crashes or
 blanks out. You can also **choose the data source** in **Settings → Data source**
-(e.g. force the offline synthetic source for a demo); see section 20.
+(e.g. force the offline synthetic source for a demo); see section 21.
 
 ---
 
@@ -75,9 +77,9 @@ The window is split into two halves:
   trading process: **Market → Heatmap → News** (market context) → **Scanner →
   Watchlists → Alerts** (find & watch) → **AI Assist → Risk → Paper Trading**
   (analyse, size & act) → **Portfolio → Journal → Coach** (track & review) →
-  **Backtest → Strategies → Replay → Plugins** (research/build) → **Notes →
-  Links → Settings** (utilities). The tab bar wraps to two rows so every tab is
-  visible.
+  **Backtest → Strategies → Replay → Seasonality → Plugins** (research/build) →
+  **Notes → Links → Settings** (utilities). The tab bar wraps to two rows so
+  every tab is visible.
 - **Right — the chart workspace.** Always visible. Charts you open from the
   Scanner, Heatmap, Journal, or Replay (or type in directly) appear here as
   dockable panels. A **⛶ Full screen** button expands the chart to the whole
@@ -234,7 +236,7 @@ A simple holdings record: **ID, Portfolio, Symbol, Shares, Entry**. Add position
 **record-keeping** ledger for positions you hold elsewhere — it does not place or
 track live orders. Your portfolio also feeds the **Heatmap** (Portfolio map) and
 the **Risk** tab's sector-exposure view. For simulated order entry and P&L, use
-**Paper Trading** (section 15).
+**Paper Trading** (section 16).
 
 ---
 
@@ -362,7 +364,48 @@ and drawings all work.
 
 ---
 
-## 13. Strategy builder
+## 13. Seasonality
+
+See how a stock has historically behaved by the **calendar** — whether the month
+you're in has tended to be kind or cruel to that name.
+
+**How to use it.** Enter a **Symbol**, pick how much **History** to analyze
+(2y / 5y / 10y / max), and click **Analyze**. The data is fetched in the
+background (the window stays responsive), then three tables and a plain-English
+headline fill in.
+
+**The headline** answers the question directly, for example:
+```
+SPY — Over 10 years of history, July has been historically strong:
+it averaged +1.8% with a 70% win rate (10 occurrences).
+```
+It also names the historically strongest and weakest months overall.
+
+**By month** *(the centerpiece)* — one row per calendar month with:
+- **Avg %** — the average month-over-month return for that month across every
+  year in the sample. This column is a **green→red heatmap**, so strong and weak
+  months jump out at a glance.
+- **Win %** — how often that month closed higher.
+- **Best % / Worst %** — the best and worst single occurrences.
+- **Years** — how many years of that month are in the sample (more = more
+  trustworthy).
+
+The historically strongest and weakest months are shown in **bold**.
+
+**By weekday** — the same average-return and win-rate read for Monday through
+Friday (day-of-week seasonality).
+
+**By year** — a year-by-year performance table (each year's return from its first
+to its last close), most recent first.
+
+> **Descriptive, not predictive.** Seasonality summarizes what price *did* in
+> past calendars — it does **not** forecast the next one. A "strong July" is a
+> historical tendency, not a promise, and small samples (few years) are weak
+> evidence. It's a context tool, not a signal, and it's not financial advice.
+
+---
+
+## 14. Strategy builder
 
 Build your own BUY/SELL strategies **without code**:
 
@@ -382,7 +425,7 @@ defaults.
 
 ---
 
-## 14. Plugins
+## 15. Plugins
 
 Extend TradeLab Pro with **custom indicators** written in Python:
 
@@ -398,11 +441,11 @@ Extend TradeLab Pro with **custom indicators** written in Python:
 
 > **Plugins vs. data sources.** A *plugin* is a local custom **indicator** — it
 > never connects to anything. Choosing where prices come from is a separate
-> **data source** setting (section 20).
+> **data source** setting (section 21).
 
 ---
 
-## 15. Paper trading
+## 16. Paper trading
 
 A fully **simulated brokerage account** for practice — the safe way to rehearse
 order entry and watch P&L behave.
@@ -432,11 +475,11 @@ realized-P&L accounting.
 **Refresh** re-marks positions to the current price and fills any crossed limit
 orders. **Reset account** wipes everything back to the starting cash (with a
 confirmation). You can pull your paper fills straight into the **Trade Journal**
-(section 16).
+(section 17).
 
 ---
 
-## 16. Trade journal
+## 17. Trade journal
 
 Log your trades, tag them, and review what actually works.
 
@@ -472,7 +515,7 @@ re-importing the same data won't create duplicates. You can **Close** open trade
 
 ---
 
-## 17. Coach
+## 18. Coach
 
 Your **AI Trading Coach** reviews the trades in your **Journal** and grades how
 well each one was *executed* — not just whether it made money. The whole tab is
@@ -524,11 +567,11 @@ full offline review, and the chat simply shows that report instead.
 
 The Coach reads the same journal you see in the **Journal** tab and refreshes
 automatically whenever you open it (there's also a **Refresh from journal**
-button). Log or import some trades first (section 16), then check the Coach.
+button). Log or import some trades first (section 17), then check the Coach.
 
 ---
 
-## 18. Risk & position sizing
+## 19. Risk & position sizing
 
 Size trades by risk instead of by gut, and see how concentrated your book is.
 
@@ -552,7 +595,7 @@ sector).
 
 ---
 
-## 19. AI assist
+## 20. AI assist
 
 A natural-language assistant that **explains** indicators, scores, and setups in
 plain English.
@@ -593,7 +636,7 @@ price right now"* — that's the data limitation, not the model.
 
 ---
 
-## 20. Settings & your data
+## 21. Settings & your data
 
 The **Settings** tab lets you choose your **Data source** and shows where your
 data lives (database path, data folder, scan-history counts).
@@ -624,7 +667,7 @@ The database uses versioned migrations, so it upgrades cleanly across releases.
 
 ---
 
-## 21. Tips & FAQ
+## 22. Tips & FAQ
 
 **Where is my API key / IBKR token stored?** In the Windows registry under
 `HKEY_CURRENT_USER\Software\TradeLabPro\TradeLabPro` (the API key can instead come
@@ -657,7 +700,7 @@ Click the trade's row in the Coach to see exactly what added and subtracted.
 
 **Do I need an API key for the Coach?** No. All the grading, the process report,
 and the suggestions run offline with no key or internet. A key only unlocks the
-optional **AI chat** (shared with the AI Assist tab, section 19).
+optional **AI chat** (shared with the AI Assist tab, section 20).
 
 **Nothing loads / I'm offline.** The app falls back to deterministic synthetic
 data so screens stay usable. Reconnect for real Yahoo Finance data, or set
@@ -672,7 +715,7 @@ switch back to the same interval to see them.
 
 ---
 
-## 22. Glossary
+## 23. Glossary
 
 - **EMA / SMA** — Exponential / Simple Moving Average.
 - **MACD** — Moving Average Convergence Divergence (trend/momentum).
@@ -685,6 +728,9 @@ switch back to the same interval to see them.
 - **Score** — TradeLab Pro's 0–100 ranking of a setup for the selected strategy.
 - **Conf%** — the historical hit-rate of the selected strategy's past BUY signals
   on that symbol.
+- **Seasonality** — a stock's recurring calendar tendencies: how it has performed
+  on average by month, weekday, and year over its history. Descriptive of the
+  past, not a prediction.
 - **Max drawdown** — the largest peak-to-trough drop in a backtest's equity.
 - **Profit factor** — gross profit ÷ gross loss (>1 is profitable).
 - **Expectancy** — average profit/loss per trade over your journal's closed trades.
