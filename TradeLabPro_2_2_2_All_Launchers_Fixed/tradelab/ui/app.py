@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR, ROOT_DIR
 from tradelab.data.database import Database
 from tradelab.data.universe import list_symbols, available_universes, refresh_exchange_cache, import_universe_file, universe_metadata
-from tradelab.data.market_data import get_history
+from tradelab.data.market_data import get_history, get_histories
 from tradelab.core.scanner import scan_symbols
 from tradelab.core.alerts import Alert, AlertStore
 from tradelab.core.filters import FilterCondition
@@ -1528,17 +1528,25 @@ class _HistoryWorker(QThread):
 class _MarketRefreshWorker(QThread):
     """Downloads every symbol the Market dashboard needs, off the UI thread.
 
-    The dashboard covers ~37 symbols (regime, global indices, and both regions'
-    benchmarks and sectors). Fetching those inline froze the whole window for
-    the duration; this streams them in the background and reports progress.
-    A failed symbol is recorded as None rather than aborting the batch.
+    The dashboard covers ~90 symbols (regime, global indices, both regions'
+    benchmarks and sectors, and a constituent sample for advance/decline
+    breadth). Fetching those inline froze the whole window; worse, a serial
+    loop of ~90 requests tripped Yahoo's per-request rate limit and stalled the
+    refresh. This pulls them in the background in batches - one multi-ticker
+    request per chunk - reporting progress after each chunk. A symbol the
+    provider couldn't fill is recorded as None rather than aborting the batch.
     """
     progress = Signal(int, int)      # completed, total
     done = Signal(object)            # {symbol: DataFrame | None}
 
+    # Symbols requested per batch. Matches the data layer's own chunk size so a
+    # chunk here is one Yahoo request; small enough that stop() stays responsive
+    # between chunks.
+    CHUNK = 40
+
     def __init__(self, symbols, period="1y", interval="1d"):
         super().__init__()
-        self.symbols = list(symbols)
+        self.symbols = list(dict.fromkeys(symbols))   # de-dup, preserve order
         self.period = period
         self.interval = interval
         self._stop = False
@@ -1549,15 +1557,20 @@ class _MarketRefreshWorker(QThread):
     def run(self):
         history = {}
         total = len(self.symbols)
-        for i, sym in enumerate(self.symbols, 1):
+        done = 0
+        for start in range(0, total, self.CHUNK):
             if self._stop:
                 break
+            chunk = self.symbols[start:start + self.CHUNK]
             try:
-                history[sym] = get_history(sym, self.period, self.interval)
+                batch = get_histories(chunk, self.period, self.interval)
             except BaseException:
-                history[sym] = None
+                batch = {}
+            for sym in chunk:
+                history[sym] = batch.get(sym)
+            done += len(chunk)
             try:
-                self.progress.emit(i, total)
+                self.progress.emit(min(done, total), total)
             except RuntimeError:
                 pass
         try:
@@ -1782,7 +1795,6 @@ class MarketPanel(QWidget):
         self._chart_worker=None
         self._pending_symbol=None
         self._refresh_worker=None
-        self._prefetch_worker=None
 
         # Click any row to chart that symbol. The symbol lives in a different
         # column per table, so each is wired with its own column index.
@@ -1794,6 +1806,7 @@ class MarketPanel(QWidget):
             table.setToolTip("Click a row to chart that symbol.")
 
         self._apply_region_labels()
+        self._populate_global_scaffold()
         self.populate_static()
 
     def _chart_row(self, table, row, sym_col):
@@ -1846,11 +1859,11 @@ class MarketPanel(QWidget):
 
     def shutdown(self):
         """Stop in-flight fetches so closing the app doesn't hang."""
-        for attr in ("_refresh_worker", "_prefetch_worker"):
+        for attr in ("_refresh_worker",):
             worker = getattr(self, attr, None)
             if worker is not None:
-                worker.stop()       # finish the current symbol, then bail out
-        for attr in ("_chart_worker", "_refresh_worker", "_prefetch_worker"):
+                worker.stop()       # finish the current chunk, then bail out
+        for attr in ("_chart_worker", "_refresh_worker"):
             worker = getattr(self, attr, None)
             if worker is None:
                 continue
@@ -1913,8 +1926,15 @@ class MarketPanel(QWidget):
             f"{region} sector favorability — which sectors to trade (best → worst)")
         self.regime_label.setText(f"{region} regime symbols")
 
-    def populate_static(self):
-        from tradelab.core.market import GLOBAL_INDICES, sector_instruments
+    def _populate_global_scaffold(self):
+        """Lay out the global-indices table (name + symbol, empty value cells).
+
+        The global indices are the same for every market, so this runs once at
+        construction and is NOT rebuilt on a country switch - otherwise the
+        switch would blank the table (which _render_region does not refill,
+        since it only redraws the region-specific tables). Their values are
+        filled by _render and simply persist across switches."""
+        from tradelab.core.market import GLOBAL_INDICES
         self.global_table.setRowCount(len(GLOBAL_INDICES))
         for r,(name,sym,region,_open_utc,open_local) in enumerate(GLOBAL_INDICES):
             name_item=QTableWidgetItem(name)
@@ -1924,6 +1944,11 @@ class MarketPanel(QWidget):
             for c in range(2,7): self.global_table.setItem(r,c,QTableWidgetItem(""))
         self.global_table.resizeColumnsToContents()
 
+    def populate_static(self):
+        """(Re)build the region-dependent scaffold - regime rows and sector rows
+        - to empty placeholders. Called on every country switch; the global
+        indices are deliberately left untouched (see _populate_global_scaffold)."""
+        from tradelab.core.market import sector_instruments
         self.table.setRowCount(len(self.rows))
         for r,(name,sym,purpose) in enumerate(self.rows):
             vals=[name,sym,"","",purpose]
@@ -1951,13 +1976,16 @@ class MarketPanel(QWidget):
                             + ", ".join(symbols) + ". Click charts the first.")
 
     def required_symbols(self):
-        """Every symbol a refresh needs for the selected market, de-duplicated
-        and in fetch order (regime first, so the read can be scored as soon as
-        the batch lands). Only the selected market is downloaded - the tab
-        follows the country selector, so the other one isn't on screen."""
-        from tradelab.core.market import GLOBAL_INDICES, sector_region, sector_instruments
-        return self._dedup([row[1] for row in GLOBAL_INDICES]
-                           + self.region_symbols(self.current_region()))
+        """Every symbol a refresh needs, de-duplicated and in fetch order: the
+        global indices first, then BOTH markets' regime, benchmark, sectors and
+        breadth constituents. Fetching both up front (cheap now that downloads
+        are batched) means switching country afterwards is always an instant
+        re-render from cache, never a fresh download."""
+        from tradelab.core.market import GLOBAL_INDICES, SECTOR_REGIONS
+        syms = [row[1] for row in GLOBAL_INDICES]
+        for region in SECTOR_REGIONS:
+            syms += self.region_symbols(region)
+        return self._dedup(syms)
 
     def region_symbols(self, region):
         """Everything one market needs: its regime rows, its benchmark, its
@@ -1979,10 +2007,6 @@ class MarketPanel(QWidget):
             if s not in seen:
                 seen.add(s); ordered.append(s)
         return ordered
-
-    def _other_region(self):
-        from tradelab.core.market import SECTOR_REGIONS
-        return next((r for r in SECTOR_REGIONS if r != self.current_region()), None)
 
     def refresh_market(self):
         """Kick off a dashboard refresh on a worker thread - the window stays
@@ -2017,33 +2041,6 @@ class MarketPanel(QWidget):
             self._render(history)
         finally:
             self._refreshed_once=True
-        # Quietly load the other market too, so switching to it is instant.
-        self._prefetch_other_region()
-
-    def _prefetch_other_region(self):
-        """Download the market you are not looking at, in the background.
-
-        The visible refresh only covers the selected market, so it stays fast;
-        this fills the other one in afterwards so flipping the country selector
-        is instant rather than triggering a fresh download. Silent - no
-        progress bar, no button state, and failures simply leave it uncached.
-        """
-        region=self._other_region()
-        if not region or region in self._region_data:
-            return
-        if self._prefetch_worker is not None and self._prefetch_worker.isRunning():
-            return
-        worker=_MarketRefreshWorker(self.region_symbols(region))
-        worker.done.connect(lambda history, r=region: self._on_prefetch_done(r, history))
-        self._prefetch_worker=worker
-        worker.start()
-
-    def _on_prefetch_done(self, region, history):
-        self._cache_history(history)
-        try:
-            self._region_data[region]=self._score_region(region, history)
-        except Exception:
-            pass       # a failed prefetch just means that market loads on demand
 
     def _render(self, history):
         from tradelab.core.market import GLOBAL_INDICES, analyze_trend, market_read
@@ -2066,11 +2063,17 @@ class MarketPanel(QWidget):
         self._market_note=(f" {favorable_markets}/{measured_markets} global markets favorable."
                            if measured_markets else "")
 
-        # Only the selected market is downloaded and scored - the tab follows
-        # the country selector at the top.
-        region=self.current_region()
-        self._region_data[region]=self._score_region(region, history)
-        self._render_region(region)
+        # The refresh downloads every market, so score them all from the one
+        # batch and cache each. Switching country afterwards is then a pure
+        # re-render (see _on_region_changed / _render_region) - no download,
+        # no background prefetch to race against.
+        from tradelab.core.market import SECTOR_REGIONS
+        for region in SECTOR_REGIONS:
+            try:
+                self._region_data[region]=self._score_region(region, history)
+            except Exception:
+                pass      # a market that fails to score just loads on demand
+        self._render_region(self.current_region())
 
     def _render_region(self, region):
         """Show one market entirely from cache: its regime rows, its read and
@@ -2095,8 +2098,8 @@ class MarketPanel(QWidget):
     def _score_region(self, region, history):
         """Score one market from already-downloaded history. Self-contained -
         it reads that market's own regime symbols out of the batch rather than
-        whatever is currently on screen, so it can score the market you are
-        *not* looking at (see _prefetch_other_region)."""
+        whatever is currently on screen, so one refresh can score every market
+        from the same batch (see _render)."""
         from tradelab.core.market import (analyze_trend, aggregate_trend, realized_vol,
                                           sector_breadth, market_condition, rank_sectors,
                                           sector_region, sector_instruments, regime_rows,

@@ -20,6 +20,28 @@ def qapp():
     yield app
 
 
+@pytest.fixture(autouse=True)
+def _batch_via_get_history(monkeypatch):
+    """The refresh worker fetches in batches via get_histories (one multi-ticker
+    request instead of a serial per-symbol loop, which used to trip Yahoo's rate
+    limit). Route that batch through the per-symbol get_history each test
+    patches, read at call time, so every existing monkeypatch keeps controlling
+    the data - and a symbol whose fake raises still becomes a None entry, just as
+    the real batch backfills a symbol the feed couldn't fill."""
+    import tradelab.ui.app as app
+
+    def get_histories(symbols, period="1y", interval="1d"):
+        out = {}
+        for s in dict.fromkeys(symbols):
+            try:
+                out[s] = app.get_history(s, period, interval)
+            except Exception:
+                out[s] = None
+        return out
+
+    monkeypatch.setattr(app, "get_histories", get_histories, raising=False)
+
+
 def _rising(n=250, start=100.0):
     return pd.DataFrame({
         "Open": [start + i for i in range(n)],
@@ -251,7 +273,9 @@ def test_refresh_never_fetches_on_the_ui_thread(qapp, monkeypatch):
 
 
 def test_refresh_fetches_each_symbol_once(qapp, monkeypatch):
-    """SPY is both a regime row and the US benchmark - fetch it a single time."""
+    """SPY is both a regime row and the US benchmark - fetch it a single time.
+    One refresh covers BOTH markets so switching country afterwards needs no
+    download, so the Canadian symbols are in the batch too."""
     import tradelab.ui.app as app
 
     calls = []
@@ -260,9 +284,9 @@ def test_refresh_fetches_each_symbol_once(qapp, monkeypatch):
     panel = app.MarketPanel()
     symbols = panel.required_symbols()
     assert len(symbols) == len(set(symbols)), "required symbols must be de-duplicated"
-    # Only the selected market is downloaded - the tab follows the selector.
+    # Both markets are downloaded in one refresh (US and Canada instruments).
     assert "SPY" in symbols and "XLK" in symbols
-    assert "XIC.TO" not in symbols and "XEG.TO" not in symbols
+    assert "XIC.TO" in symbols and "XEG.TO" in symbols
 
     _refresh(panel, qapp)
     assert sorted(calls) == sorted(symbols)
@@ -431,27 +455,14 @@ def test_clicking_a_basket_sector_charts_a_real_symbol(qapp, monkeypatch):
     assert chart.plotted[0].endswith(".TO")
 
 
-def _settle_prefetch(panel, qapp):
-    """Wait for the background prefetch of the other market to start and
-    finish, so no stray download lands in the middle of an assertion."""
-    def done():
-        worker = panel._prefetch_worker
-        return (worker is not None and not worker.isRunning()
-                and len(panel._region_data) >= 2)
-    assert _pump(qapp, done), "prefetch never completed"
-
-
-def test_refresh_prefetches_the_other_market(qapp, monkeypatch):
-    """After a refresh, the market you are NOT looking at is loaded quietly in
-    the background so switching to it is instant."""
+def test_refresh_caches_both_markets(qapp, monkeypatch):
+    """A single refresh downloads and scores BOTH markets, so switching country
+    afterwards is an instant re-render with no second download."""
     import tradelab.ui.app as app
 
     monkeypatch.setattr(app, "get_history", _fake_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
-    assert set(panel._region_data) == {"US"}      # only the visible one, at first
-
-    _settle_prefetch(panel, qapp)
     assert set(panel._region_data) == {"US", "Canada"}
 
 
@@ -469,7 +480,6 @@ def test_switching_country_after_a_refresh_fetches_nothing(qapp, monkeypatch):
     monkeypatch.setattr(app, "get_history", counted)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
-    _settle_prefetch(panel, qapp)
 
     calls.clear()
     panel.country_combo.setCurrentText("Canada")
@@ -492,12 +502,35 @@ def test_switching_country_shows_that_markets_regime_values(qapp, monkeypatch):
     monkeypatch.setattr(app, "get_history", _fake_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
-    _settle_prefetch(panel, qapp)
 
     panel.country_combo.setCurrentText("Canada")
     shown = [panel.table.item(r, 1).text() for r in range(panel.table.rowCount())]
     assert shown == [sym for _, sym, _ in regime_rows("Canada")]
     assert all(panel.table.item(r, 2).text() != "—" for r in range(panel.table.rowCount()))
+
+
+def test_global_indices_survive_a_country_switch(qapp, monkeypatch):
+    """Regression: the global-indices table is region-independent and must keep
+    its values when the country selector flips. It used to be blanked by the
+    switch (populate_static rebuilt it empty) and never refilled, since the
+    switch path only redraws the region-specific tables."""
+    import tradelab.ui.app as app
+    from tradelab.core.market import GLOBAL_INDICES
+
+    monkeypatch.setattr(app, "get_history", _fake_history)
+    panel = app.MarketPanel()
+    _refresh(panel, qapp)
+
+    def globals_filled():
+        # Every global index shows a Last price (col 2), not the empty scaffold.
+        return all(panel.global_table.item(r, 2).text() not in ("", "—")
+                   for r in range(len(GLOBAL_INDICES)))
+
+    assert globals_filled(), "globals should fill on refresh"
+    panel.country_combo.setCurrentText("Canada")
+    assert globals_filled(), "globals must not blank when switching to Canada"
+    panel.country_combo.setCurrentText("US")
+    assert globals_filled(), "globals must not blank when switching back to US"
 
 
 def test_breadth_card_populates_and_highlights_pct_above_200(qapp, monkeypatch):
@@ -524,7 +557,6 @@ def test_breadth_follows_the_country_selector(qapp, monkeypatch):
     monkeypatch.setattr(app, "get_history", _fake_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
-    _settle_prefetch(panel, qapp)
 
     us_sample = panel.breadth_card.sample.text()
     panel.country_combo.setCurrentText("Canada")

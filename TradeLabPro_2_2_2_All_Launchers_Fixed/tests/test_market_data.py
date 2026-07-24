@@ -4,7 +4,7 @@ import pytest
 import tradelab.data.market_data as market_data
 from tradelab.data.market_data import (synthetic_ohlcv, get_history, get_quote_meta,
                                        market_cap_bucket, _company_name_from_info,
-                                       _name_from_summary)
+                                       _name_from_summary, _yahoo_histories)
 
 
 def test_synthetic_ohlcv_returns_expected_columns():
@@ -163,6 +163,82 @@ def test_get_quote_meta_resolves_name_from_displayname_and_summary(monkeypatch):
     monkeypatch.setattr(market_data, "yf", type("_yf", (), {
         "Ticker": staticmethod(lambda symbol: _FakeTicker(info))}))
     assert get_quote_meta("KO")["name"] == "The Coca-Cola Company"
+
+
+def _multi_ticker_frame(symbols, rows=5):
+    # Mimics yfinance's group_by="ticker" output: a (ticker, field) MultiIndex
+    # column frame. `symbols` set to None come back all-NaN, which is how
+    # yfinance reports a ticker it couldn't fill inside an otherwise-good batch.
+    dates = pd.date_range(end=pd.Timestamp.today().normalize(), periods=rows, freq="B")
+    data = {}
+    for sym, ok in symbols.items():
+        for field in ("Open", "High", "Low", "Close", "Volume"):
+            values = list(range(1, rows + 1)) if ok else [float("nan")] * rows
+            data[(sym, field)] = values
+    frame = pd.DataFrame(data, index=dates)
+    frame.columns = pd.MultiIndex.from_tuples(frame.columns)
+    return frame
+
+
+def _fake_yf(recorder, per_symbol_ok):
+    def download(tickers, **kwargs):
+        tickers = list(tickers) if isinstance(tickers, (list, tuple)) else [tickers]
+        recorder.append(list(tickers))
+        return _multi_ticker_frame({s: per_symbol_ok.get(s, True) for s in tickers})
+    return type("_yf", (), {"download": staticmethod(download)})
+
+
+def test_yahoo_histories_batches_in_chunks(monkeypatch):
+    # Regression test for the Market-refresh stall: ~90 symbols used to be
+    # fetched one HTTP request at a time, tripping Yahoo's rate limit. They must
+    # now go out in a few multi-ticker batches instead.
+    calls = []
+    symbols = [f"S{i}" for i in range(90)]
+    monkeypatch.setattr(market_data, "yf", _fake_yf(calls, {}))
+    out = _yahoo_histories(symbols, chunk_size=40)
+    assert set(out) == set(symbols)               # every symbol accounted for
+    assert len(calls) == 3                          # 40 + 40 + 10, not 90 calls
+    assert all(len(batch) <= 40 for batch in calls)
+    for df in out.values():
+        assert {"Open", "High", "Low", "Close", "Volume"}.issubset(df.columns)
+
+
+def test_yahoo_histories_falls_back_to_synthetic_for_empty_symbol(monkeypatch):
+    # A ticker Yahoo returns all-NaN for inside a good batch must be backfilled
+    # with synthetic data, not left empty, so the dashboard has no holes.
+    calls = []
+    monkeypatch.setattr(market_data, "yf", _fake_yf(calls, {"BAD": False}))
+    out = _yahoo_histories(["GOOD", "BAD"], chunk_size=40)
+    assert not out["GOOD"].empty and not out["BAD"].empty
+    # BAD is the deterministic synthetic series for that symbol.
+    pd.testing.assert_frame_equal(out["BAD"], synthetic_ohlcv("BAD"))
+
+
+def test_yahoo_histories_dedups_preserving_order(monkeypatch):
+    calls = []
+    monkeypatch.setattr(market_data, "yf", _fake_yf(calls, {}))
+    out = _yahoo_histories(["AAA", "BBB", "AAA", "CCC"], chunk_size=40)
+    assert list(out) == ["AAA", "BBB", "CCC"]
+    assert calls == [["AAA", "BBB", "CCC"]]         # requested once each
+
+
+def test_yahoo_histories_synthetic_when_yfinance_unavailable(monkeypatch):
+    monkeypatch.setattr(market_data, "yf", None)
+    out = _yahoo_histories(["AAA", "BBB"])
+    assert set(out) == {"AAA", "BBB"}
+    pd.testing.assert_frame_equal(out["AAA"], synthetic_ohlcv("AAA"))
+
+
+def test_yahoo_histories_survives_download_raising(monkeypatch):
+    # A whole-batch failure (network drop mid-refresh) must degrade to synthetic
+    # data for that chunk rather than raising out of the worker thread.
+    def boom(tickers, **kwargs):
+        raise RuntimeError("no network")
+    monkeypatch.setattr(market_data, "yf", type("_yf", (), {"download": staticmethod(boom)}))
+    out = _yahoo_histories(["AAA", "BBB"], chunk_size=40)
+    assert set(out) == {"AAA", "BBB"}
+    for df in out.values():
+        assert not df.empty
 
 
 @pytest.mark.parametrize("market_cap,expected", [

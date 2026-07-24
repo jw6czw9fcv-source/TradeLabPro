@@ -52,6 +52,85 @@ def _yahoo_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.
     return synthetic_ohlcv(symbol)
 
 
+# Symbols per Yahoo batch request. yfinance packs a whole ticker list into one
+# download, so a Market refresh of ~90 names becomes ~2 requests instead of 90 -
+# which is what kept the serial loop tripping Yahoo's per-request rate limit.
+# Kept moderate so one dud symbol can't sink too large a batch.
+_BATCH_CHUNK = 40
+
+_OHLCV = {"Open", "High", "Low", "Close", "Volume"}
+
+
+def get_histories(symbols, period: str = "1y", interval: str = "1d") -> dict:
+    """Batch price history for many symbols from the active data provider.
+
+    Returns {symbol: DataFrame | None}. Providers that can fetch a whole list in
+    one request (Yahoo) do so, avoiding the per-symbol rate-limiting a serial
+    loop over get_history() runs into on a large refresh. Order and de-duping of
+    the input are preserved by the provider implementations."""
+    from tradelab.data import providers
+    return providers.active().get_histories(symbols, period, interval)
+
+
+def _yahoo_histories(symbols, period: str = "1y", interval: str = "1d",
+                     chunk_size: int = _BATCH_CHUNK) -> dict:
+    """Yahoo (yfinance) multi-symbol download in chunks - one HTTP batch per
+    chunk instead of one request per symbol. Any symbol Yahoo returns nothing
+    usable for falls back to synthetic data, exactly like the single-symbol
+    path, so a partial outage never leaves a gap in the dashboard."""
+    unique = list(dict.fromkeys(symbols))       # de-dup, preserve order
+    if yf is None:
+        return {s: synthetic_ohlcv(s) for s in unique}
+    out: dict = {}
+    for start in range(0, len(unique), chunk_size):
+        chunk = unique[start:start + chunk_size]
+        frames = _yahoo_download_chunk(chunk, period, interval)
+        for sym in chunk:
+            df = frames.get(sym)
+            if df is None or df.empty or not _OHLCV.issubset(df.columns):
+                out[sym] = synthetic_ohlcv(sym)
+            else:
+                out[sym] = df.dropna(subset=["Close"])
+    return out
+
+
+def _yahoo_download_chunk(symbols, period: str, interval: str) -> dict:
+    """One yf.download batch for a handful of tickers -> {symbol: OHLCV frame}.
+
+    Handles yfinance's two column shapes (a flat frame for a single ticker, a
+    (ticker, field) MultiIndex for several) and never raises: a symbol Yahoo
+    couldn't fill is simply absent from the returned dict, and the caller
+    substitutes synthetic data for it.
+    """
+    result: dict = {}
+    if not symbols:
+        return result
+    try:
+        raw = yf.download(list(symbols), period=period, interval=interval,
+                          progress=False, auto_adjust=False, group_by="ticker",
+                          threads=True)
+    except Exception:
+        return result
+    if raw is None or getattr(raw, "empty", True):
+        return result
+    # One ticker: yfinance returns a flat (field) frame, not a (ticker, field)
+    # MultiIndex - handle it the same way the single-symbol path does.
+    if len(symbols) == 1:
+        df = _flatten_yf(raw.copy())
+        if not df.empty and _OHLCV.issubset(df.columns):
+            result[symbols[0]] = df
+        return result
+    if isinstance(raw.columns, pd.MultiIndex):
+        tickers = set(raw.columns.get_level_values(0))
+        for sym in symbols:
+            if sym not in tickers:
+                continue
+            sub = raw[sym].dropna(how="all")    # failed tickers come back all-NaN
+            if not sub.empty and _OHLCV.issubset(sub.columns):
+                result[sym] = sub
+    return result
+
+
 _quote_meta_cache: dict = {}
 
 # Yahoo has become inconsistent about which name field it returns: many

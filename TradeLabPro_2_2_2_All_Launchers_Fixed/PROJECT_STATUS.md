@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.30.0
-Current phase: Advance/decline breadth on the Market tab (done)
+Current version: 2.31.0
+Current phase: Faster Market refresh — batched downloads, both markets cached (done)
+
+## Completed in 2.31.0 (Faster Market refresh: batched downloads, both markets cached)
+- Fix: the US Market refresh no longer stalls. `_MarketRefreshWorker` used to fetch ~90 symbols serially (one `get_history` each), tripping Yahoo's rate limit. New `market_data.get_histories()` / `_yahoo_histories()` / `_yahoo_download_chunk()` batch up to 40 tickers per `yf.download(list, group_by="ticker")` call; the provider abstraction gained `DataProvider.get_histories()` (default serial loop, Yahoo overrides with the real batch). Failed/empty symbols fall back to synthetic per-symbol, same as before.
+- Change: one refresh now downloads and scores **both** markets in the same batched pass (~167 symbols, ~5 requests) via `required_symbols()`; `_render()` caches every region. Switching country is always an instant re-render — the racy background prefetch (`_prefetch_other_region`) is gone.
+- Fix: the global-indices table no longer blanks on a country switch. `_populate_global_scaffold()` builds it once at construction; `populate_static()` now rebuilds only the region tables, so the global values persist across switches.
+- pytest regression suite passing, incl. new batched-download tests and a global-indices-survive-a-switch regression test.
 
 ## Completed in 2.30.0 (Advance/decline breadth on the Market tab)
 - `core/market.py`: `breadth_universe(region, per_sector=6)` (the 6 largest names per GICS sector from `core.sectors`, deduped: ~66 US / ~64 CA) and `advance_decline(trends)` (advancers/decliners, A/D ratio, net, % above 50/200-day). `market_condition` gained `breadth_unit` and now weights the 200-day breadth share heavily (±12), naming the % in a reason and the summary.

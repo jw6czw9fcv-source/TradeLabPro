@@ -33,6 +33,13 @@ class DataProvider(ABC):
     def get_quote_meta(self, symbol: str) -> dict:
         ...
 
+    def get_histories(self, symbols, period: str = "1y", interval: str = "1d") -> dict:
+        """Fetch history for many symbols -> {symbol: DataFrame}. The default is a
+        serial loop over get_history(); providers backed by a source that accepts
+        a whole ticker list in one request (e.g. Yahoo) override this to avoid the
+        per-symbol rate-limiting a long serial refresh hits."""
+        return {s: self.get_history(s, period, interval) for s in dict.fromkeys(symbols)}
+
     def available(self) -> bool:
         return True
 
@@ -49,6 +56,10 @@ class YahooProvider(DataProvider):
     def get_quote_meta(self, symbol):
         from tradelab.data import market_data as md
         return md._yahoo_quote_meta(symbol)
+
+    def get_histories(self, symbols, period="1y", interval="1d"):
+        from tradelab.data import market_data as md
+        return md._yahoo_histories(symbols, period, interval)
 
     def available(self):
         from tradelab.data import market_data as md

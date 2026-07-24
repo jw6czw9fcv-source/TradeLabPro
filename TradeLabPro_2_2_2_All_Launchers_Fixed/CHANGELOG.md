@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.31.0 - Faster Market refresh: batched downloads, both markets cached
+
+### Fixed
+- **The US Market refresh no longer stalls.** A refresh used to download every symbol one at a time — around 90 back-to-back requests once the breadth feature landed — which tripped Yahoo's rate limiting and left the refresh spinning. Downloads are now **batched**: up to 40 tickers per request, so a full refresh is a handful of requests instead of ~90, and completes in a few seconds.
+- **Market data no longer disappears when you switch country.** The global-indices table used to blank out on every US ↔ Canada switch (it was rebuilt empty and never refilled, since a switch only redraws the region-specific tables). The global indices are the same for every market, so they're now built once and their values persist across switches.
+
+### Changed
+- **One refresh now loads both markets.** A single "Refresh" downloads and scores both the US and Canada in the same batched pass (~167 symbols across ~5 requests) and caches both. Switching country afterwards is always an instant re-render from memory — never a second download. This replaces the previous background prefetch, which could be raced by switching before it finished.
+
+### Verified
+- Full pytest suite passes. New tests: batched `get_histories`/`_yahoo_histories` (chunking, empty-symbol synthetic fallback, de-duplication, no-yfinance, and a mid-refresh download failure); the both-markets caching contract; and a regression test that the global indices stay populated across a US → Canada → US switch.
+
 ## 2.30.0 - Advance/decline breadth on the Market tab
 
 ### Added
