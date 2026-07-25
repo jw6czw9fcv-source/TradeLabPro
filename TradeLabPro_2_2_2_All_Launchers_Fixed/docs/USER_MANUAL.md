@@ -1,16 +1,17 @@
 # TradeLab Pro — User Manual
 
-**Version 2.33.0**
+**Version 2.34.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: scan the
-market for setups, chart and analyze symbols, keep watchlists and a portfolio,
-set price/indicator **alerts**, see a whole market at a glance on a **heatmap**,
-backtest strategies, build your own strategies and indicators without code,
-**replay** history bar-by-bar, study a symbol's **seasonality**, keep a **trade
-journal** (with IBKR import), have an **AI Coach** grade your trades on process
-and tell you what to work on, **size positions by risk**, practice with a
-simulated paper-trading account, and ask a built-in AI assistant to explain what
-you're looking at.
+market for setups, chart and analyze symbols, keep watchlists and a portfolio
+(**import your positions from IBKR** and see the book's **risk analytics** in
+CAD), set price/indicator **alerts**, see a whole market at a glance on a
+**heatmap**, backtest strategies, build your own strategies and indicators
+without code, **replay** history bar-by-bar, study a symbol's **seasonality**,
+keep a **trade journal** (with IBKR import), have an **AI Coach** grade your
+trades on process and tell you what to work on, **size positions by risk**,
+practice with a simulated paper-trading account, and ask a built-in AI assistant
+to explain what you're looking at.
 
 > **Important — what this app is and isn't.** TradeLab Pro is an **analysis and
 > practice** tool. It does **not** place real orders, connect to a live
@@ -30,7 +31,7 @@ you're looking at.
 4. [Scanner](#4-scanner)
 5. [Charts](#5-charts)
 6. [Watchlists](#6-watchlists)
-7. [Portfolio](#7-portfolio)
+7. [Portfolio & Analytics](#7-portfolio--analytics)
 8. [Alerts](#8-alerts)
 9. [Heatmap](#9-heatmap)
 10. [Market dashboard](#10-market-dashboard)
@@ -76,7 +77,8 @@ The window is split into two halves:
 - **Left — the tabbed control panel.** The tabs are ordered to follow the
   trading process: **Market → Heatmap → News** (market context) → **Scanner →
   Watchlists → Alerts** (find & watch) → **AI Assist → Risk → Paper Trading**
-  (analyse, size & act) → **Portfolio → Journal → Coach** (track & review) →
+  (analyse, size & act) → **Portfolio → Analytics → Journal → Coach** (track &
+  review) →
   **Backtest → Strategies → Replay → Seasonality → Plugins** (research/build) →
   **Notes → Links → Settings** (utilities). The tab bar wraps to two rows so
   every tab is visible.
@@ -229,14 +231,68 @@ an entry can load it on the chart.
 
 ---
 
-## 7. Portfolio
+## 7. Portfolio & Analytics
 
-A simple holdings record: **ID, Portfolio, Symbol, Shares, Entry**. Add positions
-(e.g. from a Scanner result), group them by portfolio name, and export. This is a
-**record-keeping** ledger for positions you hold elsewhere — it does not place or
-track live orders. Your portfolio also feeds the **Heatmap** (Portfolio map) and
-the **Risk** tab's sector-exposure view. For simulated order entry and P&L, use
-**Paper Trading** (section 16).
+The **Portfolio** tab is a holdings record: **ID, Portfolio, Symbol, Shares,
+Entry**. Add positions (e.g. from a Scanner result), group them by portfolio
+name, and export. This is a **record-keeping** ledger for positions you hold
+elsewhere — it does not place or track live orders. Your portfolio also feeds the
+**Heatmap** (Portfolio map) and the **Risk** tab's sector-exposure view. For
+simulated order entry and P&L, use **Paper Trading** (section 16).
+
+### Import your positions from IBKR (read-only)
+
+Instead of typing holdings in, you can pull your current open positions straight
+from Interactive Brokers. On the Portfolio tab, under **Import from IBKR**:
+
+- **Positions file (CSV/XML)…** — export an Activity Statement or Flex report
+  that includes the **Open Positions** section (CSV or XML) and pick the file.
+- **Fetch positions (Flex)** — a direct pull over the IBKR Flex Web Service,
+  reusing the **token and query id** you saved in the Journal tab (section 17).
+  Your Flex query's Open Positions section must include at least Symbol, Quantity
+  and Cost Price (add Currency / Listing Exchange too for the cleanest mapping).
+
+Imported holdings land in a portfolio named **IBKR**; each import **replaces** the
+previous one, so re-importing never creates duplicates, and your manually-added
+positions are left alone.
+
+> **Read-only.** This reads what you hold — it never logs in to trade, routes
+> orders, or moves funds.
+
+**Ticker mapping.** IBKR reports bare local tickers, which can point at the wrong
+listing on the app's data source (e.g. US `XDIV` at ~$30 vs Toronto `XDIV.TO` at
+~$46 — and some US names even have a Canadian "CDR" at the same ticker). The
+importer maps each holding to the correct listing using its exchange/currency and,
+as a fallback, by matching each candidate's price to your cost basis, so a mixed
+Canadian/US book prices correctly.
+
+### Analytics — your book's risk profile
+
+The **Analytics** tab treats your holdings as one book. Pick a **Benchmark**
+(default SPY), a **History** window, and a display **Currency** (default **CAD**),
+then click **Analyze**. It fetches prices in the background and shows:
+
+- **Metric tiles** — total value, unrealized P&L, return vs the benchmark, beta,
+  annualized volatility, and max drawdown.
+- **Holdings table** — each position's native currency (**Ccy**), last price,
+  market value, weight of the book, and unrealized P&L.
+- **Concentration** — the largest position, the top-3 share, and the *effective
+  number of positions* (a book split evenly across 5 names has an effective N of
+  5; one dominated by a single name is far lower).
+- **Correlation matrix** — how your holdings' daily returns move together
+  (red = they move as one, concentrated risk; green = they diversify each other),
+  plus the average pairwise correlation.
+
+**Currency (multi-currency books).** With a display currency chosen (e.g. CAD),
+each holding's live price and the benchmark are converted to that currency using
+live FX, so a mixed Canadian/US account is valued apples-to-apples. Your
+**imported cost basis is used exactly as imported and is never adjusted** — an
+IBKR account reported in CAD keeps its CAD costs; only the live prices are
+converted. Choose **Native (mixed)** to see each holding in its own currency
+instead.
+
+> Analysis only — the Analytics tab never places or tracks live orders, and the
+> figures are not financial advice.
 
 ---
 
@@ -731,7 +787,16 @@ switch back to the same interval to see them.
 - **Seasonality** — a stock's recurring calendar tendencies: how it has performed
   on average by month, weekday, and year over its history. Descriptive of the
   past, not a prediction.
-- **Max drawdown** — the largest peak-to-trough drop in a backtest's equity.
+- **Max drawdown** — the largest peak-to-trough drop in an equity curve
+  (a backtest's, or your portfolio's over the history window).
+- **Beta** — how much a portfolio moves with its benchmark: ~1 tracks the market,
+  <1 is more defensive, >1 amplifies its swings.
+- **Correlation** — how closely two holdings' daily returns move together, from
+  +1 (in lockstep) through 0 (unrelated) to −1 (opposite); low/negative between
+  holdings means the book is more diversified.
+- **Effective number of positions** — a concentration measure (1 ÷ Herfindahl
+  index): a book spread evenly across 5 names scores 5; one dominated by a single
+  name scores far lower.
 - **Profit factor** — gross profit ÷ gross loss (>1 is profitable).
 - **Expectancy** — average profit/loss per trade over your journal's closed trades.
 - **R-multiple / 1R** — trade result measured in units of the risk you took; 1R is
