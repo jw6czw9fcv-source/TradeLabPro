@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.34.0 - Portfolio analytics + IBKR position import
+
+### Added
+- **New "Analytics" tab — your holdings as one book.** Pick a benchmark, a history window, and a display currency, and it values every position and reports the book's risk profile:
+  - Metric tiles: total value, unrealized P&L, return vs the benchmark, beta, annualized volatility, and max drawdown.
+  - A holdings table with each position's native currency, last price, market value, weight, and unrealized P&L (per position).
+  - A concentration read (largest position, top-3 share, effective number of positions) and a colour-coded correlation matrix between holdings (red = move together, green = diversifiers).
+- **Import your open positions from IBKR (read-only).** On the Portfolio tab, "Import from IBKR" pulls your current holdings — either from a positions file (Activity/Flex CSV or XML) or a direct Flex Web Service fetch (reusing the token and query id saved in the Journal). Holdings land in an "IBKR" portfolio; each import replaces the previous one, so re-importing never duplicates. Never logs in to trade or moves funds.
+- **Symbol resolution for imported tickers.** IBKR reports bare local tickers, which can resolve to the wrong Yahoo listing (US `XDIV` at $30 vs Toronto `XDIV.TO` at $46 — and some US names even have a Canadian CDR at the same ticker). Imports are corrected to the right listing by exchange/currency and, as a fallback, by matching each candidate's price to your cost basis, so a mixed CAD/US book prices correctly.
+- **Multi-currency, viewed in one currency (default CAD).** In the Analytics tab, each holding's live price is converted to the chosen currency using live FX (e.g. USD→CAD), and the benchmark too, so a mixed CAD/US account is valued apples-to-apples. Your **imported cost basis is used exactly as imported and is never adjusted** — an IBKR CAD account's costs stay in CAD.
+
+### Verified
+- Full pytest suite passes, including new coverage of the analytics engine (valuation, equity curve, beta, drawdown, concentration, correlation, currency conversion), the IBKR position parsers (XML/CSV, lot merging, short signs, exchange/currency and cost-basis symbol resolution), and the Analytics and Portfolio-import UI.
+
 ## 2.33.0 - Seasonality analysis
 
 ### Added

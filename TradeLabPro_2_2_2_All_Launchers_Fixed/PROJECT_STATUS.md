@@ -1,7 +1,14 @@
 # TradeLab Pro Project Status
 
-Current version: 2.33.0
-Current phase: Seasonality analysis — monthly / weekday / annual patterns (done)
+Current version: 2.34.0
+Current phase: Portfolio analytics + IBKR position import (CAD) (done)
+
+## Completed in 2.34.0 (Portfolio analytics + IBKR position import)
+- New `core/portfolio_analytics.py` (Qt-free): `holdings` (per-position valuation, weights, unrealized P&L), `portfolio_equity` (Σ shares×close on common dates = real equity curve), `beta`/`annualized_vol`/`max_drawdown`/`total_return`/`cagr`, `concentration` (largest, top-3, HHI effective-N), `correlation` (holdings only, avg pairwise), `summarize`. Multi-currency: `currency_of` (suffix→ccy), `fx_pair_symbol`, and conversion so **live prices convert to a target currency (default CAD) while the imported cost basis is left as-is** (an IBKR CAD account's costs stay CAD; only Yahoo prices are converted). Benchmark converted too.
+- New `core/portfolio_import.py` (Qt-free): parse open positions from IBKR Flex XML (`<OpenPosition>`) / Activity CSV / flat Flex CSV; lot-merge; keep short signs. `_to_yahoo_symbol` (exchange/currency → Yahoo suffix, class-share dash) and `choose_symbol`/`resolve_positions` (cost-basis-proximity probe to disambiguate homonyms like US XDIV vs XDIV.TO, and the US-stock-vs-Canadian-CDR trap for NVDA). `fetch_ibkr_positions` reuses the Journal's read-only Flex fetch.
+- `Database.set_portfolio_positions(portfolio, positions)` — replace-in-place sync (no duplicate re-imports).
+- UI: new **Analytics** tab (`PortfolioAnalyticsPanel`, after Portfolio): benchmark + history + **Currency selector (default CAD)**, metric tiles, holdings table with native-currency column, concentration line, correlation matrix, off-thread fetch (`_MarketRefreshWorker`) including FX pairs. **Portfolio** tab gains "Import from IBKR" (CSV/XML file + Flex fetch, `_IbkrPositionsWorker`/`_ResolveSymbolsWorker`, replaces the 'IBKR' group). Both new panels' `shutdown()` wired into `closeEvent`.
+- Tests: `tests/test_portfolio_analytics.py`, `tests/test_portfolio_import.py`, `tests/test_portfolio_analytics_panel.py`. Full suite 695 passing.
 
 ## Completed in 2.33.0 (Seasonality analysis)
 - New `core/seasonality.py` (Qt-free, offline-testable): `monthly_return_series` (month-end resample → month-over-month %), `monthly_stats` (12 rows: avg/median/win-rate/best/worst/count across years), `weekday_stats` (Mon–Fri daily-return seasonality), `annual_returns` (intra-year first→last-close % per year), `years_covered`, `month_context` (per-month strong/weak/mixed read), and `summarize` (headline text + best/worst month + current-month context). Shares the `_close` guard pattern (collapse duplicated 2-D Close, coerce a DatetimeIndex).

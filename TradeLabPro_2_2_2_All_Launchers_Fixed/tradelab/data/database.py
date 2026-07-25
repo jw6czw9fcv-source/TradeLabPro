@@ -137,6 +137,24 @@ class Database:
         self.conn.execute("DELETE FROM portfolio_positions WHERE id=?", (position_id,))
         self.conn.commit()
 
+    def set_portfolio_positions(self, portfolio: str, positions: list) -> int:
+        """Replace all rows in a named portfolio with `positions` (dicts with
+        symbol / shares / entry_price). Used to sync an imported book (e.g. from
+        IBKR) without accumulating duplicates on re-import. Returns rows written."""
+        self.conn.execute("DELETE FROM portfolio_positions WHERE portfolio=?", (portfolio,))
+        written = 0
+        for p in positions:
+            symbol = str(p.get("symbol", "")).upper().strip()
+            shares = float(p.get("shares", 0) or 0)
+            if not symbol or shares == 0:
+                continue
+            self.conn.execute(
+                "INSERT INTO portfolio_positions(portfolio,symbol,shares,entry_price) VALUES (?,?,?,?)",
+                (portfolio, symbol, shares, float(p.get("entry_price", 0) or 0)))
+            written += 1
+        self.conn.commit()
+        return written
+
     def save_scan(self, scan_name: str, settings_json: str, rows: list[dict]):
         cur = self.conn.execute("INSERT INTO scan_history(scan_name, settings_json) VALUES (?,?)", (scan_name, settings_json))
         scan_id = cur.lastrowid

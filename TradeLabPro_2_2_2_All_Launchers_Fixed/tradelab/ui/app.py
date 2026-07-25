@@ -1428,9 +1428,47 @@ class WatchlistPanel(QWidget):
         sym = item.text(); self.chart.plot(sym, get_history(sym, self.cfg.period, self.cfg.interval), self.cfg)
 
 
+class _IbkrPositionsWorker(QThread):
+    """Pulls open positions from the IBKR Flex Web Service off the UI thread.
+    Read-only; no orders, no funds."""
+    done = Signal(object, str)   # positions list | None, error message
+
+    def __init__(self, token, query_id):
+        super().__init__()
+        self.token = token
+        self.query_id = query_id
+
+    def run(self):
+        try:
+            from tradelab.core.portfolio_import import fetch_ibkr_positions, resolve_positions
+            positions = fetch_ibkr_positions(self.token, self.query_id)
+            positions = resolve_positions(positions)   # correct symbols to Yahoo listings
+            self.done.emit(positions, "")
+        except Exception as exc:
+            self.done.emit(None, str(exc))
+
+
+class _ResolveSymbolsWorker(QThread):
+    """Resolves parsed positions' symbols to the right Yahoo listings by
+    cost-basis proximity (probes Yahoo, so off the UI thread)."""
+    done = Signal(object, str)   # positions | None, error
+
+    def __init__(self, positions):
+        super().__init__()
+        self.positions = positions
+
+    def run(self):
+        try:
+            from tradelab.core.portfolio_import import resolve_positions
+            self.done.emit(resolve_positions(self.positions), "")
+        except Exception as exc:
+            self.done.emit(None, str(exc))
+
+
 class PortfolioPanel(QWidget):
     def __init__(self, db: Database):
         super().__init__(); self.db = db
+        self._ibkr_worker = None
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
         self.sym = QLineEdit(); self.sym.setPlaceholderText("Symbol")
@@ -1442,11 +1480,103 @@ class PortfolioPanel(QWidget):
         row.addWidget(self.sym); row.addWidget(QLabel("Shares")); row.addWidget(self.shares); row.addWidget(QLabel("Entry")); row.addWidget(self.entry); row.addWidget(add); row.addWidget(delete); row.addWidget(refresh)
         layout.addLayout(row)
         export_btn = QPushButton("Export Portfolio"); export_btn.clicked.connect(self.export_portfolio); row.addWidget(export_btn)
+
+        # --- Import current holdings from IBKR (read-only) ---
+        imp = QHBoxLayout()
+        imp.addWidget(QLabel("Import from IBKR:"))
+        csv_btn = QPushButton("Positions file (CSV/XML)…"); csv_btn.clicked.connect(self.import_ibkr_file)
+        flex_btn = QPushButton("Fetch positions (Flex)"); flex_btn.clicked.connect(self.fetch_ibkr_positions)
+        imp.addWidget(csv_btn); imp.addWidget(flex_btn)
+        imp.addWidget(_hint("Imports your open positions into an 'IBKR' portfolio (read-only; each "
+                            "import replaces the previous one). The Flex pull reuses the token and "
+                            "query id you saved in the Journal tab — use a query that includes the "
+                            "Open Positions section."))
+        imp.addStretch()
+        layout.addLayout(imp)
+
         self.table = QTableWidget(0, 5); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.ExtendedSelection); self.table.setHorizontalHeaderLabels(["ID","Portfolio","Symbol","Shares","Entry"])
         layout.addWidget(self.table)
         self.status=QLabel("")
         layout.addWidget(self.status)
         self.refresh()
+
+    # -- IBKR position import (read-only) --
+    def import_ibkr_file(self):
+        from pathlib import Path
+        from tradelab.core.portfolio_import import parse_ibkr_positions
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import IBKR positions", "", "IBKR reports (*.xml *.csv);;All files (*)")
+        if not path:
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            self.status.setText(f"Could not read file: {exc}")
+            return
+        parsed = parse_ibkr_positions(text)
+        if not parsed:
+            self._apply_ibkr(parsed, "file")
+            return
+        # Resolve symbols to the right Yahoo listings off-thread before applying.
+        self.status.setText("Resolving symbols…")
+        self._ibkr_worker = _ResolveSymbolsWorker(parsed)
+        self._ibkr_worker.done.connect(lambda pos, err: (
+            self.status.setText(f"IBKR file resolve failed: {err}") if err
+            else self._apply_ibkr(pos, "file")))
+        self._ibkr_worker.start()
+
+    def fetch_ibkr_positions(self):
+        if self._ibkr_worker is not None and self._ibkr_worker.isRunning():
+            return
+        settings = QSettings("TradeLabPro", "TradeLabPro")
+        token = str(settings.value("ibkr/flex_token", "") or "").strip()
+        query = str(settings.value("ibkr/flex_query", "") or "").strip()
+        if not token or not query:
+            QMessageBox.information(
+                self, "IBKR Flex",
+                "Set your Flex token and query id first in the Journal tab (IBKR import). "
+                "A Flex query that includes the Open Positions section serves both trades "
+                "and positions.")
+            return
+        self.status.setText("Fetching IBKR positions…")
+        self._ibkr_worker = _IbkrPositionsWorker(token, query)
+        self._ibkr_worker.done.connect(self._on_ibkr_fetched)
+        self._ibkr_worker.start()
+
+    def _on_ibkr_fetched(self, positions, error):
+        if error or positions is None:
+            self.status.setText(f"IBKR fetch failed: {error or 'no data'}")
+            return
+        self._apply_ibkr(positions, "Flex report")
+
+    def _apply_ibkr(self, positions, source):
+        if not positions:
+            self.status.setText(
+                f"No open positions found in the IBKR {source}. Make sure it includes the "
+                "Open Positions section.")
+            return
+        ret = QMessageBox.question(
+            self, "Import IBKR positions",
+            f"Import {len(positions)} position(s) into the 'IBKR' portfolio?\n"
+            "This replaces any previous IBKR import (your manually-added positions are untouched).",
+            QMessageBox.Yes | QMessageBox.No)
+        if ret != QMessageBox.Yes:
+            self.status.setText("Import cancelled.")
+            return
+        written = self.db.set_portfolio_positions("IBKR", positions)
+        self.refresh()
+        self.status.setText(f"Imported {written} IBKR position(s) into the 'IBKR' portfolio. "
+                            "Open the Analytics tab to review the book.")
+
+    def shutdown(self):
+        worker = self._ibkr_worker
+        if worker is not None:
+            try:
+                worker.done.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            worker.wait(3000)
+            self._ibkr_worker = None
     def refresh(self):
         pos = self.db.positions(); self.table.setRowCount(len(pos))
         for r, p in enumerate(pos):
@@ -5725,6 +5855,269 @@ class SeasonalityPanel(QWidget):
             self._worker = None
 
 
+def _corr_color(v):
+    """Colour a correlation cell: highly correlated (concentrated risk) red,
+    diversifying (low/negative) green, in between amber/neutral."""
+    if v is None:
+        return None
+    if v >= 0.6:
+        return "#e5534b"
+    if v >= 0.3:
+        return "#e3b341"
+    if v <= -0.3:
+        return "#3fb950"
+    return "#8a9099"
+
+
+class PortfolioAnalyticsPanel(QWidget):
+    """Risk analytics for the Portfolio tab's holdings: current value and
+    unrealized P&L, concentration, and the book's risk profile over a history
+    window — beta vs a benchmark, annualized volatility, max drawdown, total
+    return vs the benchmark, and the correlation between holdings. All numbers
+    come from tradelab.core.portfolio_analytics (offline-testable). Analysis
+    only — it never places or tracks live orders."""
+
+    _METRICS = [("value", "Total value"), ("unreal", "Unrealized P&L"),
+                ("ret", "Return vs bench"), ("beta", "Beta"),
+                ("vol", "Ann. volatility"), ("dd", "Max drawdown")]
+
+    def __init__(self, db: Database):
+        super().__init__()
+        self.db = db
+        self._worker = None
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(_hint(
+            "Risk analytics for your Portfolio-tab holdings, viewed as one book. Enter a "
+            "benchmark and history window and click Analyze: the app values every position, "
+            "measures the portfolio's beta, volatility, drawdown and return against the "
+            "benchmark, shows how concentrated it is, and how correlated the holdings are. "
+            "Add positions in the Portfolio tab first. Analysis only — no live orders."))
+
+        row = QHBoxLayout()
+        self.bench = QLineEdit("SPY"); self.bench.setMaximumWidth(90)
+        self.bench.returnPressed.connect(self.analyze)
+        self.period = QComboBox(); self.period.addItems(["6mo", "1y", "2y", "5y"])
+        self.period.setCurrentText("1y")
+        self.currency = QComboBox(); self.currency.addItems(["CAD", "USD", "Native (mixed)"])
+        go = QPushButton("Analyze"); go.clicked.connect(self.analyze)
+        row.addWidget(QLabel("Benchmark")); row.addWidget(self.bench)
+        row.addWidget(QLabel("History")); row.addWidget(self.period)
+        row.addWidget(QLabel("Currency")); row.addWidget(self.currency)
+        row.addWidget(go); row.addStretch()
+        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        row.addWidget(self.status)
+        layout.addLayout(row)
+
+        self.headline = QLabel("Add holdings in the Portfolio tab, then click Analyze.")
+        self.headline.setWordWrap(True)
+        self.headline.setStyleSheet("font-size:14px;")
+        layout.addWidget(self.headline)
+
+        # Metric tiles.
+        tiles = QHBoxLayout()
+        self.metrics = {}
+        for key, label in self._METRICS:
+            box = QVBoxLayout()
+            cap = QLabel(label); cap.setStyleSheet("color:#8a9099; font-size:12px;")
+            val = QLabel("—"); val.setStyleSheet("font-size:18px; font-weight:bold;")
+            box.addWidget(cap); box.addWidget(val)
+            holder = QWidget(); holder.setLayout(box)
+            tiles.addWidget(holder)
+            self.metrics[key] = val
+        layout.addLayout(tiles)
+
+        self.conc = QLabel(""); self.conc.setStyleSheet("color:#c7d0d8;")
+        self.conc.setWordWrap(True)
+        layout.addWidget(self.conc)
+
+        layout.addWidget(QLabel("Holdings"))
+        self.holdings = QTableWidget(0, 9)
+        self.holdings.setHorizontalHeaderLabels(
+            ["Symbol", "Ccy", "Shares", "Avg entry", "Last", "Mkt value", "Weight %", "Unreal P&L", "Unreal %"])
+        self.holdings.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.holdings.verticalHeader().setVisible(False)
+        layout.addWidget(self.holdings)
+
+        self.corr_label = QLabel("Correlation (daily returns)")
+        layout.addWidget(self.corr_label)
+        self.corr = QTableWidget(0, 0)
+        self.corr.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.corr.setToolTip("Correlation of daily returns between holdings. Red = they move "
+                             "together (concentrated risk); green = they diversify each other.")
+        layout.addWidget(self.corr)
+
+        disclaimer = QLabel("Risk analysis of holdings you record — not a live brokerage view "
+                            "and not financial advice.")
+        disclaimer.setStyleSheet("color:#8a9099; font-size:11px;")
+        layout.addWidget(disclaimer)
+
+    def analyze(self):
+        from tradelab.core.portfolio_analytics import currency_of, fx_pair_symbol
+        if self._worker is not None and self._worker.isRunning():
+            return
+        positions = self.db.positions()
+        if not positions:
+            self.headline.setText("No positions yet — add holdings in the Portfolio tab first.")
+            return
+        self._positions = positions
+        self._bench_symbol = self.bench.text().strip().upper() or "SPY"
+        choice = self.currency.currentText()
+        self._target = None if choice.startswith("Native") else choice
+
+        hold_syms = {str(p["symbol"]).upper() for p in positions}
+        # FX pairs needed to convert every non-target currency into the target.
+        self._fx_pairs = {}
+        if self._target:
+            needed = {currency_of(s) for s in hold_syms} | {currency_of(self._bench_symbol)}
+            for ccy in needed - {self._target}:
+                self._fx_pairs[ccy] = fx_pair_symbol(ccy, self._target)
+        symbols = sorted(hold_syms | {self._bench_symbol} | set(self._fx_pairs.values()))
+        self.status.setText(f"Loading {len(symbols)} symbols…")
+        self._worker = _MarketRefreshWorker(symbols, period=self.period.currentText())
+        self._worker.done.connect(self._on_loaded)
+        self._worker.start()
+
+    def _on_loaded(self, history):
+        from tradelab.core import portfolio_analytics as pa
+        self.status.setText("")
+        fx = ({ccy: history.get(sym) for ccy, sym in self._fx_pairs.items()}
+              if self._target else None)
+        bench_df = history.get(self._bench_symbol)
+        data = pa.summarize(self._positions, history, benchmark_df=bench_df,
+                            benchmark_symbol=self._bench_symbol,
+                            target_currency=self._target, fx=fx)
+        self._render(data)
+
+    @staticmethod
+    def _pnl_color(v):
+        return "#3fb950" if (v or 0) >= 0 else "#f85149"
+
+    def _set_metric(self, key, text, colour=None):
+        lbl = self.metrics[key]
+        lbl.setText(text)
+        lbl.setStyleSheet(f"font-size:18px; font-weight:bold;"
+                          + (f" color:{colour};" if colour else ""))
+
+    def _render(self, d):
+        cur = d.get("currency")
+        suf = f" {cur}" if cur else ""       # the currency unit, shown on money values
+        self.headline.setText(d["text"])
+        tv = d["total_value"]
+        self._set_metric("value", f"${tv:,.0f}{suf}" if tv else "—")
+        up, upp = d["total_unrealized"], d["total_unrealized_pct"]
+        if up is None:
+            unreal_txt = "—"
+        elif upp is None:                    # cost basis 0 -> no % to show
+            unreal_txt = f"{up:+,.0f}{suf}"
+        else:
+            unreal_txt = f"{up:+,.0f}{suf} ({upp:+.1f}%)"
+        self._set_metric("unreal", unreal_txt,
+                         self._pnl_color(up) if up is not None else None)
+        pr, brr = d["total_return_pct"], d["benchmark_return_pct"]
+        self._set_metric("ret",
+                         (f"{pr:+.1f}%" if pr is not None else "—")
+                         + (f"  vs {brr:+.1f}%" if brr is not None else ""),
+                         self._pnl_color(pr) if pr is not None else None)
+        beta = d["beta"]
+        self._set_metric("beta", f"{beta:.2f}" if beta is not None else "—")
+        vol = d["ann_vol_pct"]
+        self._set_metric("vol", f"{vol:.1f}%" if vol is not None else "—")
+        dd = d["max_drawdown_pct"]
+        self._set_metric("dd", f"{dd:.1f}%" if dd is not None else "—",
+                         "#f85149" if dd is not None else None)
+
+        c = d["concentration"]
+        parts = []
+        if c["positions"]:
+            parts.append(
+                f"Concentration: largest position {c['largest_pct']:.0f}% of the book · "
+                f"top 3 = {c['top3_pct']:.0f}% · effective positions "
+                f"{c['effective_n']:.1f} of {c['positions']}"
+                + (f"   ·   window {d['window_days']} days" if d['window_days'] else ""))
+        if cur:
+            parts.append(f"All monetary values in {cur}.")
+        self.conc.setText("   ".join(parts))
+        if d.get("fx_missing"):
+            self.status.setText("No FX rate for " + ", ".join(d["fx_missing"])
+                                + " — those shown in native currency.")
+
+        rows = d["holdings"]
+        self.holdings.setRowCount(len(rows))
+        for r, h in enumerate(rows):
+            self.holdings.setItem(r, 0, QTableWidgetItem(h["symbol"]))
+            ccy_item = QTableWidgetItem(h.get("currency", ""))
+            ccy_item.setTextAlignment(Qt.AlignCenter)
+            if cur and not h.get("converted", True):     # couldn't convert -> flag
+                ccy_item.setForeground(QColor("#e3b341"))
+                ccy_item.setToolTip("No FX rate — value left in native currency")
+            self.holdings.setItem(r, 1, ccy_item)
+            self._num(r, 2, f"{h['shares']:g}")
+            avg = (h["cost_basis"] / h["shares"]) if h["shares"] else 0.0   # entry in view currency
+            self._num(r, 3, f"${avg:,.2f}")
+            self._num(r, 4, f"${h['last']:,.2f}" if h["last"] is not None else "—")
+            self._num(r, 5, f"${h['market_value']:,.0f}" if h["market_value"] is not None else "—")
+            self._num(r, 6, f"{h['weight_pct']:.1f}%" if h["weight_pct"] is not None else "—")
+            up = h["unrealized"]
+            self._num(r, 7, f"{up:+,.0f}" if up is not None else "—",
+                      self._pnl_color(up) if up is not None else None)
+            upp = h["unrealized_pct"]
+            self._num(r, 8, f"{upp:+.1f}%" if upp is not None else "—",
+                      self._pnl_color(upp) if upp is not None else None)
+        self.holdings.resizeColumnsToContents()
+
+        self._render_correlation(d["correlation"])
+
+    def _num(self, r, c, text, colour=None):
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        if colour:
+            item.setForeground(QColor(colour))
+        self.holdings.setItem(r, c, item)
+
+    def _render_correlation(self, corr):
+        syms = corr["symbols"]
+        matrix = corr["matrix"]
+        if len(syms) < 2:
+            self.corr.setRowCount(0); self.corr.setColumnCount(0)
+            self.corr_label.setText("Correlation (daily returns) — needs at least two priced holdings")
+            return
+        avg = corr["avg_pairwise"]
+        self.corr_label.setText("Correlation (daily returns)"
+                                + (f" — average pairwise {avg:.2f}" if avg is not None else ""))
+        self.corr.setColumnCount(len(syms))
+        self.corr.setRowCount(len(syms))
+        self.corr.setHorizontalHeaderLabels(syms)
+        self.corr.setVerticalHeaderLabels(syms)
+        for i in range(len(syms)):
+            for j in range(len(syms)):
+                v = matrix[i][j]
+                item = QTableWidgetItem(f"{v:.2f}")
+                item.setTextAlignment(Qt.AlignCenter)
+                if i == j:
+                    item.setForeground(QColor("#8a9099"))
+                else:
+                    col = _corr_color(v)
+                    if col:
+                        item.setForeground(QColor(col))
+                self.corr.setItem(i, j, item)
+        self.corr.resizeColumnsToContents()
+
+    def shutdown(self):
+        worker = self._worker
+        if worker is not None:
+            try:
+                worker.stop()
+            except Exception:
+                pass
+            try:
+                worker.done.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            worker.wait(3000)
+            self._worker = None
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -5755,6 +6148,7 @@ class MainWindow(QMainWindow):
         # actually works through them (see below).
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
         self.portfolio_panel = PortfolioPanel(self.db)
+        self.analytics_panel = PortfolioAnalyticsPanel(self.db)
         self.scanner_panel = ScannerPanel(self.db, self.chart, self.watch_panel.refresh,
                                           self.portfolio_panel.refresh,
                                           on_show_heatmap=self._show_scan_in_heatmap)
@@ -5793,6 +6187,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(self.risk_panel), "Risk")             # size the trade
         tabs.addTab(_scroll_tab(self.paper_panel), "Paper Trading")   # place the order
         tabs.addTab(_scroll_tab(self.portfolio_panel), "Portfolio")   # holdings
+        tabs.addTab(_scroll_tab(self.analytics_panel), "Analytics")   # book-level risk
         tabs.addTab(_scroll_tab(self.journal_panel), "Journal")       # review results
         tabs.addTab(_scroll_tab(self.coach_panel), "Coach")           # grade my process
         tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")     # research: test ideas
@@ -6009,6 +6404,14 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.journal_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.analytics_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.portfolio_panel.shutdown()
         except Exception:
             pass
         try:
