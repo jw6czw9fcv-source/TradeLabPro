@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.34.1 - Analytics matches IBKR: native prices, CAD totals, honest data
+
+### Fixed
+- **Analytics now displays a mixed-currency book exactly like IBKR does.** Per-share prices (Last, Avg entry) stay in each holding's native currency (VTI shows its real US price), while market value, cost, unrealized P&L and the total are reported in the chosen currency (CAD by default) via live FX. Verified line-for-line against an IBKR CAD account statement.
+- **The test suite no longer touches your real data.** A heatmap test built its panel on the live database and quietly inserted a demo position (NVDA, 10 @ $100) on every test run — the source of the "ghost position" that kept reappearing in the Portfolio. Tests now run on a throwaway database.
+- **No fabricated prices in Analytics.** Synthetic-fallback data (used elsewhere for offline demos) is now tagged at the source and refused by the Analytics tab: a failed download for a stock, the benchmark, or an FX rate shows as "—" with a named note ("No price data for X — excluded from totals") instead of fake numbers.
+- **Unrealized P&L is exact when a symbol has no data** — an unpriced holding's cost is excluded from the total (and named) rather than silently understating the P&L.
+- **Window truncation is flagged** — if one holding's short history shrinks the common analysis window by more than ~10%, the tab says so ("⚠ Window shortened by SYMBOL's limited history").
+
+### Added
+- **"Return" column** on the holdings table — each stock's own total return over the selected History window (in the display currency), so every holding can be compared directly against the benchmark's return for the same period. Distinct from "Unreal %", which measures your gain since *your* entry.
+- **Click a holding to chart it** — rows in both the Portfolio and Analytics tables now load that symbol in the chart workspace, matching the rest of the app.
+- The "Return vs bench" tile names the benchmark (e.g. "+47.0% vs SPY +19.2%").
+
+### Verified
+- Full pytest suite (700) passes, including new regression coverage for the synthetic-data tagging and refusal, the unpriced-cost exclusion, the window-truncation flag, and a check that the real database is untouched after a full test run.
+
 ## 2.34.0 - Portfolio analytics + IBKR position import
 
 ### Added

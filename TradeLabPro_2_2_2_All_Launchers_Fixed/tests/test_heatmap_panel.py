@@ -33,11 +33,17 @@ def _fake_provider(symbols, period=None, progress=None):
 
 
 def _panel(qapp):
+    import os
+    import tempfile
     from tradelab.ui.app import HeatmapPanel
     from tradelab.data.database import Database
     from tradelab.ui.chart_widget import ChartWorkspace
     from tradelab.core.config import ScannerConfig
-    panel = HeatmapPanel(Database(), ChartWorkspace(), ScannerConfig(),
+    # A throwaway DB per panel — tests must NEVER touch the user's real
+    # data/tradelab.db (a bare Database() here used to leak a demo NVDA
+    # position into the user's actual portfolio on every test run).
+    db_path = os.path.join(tempfile.mkdtemp(prefix="tradelab_test_"), "t.db")
+    panel = HeatmapPanel(Database(db_path), ChartWorkspace(), ScannerConfig(),
                          quote_provider=_fake_provider)
     panel.resize(600, 400)
     return panel

@@ -58,6 +58,28 @@ def test_analytics_panel_populates(qapp):
     assert panel.corr.rowCount() == 2 and panel.corr.columnCount() == 2
 
 
+def test_analytics_panel_refuses_synthetic_data(qapp):
+    # A failed download falls back to synthetic data elsewhere in the app, but
+    # the real-money Analytics view must show "no data", never fabricated prices.
+    import tradelab.ui.app as app
+    from tradelab.data.market_data import synthetic_ohlcv
+    db = _FakeDB([{"symbol": "AAPL", "shares": 100, "entry_price": 90.0},
+                  {"symbol": "FAKE", "shares": 10, "entry_price": 50.0}])
+    panel = app.PortfolioAnalyticsPanel(db)
+    panel._positions = db.positions()
+    panel._bench_symbol = "SPY"
+    panel._target = None
+    panel._fx_pairs = {}
+    history = {"AAPL": _hist(1, start_price=100),
+               "FAKE": synthetic_ohlcv("FAKE"),          # tagged synthetic
+               "SPY": _hist(3, start_price=400)}
+    panel._on_loaded(history)
+
+    by = {panel.holdings.item(r, 0).text(): r for r in range(panel.holdings.rowCount())}
+    assert panel.holdings.item(by["FAKE"], 4).text() == "—"     # Last: no data, not fake
+    assert "FAKE" in panel.status.text()                          # named in the note
+
+
 def test_analytics_panel_empty_portfolio(qapp):
     import tradelab.ui.app as app
     panel = app.PortfolioAnalyticsPanel(_FakeDB([]))

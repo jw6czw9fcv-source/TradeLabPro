@@ -129,14 +129,14 @@ def holdings(positions: list, histories: dict, target: str = None, fx: dict = No
     real entry price), and weight of the book. Returns (rows, total_value), rows
     sorted largest position first.
 
-    When `target` is given (e.g. "CAD") each holding's **live price** is converted
-    from its native currency to the target using `fx` (a dict currency -> rate
-    series into the target). The **cost basis is taken as already in the reporting
-    currency, as imported, and is NOT converted** — an IBKR CAD account reports
-    cost in CAD, so it must not be adjusted. Market value and unrealized P&L then
-    come out in the target currency. Each row carries `currency` (the native
-    trading currency of the listing) and `converted` (False if the price needed
-    conversion but no FX rate was available)."""
+    This mirrors how an IBKR CAD account displays a mixed book: **per-share prices
+    (last, avg entry) stay in each holding's native currency**, while the **dollar
+    aggregates (market value, cost basis, unrealized P&L) are reported in the
+    target currency** (e.g. CAD), converting the native amounts via `fx` (a dict
+    currency -> rate series into the target) at the current rate. The unrealized %
+    is the native price move and is unaffected by FX. Each row carries `currency`
+    (the native trading currency), `avg_entry` and `last` (native), and
+    `converted` (False if conversion was needed but no FX rate was available)."""
     agg = aggregate_positions(positions)
     rows = []
     for a in agg:
@@ -145,14 +145,13 @@ def holdings(positions: list, histories: dict, target: str = None, fx: dict = No
         rate = _latest_rate(fx, cur, target)
         converted = target is None or cur == target or rate is not None
         conv = rate if rate is not None else 1.0
-        last_native = float(c.iloc[-1]) if c is not None and not c.empty else None
-        last = last_native * conv if last_native is not None else None   # price -> target
-        mv = last * a["shares"] if last is not None else None
-        cost = a["cost_basis"]                                            # imported CAD, untouched
+        last_native = float(c.iloc[-1]) if c is not None and not c.empty else None  # display: native
+        mv = last_native * a["shares"] * conv if last_native is not None else None  # value in target
+        cost = a["cost_basis"] * conv                                               # cost in target
         pnl = (mv - cost) if mv is not None else None
         pnl_pct = (pnl / cost * 100.0) if (pnl is not None and cost) else None
-        rows.append({**a, "currency": cur, "converted": converted,
-                     "last": last, "market_value": mv,
+        rows.append({**a, "cost_basis": cost, "currency": cur, "converted": converted,
+                     "last": last_native, "market_value": mv,
                      "unrealized": pnl, "unrealized_pct": pnl_pct})
     total = sum(h["market_value"] for h in rows if h["market_value"])
     for h in rows:
@@ -307,13 +306,56 @@ def summarize(positions: list, histories: dict, benchmark_df=None,
             br = daily_returns(bc)
             bench_total = total_return(bc)
 
-    unreal = (total_mv - total_cost) if total_mv else None
+    # Per-holding: the stock's return over the window and how it compares to the
+    # benchmark over the SAME dates (each holding aligned to the benchmark
+    # separately, so a holding with less history is still compared fairly).
+    bench_full = None
+    if benchmark_df is not None:
+        bfc = _close(benchmark_df)
+        if bfc is not None and not bfc.empty:
+            r = _rate_series(fx, currency_of(benchmark_symbol), target, bfc.index)
+            bench_full = (bfc * r) if r is not None else bfc
+    for h in rows:
+        sc = _converted_close(h["symbol"], histories, target, fx)
+        h["window_return_pct"] = total_return(sc) if sc is not None else None
+        h["vs_benchmark_pct"] = None
+        if bench_full is not None and sc is not None and not sc.empty:
+            aligned = pd.concat([sc, bench_full], axis=1).dropna()
+            if aligned.shape[0] >= 2:
+                sr = aligned.iloc[-1, 0] / aligned.iloc[0, 0] - 1.0
+                bnr = aligned.iloc[-1, 1] / aligned.iloc[0, 1] - 1.0
+                h["vs_benchmark_pct"] = (sr - bnr) * 100.0
+
+    # Unrealized P&L must compare like with like: only the cost of holdings that
+    # actually have a market value. Including an unpriced holding's cost would
+    # silently understate the P&L whenever one symbol has no data.
+    priced = [h for h in rows if h["market_value"] is not None]
+    priced_cost = sum(h["cost_basis"] for h in priced)
+    unreal = (total_mv - priced_cost) if priced else None
+
+    # Window truncation: the equity curve only spans dates ALL holdings share,
+    # so one short-history holding shortens the whole analysis. Name the culprit
+    # when it cuts more than ~10% off the longest holding's span.
+    window_limited_by = None
+    if equity.shape[0] >= 2:
+        starts = {}
+        for h in rows:
+            sc = _close((histories or {}).get(h["symbol"]))
+            if sc is not None and sc.shape[0] >= 2:
+                starts[h["symbol"]] = sc.index[0]
+        if len(starts) >= 2:
+            earliest = min(starts.values())
+            full_days = (equity.index[-1] - earliest).days
+            eq_days = (equity.index[-1] - equity.index[0]).days
+            if full_days > 0 and eq_days < 0.9 * full_days:
+                window_limited_by = max(starts, key=lambda s: starts[s])
+
     result = {
         "holdings": rows,
         "total_value": total_mv,
         "total_cost": total_cost,
         "total_unrealized": unreal,
-        "total_unrealized_pct": (unreal / total_cost * 100.0) if (unreal is not None and total_cost) else None,
+        "total_unrealized_pct": (unreal / priced_cost * 100.0) if (unreal is not None and priced_cost) else None,
         "beta": beta(pr, br),
         "ann_vol_pct": annualized_vol(pr),
         "max_drawdown_pct": max_drawdown(equity),
@@ -324,6 +366,9 @@ def summarize(positions: list, histories: dict, benchmark_df=None,
         "concentration": concentration(rows),
         "correlation": correlation(hold_hist),
         "window_days": int((equity.index[-1] - equity.index[0]).days) if equity.shape[0] >= 2 else 0,
+        "window_limited_by": window_limited_by,
+        # Holdings that had no usable price data (shown as "—" in the table).
+        "no_data": sorted(h["symbol"] for h in rows if h["market_value"] is None),
         "equity": equity,
         "currency": target,
         # Currencies that needed converting to the target but had no FX rate.

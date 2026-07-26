@@ -1,7 +1,15 @@
 # TradeLab Pro Project Status
 
-Current version: 2.34.0
-Current phase: Portfolio analytics + IBKR position import (CAD) (done)
+Current version: 2.34.1
+Current phase: Analytics refinement — IBKR-style display, honest data handling (done)
+
+## Completed in 2.34.1 (Analytics matches IBKR)
+- `holdings()` reworked to the IBKR display model: `last`/`avg_entry` native currency, `market_value`/`cost_basis`/`unrealized` in the target currency (both sides converted at the current FX rate, so unrealized % equals the native price move). Verified line-for-line vs the user's IBKR CAD statement.
+- Fixed test-suite data leak: `tests/test_heatmap_panel.py` built its panel on the real `data/tradelab.db` and inserted a demo NVDA position every run; tests now use a throwaway temp DB.
+- `market_data.synthetic_ohlcv` frames carry `attrs["synthetic"]=True`; new `is_synthetic()`. `PortfolioAnalyticsPanel._on_loaded` filters synthetic frames so Analytics never renders fabricated prices (stock, benchmark, or FX) — missing data shows "—" plus a named status note.
+- `summarize()`: unrealized P&L excludes unpriced holdings' cost (`no_data` list reported); `window_limited_by` names a holding whose short history shrinks the common window >10%.
+- Holdings table: new per-holding "Return" column (window return in display currency); benchmark named in the return tile; click-to-chart wired on Portfolio and Analytics tables (`_HistoryWorker`).
+- Tests: suite at 700 passing; regression coverage for all of the above.
 
 ## Completed in 2.34.0 (Portfolio analytics + IBKR position import)
 - New `core/portfolio_analytics.py` (Qt-free): `holdings` (per-position valuation, weights, unrealized P&L), `portfolio_equity` (Σ shares×close on common dates = real equity curve), `beta`/`annualized_vol`/`max_drawdown`/`total_return`/`cagr`, `concentration` (largest, top-3, HHI effective-N), `correlation` (holdings only, avg pairwise), `summarize`. Multi-currency: `currency_of` (suffix→ccy), `fx_pair_symbol`, and conversion so **live prices convert to a target currency (default CAD) while the imported cost basis is left as-is** (an IBKR CAD account's costs stay CAD; only Yahoo prices are converted). Benchmark converted too.

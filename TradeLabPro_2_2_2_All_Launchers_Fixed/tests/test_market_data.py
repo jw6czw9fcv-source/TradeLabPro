@@ -7,6 +7,16 @@ from tradelab.data.market_data import (synthetic_ohlcv, get_history, get_quote_m
                                        _name_from_summary, _yahoo_histories)
 
 
+def test_synthetic_frames_are_tagged():
+    # Real-money surfaces (Portfolio Analytics) refuse synthetic data; the tag
+    # is how they tell it apart from a real feed.
+    df = synthetic_ohlcv("AAPL")
+    assert market_data.is_synthetic(df)
+    real = pd.DataFrame({"Close": [1.0, 2.0]})
+    assert not market_data.is_synthetic(real)
+    assert not market_data.is_synthetic(None)
+
+
 def test_synthetic_ohlcv_returns_expected_columns():
     df = synthetic_ohlcv("AAPL")
     for col in ["Open", "High", "Low", "Close", "Volume"]:

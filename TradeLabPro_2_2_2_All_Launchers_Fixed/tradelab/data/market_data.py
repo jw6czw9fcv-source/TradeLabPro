@@ -13,6 +13,16 @@ def _flatten_yf(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def is_synthetic(df) -> bool:
+    """True when a frame came from the synthetic fallback rather than a real
+    feed. Surfaces that render real-money numbers (e.g. Portfolio Analytics)
+    check this and show 'no data' instead of fabricated prices."""
+    try:
+        return bool(getattr(df, "attrs", {}).get("synthetic"))
+    except Exception:
+        return False
+
+
 def synthetic_ohlcv(symbol: str, periods: int = 260) -> pd.DataFrame:
     rng = np.random.default_rng(abs(hash(symbol)) % (2**32))
     dates = pd.date_range(end=pd.Timestamp.today().normalize(), periods=periods, freq="B")
@@ -28,7 +38,9 @@ def synthetic_ohlcv(symbol: str, periods: int = 260) -> pd.DataFrame:
     high = np.maximum(open_, close) * (1 + rng.random(n) * 0.015)
     low = np.minimum(open_, close) * (1 - rng.random(n) * 0.015)
     volume = rng.integers(500_000, 5_000_000, size=n)
-    return pd.DataFrame({"Open": open_, "High": high, "Low": low, "Close": close, "Volume": volume}, index=dates)
+    df = pd.DataFrame({"Open": open_, "High": high, "Low": low, "Close": close, "Volume": volume}, index=dates)
+    df.attrs["synthetic"] = True     # mark as generated so is_synthetic() can tell
+    return df
 
 
 def get_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:

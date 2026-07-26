@@ -146,23 +146,22 @@ def test_currency_of():
     assert pa.currency_of("VOD.L") == "GBP"
 
 
-def test_holdings_convert_price_to_cad_but_not_cost():
-    # Cost basis is imported in CAD and must NOT be adjusted; only the live
-    # (USD) price is converted to CAD.
-    pos = [{"symbol": "VTI", "shares": 10, "entry_price": 300.0},     # 300 CAD cost
-           {"symbol": "XIC.TO", "shares": 100, "entry_price": 50.0}]  # 50 CAD cost
+def test_holdings_native_prices_cad_aggregates():
+    # Mirrors IBKR: per-share prices stay native; value/cost/P&L are in CAD.
+    pos = [{"symbol": "VTI", "shares": 10, "entry_price": 300.0},     # native USD
+           {"symbol": "XIC.TO", "shares": 100, "entry_price": 50.0}]  # native CAD
     hist = {"VTI": _hist([300, 320]), "XIC.TO": _hist([50, 55])}
     fx = {"USD": _rate(2, 1.4)}                                       # 1 USD = 1.4 CAD
     rows, total = pa.holdings(pos, hist, target="CAD", fx=fx)
     by = {h["symbol"]: h for h in rows}
-    assert by["VTI"]["currency"] == "USD" and by["VTI"]["converted"]
-    assert round(by["VTI"]["last"], 2) == 448.0                       # price 320 * 1.4
-    assert round(by["VTI"]["market_value"], 0) == 4480
-    assert round(by["VTI"]["cost_basis"], 0) == 3000                  # cost NOT converted (300*10)
-    # P&L in CAD reflects both the price move and FX: (448-300)/300 = 49.3%
-    assert by["VTI"]["unrealized_pct"] == pytest.approx(49.333, abs=0.01)
-    assert round(by["XIC.TO"]["last"], 2) == 55.0                     # CAD unchanged
-    assert round(total, 0) == 9980                                    # market value: 4480 + 5500
+    assert round(by["VTI"]["last"], 2) == 320.0                       # native, NOT converted
+    assert round(by["VTI"]["avg_entry"], 2) == 300.0                  # native
+    assert round(by["VTI"]["market_value"], 0) == 4480               # 320*10*1.4 (CAD)
+    assert round(by["VTI"]["cost_basis"], 0) == 4200                 # 300*10*1.4 (CAD)
+    assert round(by["VTI"]["unrealized"], 0) == 280                  # CAD
+    assert by["VTI"]["unrealized_pct"] == pytest.approx(6.667, abs=0.01)  # native move
+    assert round(by["XIC.TO"]["last"], 2) == 55.0                     # CAD holding unchanged
+    assert round(total, 0) == 9980                                    # CAD market value
 
 
 def test_portfolio_equity_in_target_currency():
@@ -181,6 +180,42 @@ def test_summarize_reports_currency_and_missing_fx():
     r = pa.summarize(pos, hist, target_currency="CAD", fx={"USD": _rate(2, 1.4)})
     assert r["currency"] == "CAD"
     assert r["fx_missing"] == ["GBP"]             # GBP couldn't be converted
+
+
+def test_summarize_unrealized_excludes_unpriced_cost():
+    # Regression: a holding with no price data must not drag its cost into the
+    # unrealized P&L (that silently understated the total).
+    pos = [{"symbol": "AAA", "shares": 10, "entry_price": 100},   # priced
+           {"symbol": "ZZZZ", "shares": 10, "entry_price": 50}]   # no data
+    r = pa.summarize(pos, {"AAA": _hist([100, 110])})
+    assert r["total_value"] == pytest.approx(1100.0)
+    assert r["total_unrealized"] == pytest.approx(100.0)          # 1100 - 1000, not -400
+    assert r["total_unrealized_pct"] == pytest.approx(10.0)
+    assert r["no_data"] == ["ZZZZ"]
+    assert r["total_cost"] == pytest.approx(1500.0)               # full cost still reported
+
+
+def test_summarize_flags_window_truncation():
+    # One holding has far less history -> the common window shrinks and the
+    # culprit is named; equal histories -> no flag.
+    long_h = _hist([100 + i for i in range(100)])
+    short_h = _hist([50 + i for i in range(20)], start="2022-04-25")
+    pos = [{"symbol": "LONG", "shares": 1, "entry_price": 1},
+           {"symbol": "SHORT", "shares": 1, "entry_price": 1}]
+    r = pa.summarize(pos, {"LONG": long_h, "SHORT": short_h})
+    assert r["window_limited_by"] == "SHORT"
+    r2 = pa.summarize(pos, {"LONG": long_h, "SHORT": _hist([50 + i for i in range(100)])})
+    assert r2["window_limited_by"] is None
+
+
+def test_summarize_per_holding_vs_benchmark():
+    # Holding up 20% over the window, benchmark up 5% -> vs = +15% over same dates.
+    pos = [{"symbol": "AAA", "shares": 10, "entry_price": 100}]
+    hist = {"AAA": _hist([100, 120])}
+    r = pa.summarize(pos, hist, benchmark_df=_hist([100, 105]), benchmark_symbol="SPY")
+    h = r["holdings"][0]
+    assert round(h["window_return_pct"], 1) == 20.0
+    assert round(h["vs_benchmark_pct"], 1) == 15.0
 
 
 def test_summarize_empty_is_safe():

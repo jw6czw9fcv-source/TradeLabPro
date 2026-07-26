@@ -1466,9 +1466,12 @@ class _ResolveSymbolsWorker(QThread):
 
 
 class PortfolioPanel(QWidget):
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, chart=None, cfg=None):
         super().__init__(); self.db = db
+        self.chart = chart
+        self.cfg = cfg
         self._ibkr_worker = None
+        self._chart_worker = None
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
         self.sym = QLineEdit(); self.sym.setPlaceholderText("Symbol")
@@ -1495,10 +1498,35 @@ class PortfolioPanel(QWidget):
         layout.addLayout(imp)
 
         self.table = QTableWidget(0, 5); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.ExtendedSelection); self.table.setHorizontalHeaderLabels(["ID","Portfolio","Symbol","Shares","Entry"])
+        self.table.setToolTip("Click a position to chart its symbol.")
+        self.table.cellClicked.connect(self._chart_row)
         layout.addWidget(self.table)
         self.status=QLabel("")
         layout.addWidget(self.status)
         self.refresh()
+
+    def _chart_row(self, row, _col):
+        """Chart the clicked position's symbol in the main chart workspace."""
+        if self.chart is None or self.cfg is None or row < 0:
+            return
+        item = self.table.item(row, 2)          # Symbol column
+        sym = (item.text().strip() if item else "")
+        if not sym:
+            return
+        self.status.setText(f"Charting {sym}…")
+        self._chart_worker = _HistoryWorker(sym, self.cfg.period, self.cfg.interval)
+        self._chart_worker.done.connect(self._on_chart_loaded)
+        self._chart_worker.start()
+
+    def _on_chart_loaded(self, symbol, df, err):
+        if err or df is None or getattr(df, "empty", False):
+            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            return
+        try:
+            self.chart.plot(symbol, df, self.cfg)
+            self.status.setText(f"Charted {symbol}.")
+        except Exception as exc:
+            self.status.setText(f"Could not chart {symbol}: {exc}")
 
     # -- IBKR position import (read-only) --
     def import_ibkr_file(self):
@@ -1569,14 +1597,16 @@ class PortfolioPanel(QWidget):
                             "Open the Analytics tab to review the book.")
 
     def shutdown(self):
-        worker = self._ibkr_worker
-        if worker is not None:
+        for attr in ("_ibkr_worker", "_chart_worker"):
+            worker = getattr(self, attr, None)
+            if worker is None:
+                continue
             try:
                 worker.done.disconnect()
             except (RuntimeError, TypeError):
                 pass
             worker.wait(3000)
-            self._ibkr_worker = None
+            setattr(self, attr, None)
     def refresh(self):
         pos = self.db.positions(); self.table.setRowCount(len(pos))
         for r, p in enumerate(pos):
@@ -5881,10 +5911,13 @@ class PortfolioAnalyticsPanel(QWidget):
                 ("ret", "Return vs bench"), ("beta", "Beta"),
                 ("vol", "Ann. volatility"), ("dd", "Max drawdown")]
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, chart=None, cfg=None):
         super().__init__()
         self.db = db
+        self.chart = chart
+        self.cfg = cfg
         self._worker = None
+        self._chart_worker = None
         layout = QVBoxLayout(self)
 
         layout.addWidget(_hint(
@@ -5932,11 +5965,15 @@ class PortfolioAnalyticsPanel(QWidget):
         layout.addWidget(self.conc)
 
         layout.addWidget(QLabel("Holdings"))
-        self.holdings = QTableWidget(0, 9)
+        self.holdings = QTableWidget(0, 10)
         self.holdings.setHorizontalHeaderLabels(
-            ["Symbol", "Ccy", "Shares", "Avg entry", "Last", "Mkt value", "Weight %", "Unreal P&L", "Unreal %"])
+            ["Symbol", "Ccy", "Shares", "Avg entry", "Last", "Mkt value", "Weight %",
+             "Unreal P&L", "Unreal %", "Return"])
         self.holdings.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.holdings.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.holdings.verticalHeader().setVisible(False)
+        self.holdings.setToolTip("Click a holding to chart it.")
+        self.holdings.cellClicked.connect(self._chart_row)
         layout.addWidget(self.holdings)
 
         self.corr_label = QLabel("Correlation (daily returns)")
@@ -5980,7 +6017,14 @@ class PortfolioAnalyticsPanel(QWidget):
 
     def _on_loaded(self, history):
         from tradelab.core import portfolio_analytics as pa
+        from tradelab.data.market_data import is_synthetic
         self.status.setText("")
+        # Real-money view: NEVER value the book on the synthetic fallback. A
+        # failed download (stock, benchmark, or FX pair) must show as missing
+        # data, not as fabricated prices — a fake USDCAD=X rate would garble
+        # every converted figure.
+        history = {sym: df for sym, df in (history or {}).items()
+                   if df is not None and not is_synthetic(df)}
         fx = ({ccy: history.get(sym) for ccy, sym in self._fx_pairs.items()}
               if self._target else None)
         bench_df = history.get(self._bench_symbol)
@@ -6015,9 +6059,10 @@ class PortfolioAnalyticsPanel(QWidget):
         self._set_metric("unreal", unreal_txt,
                          self._pnl_color(up) if up is not None else None)
         pr, brr = d["total_return_pct"], d["benchmark_return_pct"]
+        bsym = d.get("benchmark_symbol", "bench")
         self._set_metric("ret",
                          (f"{pr:+.1f}%" if pr is not None else "—")
-                         + (f"  vs {brr:+.1f}%" if brr is not None else ""),
+                         + (f"  vs {bsym} {brr:+.1f}%" if brr is not None else ""),
                          self._pnl_color(pr) if pr is not None else None)
         beta = d["beta"]
         self._set_metric("beta", f"{beta:.2f}" if beta is not None else "—")
@@ -6036,11 +6081,19 @@ class PortfolioAnalyticsPanel(QWidget):
                 f"{c['effective_n']:.1f} of {c['positions']}"
                 + (f"   ·   window {d['window_days']} days" if d['window_days'] else ""))
         if cur:
-            parts.append(f"All monetary values in {cur}.")
+            parts.append(f"Totals and P&L in {cur}; per-share prices in each holding's native currency.")
+        if d.get("window_limited_by"):
+            parts.append(f"⚠ Window shortened by {d['window_limited_by']}'s limited history — "
+                         "risk metrics cover the common dates only.")
         self.conc.setText("   ".join(parts))
+        notes = []
+        if d.get("no_data"):
+            notes.append("No price data for " + ", ".join(d["no_data"])
+                         + " — excluded from totals.")
         if d.get("fx_missing"):
-            self.status.setText("No FX rate for " + ", ".join(d["fx_missing"])
-                                + " — those shown in native currency.")
+            notes.append("No FX rate for " + ", ".join(d["fx_missing"])
+                         + " — those shown in native currency.")
+        self.status.setText("  ".join(notes))
 
         rows = d["holdings"]
         self.holdings.setRowCount(len(rows))
@@ -6053,8 +6106,7 @@ class PortfolioAnalyticsPanel(QWidget):
                 ccy_item.setToolTip("No FX rate — value left in native currency")
             self.holdings.setItem(r, 1, ccy_item)
             self._num(r, 2, f"{h['shares']:g}")
-            avg = (h["cost_basis"] / h["shares"]) if h["shares"] else 0.0   # entry in view currency
-            self._num(r, 3, f"${avg:,.2f}")
+            self._num(r, 3, f"${h['avg_entry']:,.2f}")                       # native, like IBKR
             self._num(r, 4, f"${h['last']:,.2f}" if h["last"] is not None else "—")
             self._num(r, 5, f"${h['market_value']:,.0f}" if h["market_value"] is not None else "—")
             self._num(r, 6, f"{h['weight_pct']:.1f}%" if h["weight_pct"] is not None else "—")
@@ -6064,6 +6116,18 @@ class PortfolioAnalyticsPanel(QWidget):
             upp = h["unrealized_pct"]
             self._num(r, 8, f"{upp:+.1f}%" if upp is not None else "—",
                       self._pnl_color(upp) if upp is not None else None)
+            wr = h.get("window_return_pct")
+            self._num(r, 9, f"{wr:+.1f}%" if wr is not None else "—",
+                      self._pnl_color(wr) if wr is not None else None)
+        # The Return column is each holding's own return over the window — compare
+        # it to the benchmark's return shown in the "Return vs bench" tile.
+        bsym = d.get("benchmark_symbol", "the benchmark")
+        brr = d.get("benchmark_return_pct")
+        hdr = QTableWidgetItem("Return")
+        hdr.setToolTip("Each holding's total return over the selected window"
+                       + (f" (compare to {bsym} {brr:+.1f}% over the same period)."
+                          if brr is not None else "."))
+        self.holdings.setHorizontalHeaderItem(9, hdr)
         self.holdings.resizeColumnsToContents()
 
         self._render_correlation(d["correlation"])
@@ -6074,6 +6138,29 @@ class PortfolioAnalyticsPanel(QWidget):
         if colour:
             item.setForeground(QColor(colour))
         self.holdings.setItem(r, c, item)
+
+    def _chart_row(self, row, _col):
+        """Chart the clicked holding in the main chart workspace (off-thread)."""
+        if self.chart is None or self.cfg is None or row < 0:
+            return
+        item = self.holdings.item(row, 0)
+        sym = (item.text().strip() if item else "")
+        if not sym:
+            return
+        self.status.setText(f"Charting {sym}…")
+        self._chart_worker = _HistoryWorker(sym, self.cfg.period, self.cfg.interval)
+        self._chart_worker.done.connect(self._on_chart_loaded)
+        self._chart_worker.start()
+
+    def _on_chart_loaded(self, symbol, df, err):
+        if err or df is None or getattr(df, "empty", False):
+            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            return
+        try:
+            self.chart.plot(symbol, df, self.cfg)
+            self.status.setText(f"Charted {symbol}.")
+        except Exception as exc:
+            self.status.setText(f"Could not chart {symbol}: {exc}")
 
     def _render_correlation(self, corr):
         syms = corr["symbols"]
@@ -6104,8 +6191,10 @@ class PortfolioAnalyticsPanel(QWidget):
         self.corr.resizeColumnsToContents()
 
     def shutdown(self):
-        worker = self._worker
-        if worker is not None:
+        for attr in ("_worker", "_chart_worker"):
+            worker = getattr(self, attr, None)
+            if worker is None:
+                continue
             try:
                 worker.stop()
             except Exception:
@@ -6115,7 +6204,7 @@ class PortfolioAnalyticsPanel(QWidget):
             except (RuntimeError, TypeError):
                 pass
             worker.wait(3000)
-            self._worker = None
+            setattr(self, attr, None)
 
 
 class MainWindow(QMainWindow):
@@ -6147,8 +6236,8 @@ class MainWindow(QMainWindow):
         # Build every panel first, then add the tabs in the order a trader
         # actually works through them (see below).
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
-        self.portfolio_panel = PortfolioPanel(self.db)
-        self.analytics_panel = PortfolioAnalyticsPanel(self.db)
+        self.portfolio_panel = PortfolioPanel(self.db, self.chart, self.cfg)
+        self.analytics_panel = PortfolioAnalyticsPanel(self.db, self.chart, self.cfg)
         self.scanner_panel = ScannerPanel(self.db, self.chart, self.watch_panel.refresh,
                                           self.portfolio_panel.refresh,
                                           on_show_heatmap=self._show_scan_in_heatmap)
