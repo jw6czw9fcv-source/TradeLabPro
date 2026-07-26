@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.34.0**
+**Version 2.34.1**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: scan the
 market for setups, chart and analyze symbols, keep watchlists and a portfolio
@@ -235,8 +235,9 @@ an entry can load it on the chart.
 
 The **Portfolio** tab is a holdings record: **ID, Portfolio, Symbol, Shares,
 Entry**. Add positions (e.g. from a Scanner result), group them by portfolio
-name, and export. This is a **record-keeping** ledger for positions you hold
-elsewhere — it does not place or track live orders. Your portfolio also feeds the
+name, and export; **click any row to chart its symbol**. This is a
+**record-keeping** ledger for positions you hold elsewhere — it does not place
+or track live orders. Your portfolio also feeds the
 **Heatmap** (Portfolio map) and the **Risk** tab's sector-exposure view. For
 simulated order entry and P&L, use **Paper Trading** (section 16).
 
@@ -272,10 +273,12 @@ The **Analytics** tab treats your holdings as one book. Pick a **Benchmark**
 (default SPY), a **History** window, and a display **Currency** (default **CAD**),
 then click **Analyze**. It fetches prices in the background and shows:
 
-- **Metric tiles** — total value, unrealized P&L, return vs the benchmark, beta,
-  annualized volatility, and max drawdown.
+- **Metric tiles** — total value, unrealized P&L, return vs the benchmark (both
+  named, e.g. "+47.0% vs SPY +19.2%"), beta, annualized volatility, and max
+  drawdown.
 - **Holdings table** — each position's native currency (**Ccy**), last price,
-  market value, weight of the book, and unrealized P&L.
+  market value, weight of the book, unrealized P&L, and its **Return** over the
+  selected History window. **Click any row to chart that symbol.**
 - **Concentration** — the largest position, the top-3 share, and the *effective
   number of positions* (a book split evenly across 5 names has an effective N of
   5; one dominated by a single name is far lower).
@@ -283,13 +286,29 @@ then click **Analyze**. It fetches prices in the background and shows:
   (red = they move as one, concentrated risk; green = they diversify each other),
   plus the average pairwise correlation.
 
-**Currency (multi-currency books).** With a display currency chosen (e.g. CAD),
-each holding's live price and the benchmark are converted to that currency using
-live FX, so a mixed Canadian/US account is valued apples-to-apples. Your
-**imported cost basis is used exactly as imported and is never adjusted** — an
-IBKR account reported in CAD keeps its CAD costs; only the live prices are
-converted. Choose **Native (mixed)** to see each holding in its own currency
-instead.
+**Currency (multi-currency books).** The display mirrors how IBKR shows a
+mixed-currency account:
+- **Per-share prices stay native** — Last and Avg entry show each holding's real
+  quoted price (a US stock shows its US price, the one you recognize).
+- **Dollar amounts are in your chosen currency** (CAD by default) — market value,
+  cost, unrealized P&L and the total are converted with the live FX rate, so the
+  total matches your broker's Net Liquidity and everything is apples-to-apples.
+- **Unreal %** is the stock's own price move (unaffected by FX), and choosing
+  **Native (mixed)** shows each holding entirely in its own currency instead.
+
+**Unreal % vs Return.** Two different questions: **Unreal %** is *your* gain
+since your entry price; **Return** is how the stock itself performed over the
+selected History window, regardless of when you bought — compare it directly
+to the benchmark's return for the same period. A stock can show a big Return
+but a small Unreal % if you bought partway through its run.
+
+**Honest about missing data.** If a price download fails — a stock, the
+benchmark, or an FX rate — Analytics shows "—" and names the symbol in a note
+("No price data for X — excluded from totals") rather than substituting the
+offline synthetic data used elsewhere for demos. Likewise, unrealized P&L
+excludes any unpriced holding's cost, and if one holding's short history
+shortens the common analysis window, the tab says so ("⚠ Window shortened by
+SYMBOL's limited history").
 
 > Analysis only — the Analytics tab never places or tracks live orders, and the
 > figures are not financial advice.
