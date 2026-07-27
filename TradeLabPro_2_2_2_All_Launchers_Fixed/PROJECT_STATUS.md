@@ -1,7 +1,15 @@
 # TradeLab Pro Project Status
 
-Current version: 2.34.1
-Current phase: Analytics refinement — IBKR-style display, honest data handling (done)
+Current version: 2.35.0
+Current phase: Dividend tracker + chart dividend markers (done)
+
+## Completed in 2.35.0 (Dividend tracker)
+- New `core/dividends.py` (Qt-free, offline-testable): `detect_frequency` (median payment spacing -> monthly/quarterly/semi/annual), `ttm_per_share` (historical fact) vs `forward_per_share` (latest payment x frequency — the projection, so a raise counts immediately), `growth_pct`, `payment_months`, `holding_income` (income, current yield, yield on cost), `payment_calendar`, `summarize`. Currency follows the v2.34.1 model: per-share amounts native, income totals in the target currency.
+- Data layer: `market_data.get_dividends` + `_yahoo_dividends` (tz-naive), `DataProvider.get_dividends` on the ABC (synthetic provider returns empty — income is never fabricated).
+- New **Dividends** tab (`DividendsPanel`, after Analytics): income tiles, per-holding table (frequency, div/share, income, yield, yield on cost, growth), and a shaded 12-month payment calendar. Click-to-chart; refuses synthetic price data.
+- **Chart dividend markers restored** (lost when the chart engine moved from matplotlib to PyQtGraph): `_DividendFetchWorker` (off-thread, cached per symbol), `dividend_scatter` markers under each bar with amount tooltips, trailing yield in the price header, and a toggle in the Indicators dialog.
+- Fixed: growth compared window *sums*, so an uneven payment count (3 vs 4 in a window) reported a raising dividend as a ~19% cut — now compares average payment size. Chart header and Dividends tab now share one yield calculation so they can't disagree.
+- Tests: `tests/test_dividends.py`, `tests/test_dividends_panel.py`, `tests/test_chart_dividends.py`. Full suite 728 passing.
 
 ## Completed in 2.34.1 (Analytics matches IBKR)
 - `holdings()` reworked to the IBKR display model: `last`/`avg_entry` native currency, `market_value`/`cost_basis`/`unrealized` in the target currency (both sides converted at the current FX rate, so unrealized % equals the native price move). Verified line-for-line vs the user's IBKR CAD statement.

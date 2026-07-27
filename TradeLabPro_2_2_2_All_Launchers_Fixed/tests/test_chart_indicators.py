@@ -163,6 +163,7 @@ def test_open_indicators_dialog_applies_changes(qapp, monkeypatch):
         def exec(self): return True
         def overlays(self): return [{"indicator": "SMA", "period": 100}]
         def show_signals(self): return False
+        def show_dividends(self): return True
         def sub_panels(self): return {"Volume": True, "MACD": False, "RSI": True}
         def rsi_period(self): return 7
         def macd_params(self): return (5, 13, 4)

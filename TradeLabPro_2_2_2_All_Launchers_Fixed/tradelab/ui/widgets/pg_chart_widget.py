@@ -19,7 +19,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, Signal, QPointF, QEvent
+from PySide6.QtCore import Qt, Signal, QPointF, QEvent, QThread
 from PySide6.QtGui import QPicture, QPainter, QColor, QPen, QBrush
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QComboBox,
@@ -33,7 +33,7 @@ from tradelab.core.indicators import (
     vwap, pivot_points, supertrend, ichimoku, heikin_ashi,
 )
 from tradelab.core.drawings import Drawing, fib_levels, serialize, deserialize
-from tradelab.data.market_data import get_history, get_quote_meta
+from tradelab.data.market_data import get_history, get_quote_meta, get_dividends
 from tradelab.data.database import Database
 from tradelab.core.logging_config import get_logger
 
@@ -221,11 +221,37 @@ class CandlestickItem(pg.GraphicsObject):
         )
 
 
+class _DividendFetchWorker(QThread):
+    """Loads a symbol's dividend history off the UI thread.
+
+    The chart is handed price data that is already fetched, but dividends are a
+    separate lookup. Doing it inline would block Qt's event loop for the whole
+    network round-trip on every symbol change, so it happens here and the
+    markers are drawn when the answer arrives.
+    """
+    done = Signal(str, object)      # symbol, Series | None
+
+    def __init__(self, symbol):
+        super().__init__()
+        self.symbol = symbol
+
+    def run(self):
+        try:
+            divs = get_dividends(self.symbol)
+        except Exception:
+            divs = None
+        try:
+            self.done.emit(self.symbol, divs)
+        except RuntimeError:        # widget already torn down
+            pass
+
+
 class ChartIndicatorsDialog(QDialog):
     """Manage which indicators are on the chart and their periods, with no
     code: add/remove overlay rows (indicator + period), toggle the BUY/SELL
     signal markers, and toggle the Volume/MACD/RSI sub-panes."""
-    def __init__(self, overlays, show_signals, sub_panels, rsi_period=14, macd_params=(12, 26, 9), parent=None):
+    def __init__(self, overlays, show_signals, sub_panels, rsi_period=14, macd_params=(12, 26, 9),
+                 show_dividends=True, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Chart Indicators")
         self.resize(440, 460)
@@ -245,6 +271,13 @@ class ChartIndicatorsDialog(QDialog):
         self._signals_cb = QCheckBox("Show BUY/SELL signal markers")
         self._signals_cb.setChecked(show_signals)
         layout.addWidget(self._signals_cb)
+
+        self._dividends_cb = QCheckBox("Show dividend markers")
+        self._dividends_cb.setToolTip("Mark each ex-dividend date under the bar, and show the "
+                                      "trailing yield in the price header. Hover a marker for "
+                                      "the amount paid.")
+        self._dividends_cb.setChecked(show_dividends)
+        layout.addWidget(self._dividends_cb)
 
         layout.addWidget(QLabel("Sub-panes — the 'Show' box turns the pane on/off; the period fields are separate:"))
         self._panel_cbs = {}
@@ -330,6 +363,9 @@ class ChartIndicatorsDialog(QDialog):
     def show_signals(self):
         return self._signals_cb.isChecked()
 
+    def show_dividends(self):
+        return self._dividends_cb.isChecked()
+
     def sub_panels(self):
         return {k: cb.isChecked() for k, cb in self._panel_cbs.items()}
 
@@ -358,6 +394,12 @@ class PGChartWidget(QWidget):
             {"indicator": "EMA", "period": self.cfg.ema_slow},
         ]
         self._show_signals = True
+        # Dividend markers + trailing yield in the header. Fetched per symbol on
+        # a worker thread and cached, so toggling or re-plotting is instant.
+        self._show_dividends = True
+        self._dividends = None          # Series for the current symbol, or None
+        self._dividend_symbol = None    # which symbol self._dividends belongs to
+        self._dividend_worker = None
         self._sub_panel_flags = {"Volume": True, "MACD": True, "RSI": True}
         # Tunable periods for the oscillator sub-panes (standard defaults).
         self._rsi_period = 14
@@ -447,6 +489,10 @@ class PGChartWidget(QWidget):
         self.price_plot.addItem(self.candle_item)
         self.signal_scatter = pg.ScatterPlotItem()
         self.price_plot.addItem(self.signal_scatter)
+        # Ex-dividend markers. hoverable so the amount paid shows on mouse-over.
+        self.dividend_scatter = pg.ScatterPlotItem(
+            hoverable=True, tip=lambda x, y, data: str(data))
+        self.price_plot.addItem(self.dividend_scatter)
         layout.addWidget(self.price_plot, stretch=3)
 
         self.volume_plot = pg.PlotWidget(axisItems={"bottom": self._new_date_axis("volume")})
@@ -507,10 +553,12 @@ class PGChartWidget(QWidget):
     def open_indicators_dialog(self):
         dlg = ChartIndicatorsDialog(
             self._overlays, self._show_signals, self._sub_panel_flags,
-            self._rsi_period, (self._macd_fast, self._macd_slow, self._macd_signal), self)
+            self._rsi_period, (self._macd_fast, self._macd_slow, self._macd_signal),
+            self._show_dividends, self)
         if dlg.exec():
             self._overlays = dlg.overlays()
             self._show_signals = dlg.show_signals()
+            self._show_dividends = dlg.show_dividends()
             self._sub_panel_flags = dlg.sub_panels()
             self._rsi_period = dlg.rsi_period()
             self._macd_fast, self._macd_slow, self._macd_signal = dlg.macd_params()
@@ -696,6 +744,7 @@ class PGChartWidget(QWidget):
 
         self._plot_overlays(indicators, x)
         self._plot_signals(indicators, display, x)
+        self._plot_dividends(display, x)
         self._plot_volume(display, x)
         self._plot_macd(indicators, x)
         self._plot_rsi(indicators, x)
@@ -780,6 +829,12 @@ class PGChartWidget(QWidget):
                 sign = "+" if change >= 0 else ""
                 text += f"   {sign}{change:,.2f} ({sign}{pct:.2f}%)"
                 color = "#26a65b" if change >= 0 else "#e5484d"
+        # Trailing-12-month dividend yield, when the name pays one. Sits after
+        # the price so an income holding shows its yield at a glance.
+        if self._show_dividends:
+            dy = self._dividend_yield_pct()
+            if dy is not None:
+                text += f"   ·   Yield {dy:.2f}%"
         return text, color
 
     def _make_legend(self, plot, entries, header=None, subheader=None, subheader_color=None):
@@ -862,6 +917,91 @@ class PGChartWidget(QWidget):
             for i in np.nonzero(sell_mask)[0]
         ]
         self.signal_scatter.setData(spots)
+
+    # --- dividends ---------------------------------------------------------
+
+    def _request_dividends(self):
+        """Kick off a background fetch of the current symbol's dividends, unless
+        we already hold them (cached per symbol so re-plots don't refetch)."""
+        if not self.symbol or self._dividend_symbol == self.symbol:
+            return
+        if self._dividend_worker is not None and self._dividend_worker.isRunning():
+            return
+        self._dividends = None
+        self._dividend_worker = _DividendFetchWorker(self.symbol)
+        self._dividend_worker.done.connect(self._on_dividends_loaded)
+        self._dividend_worker.start()
+
+    def _on_dividends_loaded(self, symbol, divs):
+        if symbol != self.symbol:      # user moved on to another chart
+            return
+        self._dividend_symbol = symbol
+        self._dividends = divs
+        if self.df_raw is not None and not self.df_raw.empty:
+            self.replot()              # redraw now that the markers are known
+
+    def _visible_dividends(self, index) -> pd.Series:
+        """The dividend payments that fall inside the plotted date range, as a
+        Series indexed by date. Empty when there are none (or none loaded yet)."""
+        divs = self._dividends
+        if divs is None or getattr(divs, "empty", True) or len(index) == 0:
+            return pd.Series(dtype=float)
+        try:
+            idx = pd.DatetimeIndex(index)
+            if getattr(divs.index, "tz", None) is not None:
+                divs = divs.copy()
+                divs.index = divs.index.tz_localize(None)
+            return divs[(divs.index >= idx[0]) & (divs.index <= idx[-1])]
+        except Exception:
+            return pd.Series(dtype=float)
+
+    def _plot_dividends(self, display: pd.DataFrame, x: np.ndarray):
+        """Mark each ex-dividend date under its bar. Markers sit below the low so
+        they never cover a candle, and carry the amount paid in their tooltip."""
+        self._request_dividends()
+        if not self._show_dividends:
+            self.dividend_scatter.setData([])
+            return
+        paid = self._visible_dividends(display.index)
+        if paid.empty:
+            self.dividend_scatter.setData([])
+            return
+        # Map each payment date onto the bar it belongs to (bars are plotted at
+        # integer indices, so a date has to be resolved to its position).
+        bars = pd.DatetimeIndex(display.index)
+        lows = display["Low"].to_numpy()
+        spots = []
+        for when, amount in paid.items():
+            pos = int(bars.searchsorted(when))
+            if pos >= len(x):
+                pos = len(x) - 1
+            spots.append(dict(
+                pos=(x[pos], lows[pos] * 0.965), symbol="d", size=13,
+                brush=pg.mkBrush("#00a8ff"), pen=pg.mkPen("#e6e9ec", width=1.0),
+                data=f"Dividend {when.date()}  ${float(amount):,.4f}/share"))
+        self.dividend_scatter.setData(spots)
+
+    def _dividend_yield_pct(self):
+        """Annual dividend yield for the header, over the latest close.
+
+        Uses the same forward run rate as the Dividends tab (latest payment x its
+        frequency) via core.dividends, so a stock never shows two different
+        yields in the same app. A raw trailing-12-month sum is not equivalent:
+        where the year boundary falls can leave a quarterly payer with three
+        payments instead of four and understate the yield by a quarter.
+        """
+        divs = self._dividends
+        if divs is None or getattr(divs, "empty", True):
+            return None
+        try:
+            from tradelab.core.dividends import forward_per_share, ttm_per_share
+            last_close = float(self.df_raw["Close"].iloc[-1])
+            if last_close <= 0:
+                return None
+            per_share = forward_per_share(divs) or ttm_per_share(divs)
+            return (per_share / last_close * 100.0) if per_share else None
+        except Exception:
+            return None
 
     def _plot_volume(self, display: pd.DataFrame, x: np.ndarray):
         colors = [
@@ -1106,11 +1246,13 @@ class PGChartWidget(QWidget):
         self.candle_item.set_data(pd.DataFrame())
         self.line_item.setData([], [])
         self.signal_scatter.setData([])
+        self.dividend_scatter.setData([])
         for plot in (self.price_plot, self.macd_plot, self.rsi_plot):
             self._make_legend(plot, [])
         self.price_plot.clear()
         self.price_plot.addItem(self.candle_item)
         self.price_plot.addItem(self.signal_scatter)
+        self.price_plot.addItem(self.dividend_scatter)
         # price_plot.clear() also strips the price pane's own crosshair
         # lines (added once at construction, before this method's very
         # first call) - without re-adding them, the crosshair silently

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.35.0 - Dividend tracker
+
+### Added
+- **New "Dividends" tab — the income your book actually pays.** Reads your Portfolio holdings and reports, per position and for the book as a whole:
+  - **Annual income** and the average per month, in your display currency (CAD by default).
+  - **Yield** at today's price versus **yield on cost** — what a buyer gets today versus what you earn on what you actually paid (higher when the price has risen since you bought). The two are highlighted when your cost basis is the better one.
+  - **How often each name pays** (monthly / quarterly / semi-annual / annual), detected from its own payment history.
+  - **Dividend growth** — the change in the average payment versus the prior year, so a raise or a cut is visible.
+  - **A payment calendar** — expected income month by month, shaded so the heavy months stand out, with the contributing symbols listed.
+- **Dividend markers are back on the chart.** They existed on the old matplotlib chart and were lost when the chart engine was rebuilt on PyQtGraph. Each ex-dividend date is marked under its bar (hover for the amount paid), and the **trailing yield now appears in the price header** next to the price. Toggle both from the Indicators dialog. Dividends load on a background thread and are cached per symbol, so the chart never blocks.
+- Income figures use the **forward run rate** (the latest payment annualized at its frequency) rather than a plain trailing-12-month sum, so a recent raise counts immediately instead of being averaged away.
+
+### Fixed
+- **A raising dividend could be reported as a deep cut.** Year-over-year growth compared the *sums* of two 12-month windows, but where the year boundary falls often leaves a quarterly payer with three payments in one window and four in the other — real data (RY.TO, which has raised every year) reported **−18.6%**. Growth now compares the **average payment size**, giving the correct **+8.6%**.
+- **The chart header and the Dividends tab could disagree** about the same stock's yield, for the same windowing reason. Both now use one shared calculation, so a stock can never show two different yields in the same app.
+- Dividend data is **never synthesized** — a name that pays nothing, or a failed lookup, shows blank rather than a fabricated figure, matching the Analytics tab's rule.
+
+### Verified
+- Full pytest suite (728) passes, including new coverage of frequency detection, TTM versus forward rate, the growth-artifact regression using RY.TO's real payment history, the payment calendar, currency conversion, the Dividends tab UI, and the chart markers (placement, tooltips, toggling, timezone-aware dates, non-payers, and agreement with the Dividends tab).
+
 ## 2.34.1 - Analytics matches IBKR: native prices, CAD totals, honest data
 
 ### Fixed

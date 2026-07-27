@@ -3,7 +3,7 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
-2.34.1 - Analytics displays like IBKR (native prices, CAD totals), per-holding Return column, click-to-chart, and honest no-data handling
+2.35.0 - Dividend tracker: income, yield on cost, growth and a payment calendar, plus dividend markers and yield on the chart
 
 ## Run
 1. Run `install_requirements.bat` if needed.

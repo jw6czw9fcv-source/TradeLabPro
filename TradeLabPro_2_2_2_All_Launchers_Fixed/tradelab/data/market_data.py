@@ -143,6 +143,38 @@ def _yahoo_download_chunk(symbols, period: str, interval: str) -> dict:
     return result
 
 
+def get_dividends(symbol: str) -> pd.Series:
+    """Dividend-per-share history for a symbol from the active provider, as a
+    date-indexed Series (empty when the name pays none, or the source has no
+    data). See tradelab.data.providers for source selection."""
+    from tradelab.data import providers
+    return providers.active().get_dividends(symbol)
+
+
+def _yahoo_dividends(symbol: str) -> pd.Series:
+    """Yahoo (yfinance) dividend history. Unlike prices there is NO synthetic
+    fallback: fabricated income would be misleading in a way fake prices on a
+    practice chart are not, so a failure returns an empty series and the UI
+    reports 'no data' instead."""
+    if yf is None:
+        return pd.Series(dtype=float)
+    try:
+        divs = yf.Ticker(symbol).dividends
+    except Exception:
+        return pd.Series(dtype=float)
+    if divs is None or getattr(divs, "empty", True):
+        return pd.Series(dtype=float)
+    divs = pd.to_numeric(divs, errors="coerce").dropna()
+    # yfinance returns a tz-aware index; drop the tz so callers can compare
+    # against plain timestamps without tz-mismatch errors.
+    try:
+        if getattr(divs.index, "tz", None) is not None:
+            divs.index = divs.index.tz_localize(None)
+    except (AttributeError, TypeError):
+        pass
+    return divs
+
+
 _quote_meta_cache: dict = {}
 
 # Yahoo has become inconsistent about which name field it returns: many
