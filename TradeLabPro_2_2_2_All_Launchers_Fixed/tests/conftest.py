@@ -6,6 +6,7 @@ existing synthetic_ohlcv() fallback already used by the app itself.
 """
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,16 @@ import pytest
 
 # Headless Qt for any widget-instantiation tests.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+# Keep the suite out of the app's real log. Importing tradelab.ui.app configures
+# logging as a side effect, and one test deliberately raises to prove startup
+# survives a broken panel - without this, every run left fake tracebacks in the
+# log you'd read when something had actually gone wrong. Set before any tradelab
+# import so it is in place by the time logging is configured.
+os.environ.setdefault(
+    "TRADELAB_LOG_DIR",
+    tempfile.mkdtemp(prefix="tradelab_test_logs_"),
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
