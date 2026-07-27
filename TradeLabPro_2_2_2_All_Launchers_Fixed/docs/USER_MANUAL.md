@@ -1,10 +1,13 @@
 # TradeLab Pro — User Manual
 
-**Version 2.35.0**
+**Version 2.37.0**
 
-TradeLab Pro is a desktop trading **workstation** for the stock market: scan the
+TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
+**Home** dashboard showing your book, the market read and the day's movers at a
+glance, scan the
 market for setups, chart and analyze symbols, keep watchlists and a portfolio
 (**import your positions from IBKR**, see the book's **risk analytics** in CAD,
+read your ETFs through to the **companies inside them**,
 and track the **dividend income** it pays), set price/indicator **alerts**, see a
 whole market at a glance on a
 **heatmap**, backtest strategies, build your own strategies and indicators
@@ -29,26 +32,27 @@ to explain what you're looking at.
 1. [Installation & launching](#1-installation--launching)
 2. [The main window](#2-the-main-window)
 3. [A five-minute tour](#3-a-five-minute-tour)
-4. [Scanner](#4-scanner)
-5. [Charts](#5-charts)
-6. [Watchlists](#6-watchlists)
-7. [Portfolio, Analytics & Dividends](#7-portfolio-analytics--dividends)
-8. [Alerts](#8-alerts)
-9. [Heatmap](#9-heatmap)
-10. [Market dashboard](#10-market-dashboard)
-11. [Backtest lab](#11-backtest-lab)
-12. [Chart replay](#12-chart-replay)
-13. [Seasonality](#13-seasonality)
-14. [Strategy builder](#14-strategy-builder)
-15. [Plugins](#15-plugins)
-16. [Paper trading](#16-paper-trading)
-17. [Trade journal](#17-trade-journal)
-18. [Coach](#18-coach)
-19. [Risk & position sizing](#19-risk--position-sizing)
-20. [AI assist](#20-ai-assist)
-21. [Settings & your data](#21-settings--your-data)
-22. [Tips & FAQ](#22-tips--faq)
-23. [Glossary](#23-glossary)
+4. [Home](#4-home)
+5. [Scanner](#5-scanner)
+6. [Charts](#6-charts)
+7. [Watchlists](#7-watchlists)
+8. [Portfolio, Analytics & Dividends](#8-portfolio-analytics--dividends)
+9. [Alerts](#9-alerts)
+10. [Heatmap](#10-heatmap)
+11. [Market dashboard](#11-market-dashboard)
+12. [Backtest lab](#12-backtest-lab)
+13. [Chart replay](#13-chart-replay)
+14. [Seasonality](#14-seasonality)
+15. [Strategy builder](#15-strategy-builder)
+16. [Plugins](#16-plugins)
+17. [Paper trading](#17-paper-trading)
+18. [Trade journal](#18-trade-journal)
+19. [Coach](#19-coach)
+20. [Risk & position sizing](#20-risk--position-sizing)
+21. [AI assist](#21-ai-assist)
+22. [Settings & your data](#22-settings--your-data)
+23. [Tips & FAQ](#23-tips--faq)
+24. [Glossary](#24-glossary)
 
 ---
 
@@ -67,7 +71,7 @@ from **Yahoo Finance** (`yfinance`) when you're connected. With no internet, it
 falls back to **deterministic synthetic data** so every screen stays usable for
 practice and demos — the numbers are fake but consistent, so nothing crashes or
 blanks out. You can also **choose the data source** in **Settings → Data source**
-(e.g. force the offline synthetic source for a demo); see section 21.
+(e.g. force the offline synthetic source for a demo); see section 22.
 
 ---
 
@@ -75,7 +79,8 @@ blanks out. You can also **choose the data source** in **Settings → Data sourc
 
 The window is split into two halves:
 
-- **Left — the tabbed control panel.** The tabs are ordered to follow the
+- **Left — the tabbed control panel.** **Home** comes first — your book and the
+  market in one screen — and the rest follow the
   trading process: **Market → Heatmap → News** (market context) → **Scanner →
   Watchlists → Alerts** (find & watch) → **AI Assist → Risk → Paper Trading**
   (analyse, size & act) → **Portfolio → Analytics → Dividends → Journal →
@@ -96,29 +101,99 @@ is always reachable on any screen size.
 
 ## 3. A five-minute tour
 
-1. **Scan.** Open the **Scanner** tab, pick an exchange/list (e.g. USA), and click
+1. **Look at Home.** It's already loaded — your book's value, today's move,
+   unrealized P&L and annual income, anything that needs attention, and how the
+   market is reading. Nothing to click.
+2. **Scan.** Open the **Scanner** tab, pick an exchange/list (e.g. USA), and click
    **Scan**. A ranked table of matching symbols appears.
-2. **Map it.** Click **🗺 Map results** to see those symbols as a **Heatmap** —
+3. **Map it.** Click **🗺 Map results** to see those symbols as a **Heatmap** —
    sized by market cap, colored green/red by % change, grouped by sector.
-3. **Chart.** Double-click a Scanner row (or a heatmap tile) — it loads on the
+4. **Chart.** Double-click a Scanner row (or a heatmap tile) — it loads on the
    chart at right, with the company name and price at the top-left, candlesticks,
    moving averages, and Volume/MACD/RSI sub-panes.
-4. **Save / alert.** Add a symbol to a **Watchlist** or **Portfolio**, or open
+5. **Save / alert.** Add a symbol to a **Watchlist** or **Portfolio**, or open
    **Alerts** and set "RSI below 30" to be notified when it triggers.
-5. **Size the trade.** Open **Risk**, enter your account size, risk %, entry and
+6. **Size the trade.** Open **Risk**, enter your account size, risk %, entry and
    stop — it tells you how many shares to trade and your R-multiple targets.
-6. **Practice & journal.** Open **Paper Trading**, buy a few simulated shares,
+7. **Practice & journal.** Open **Paper Trading**, buy a few simulated shares,
    then **Journal** to review your win rate and expectancy (or import your real
    IBKR history).
-7. **Get coached.** Open the **Coach** tab for a letter grade on how well you
+8. **Get coached.** Open the **Coach** tab for a letter grade on how well you
    *executed* each journaled trade — and a short list of process habits to work
    on.
-8. **Ask.** Open **AI Assist**, load a symbol's context, and ask "what is this
+9. **Ask.** Open **AI Assist**, load a symbol's context, and ask "what is this
    setup telling me?" in plain English.
 
 ---
 
-## 4. Scanner
+## 4. Home
+
+The first tab, and the first thing you see. It answers the questions you
+actually open the app to ask, without you having to click anything: **what is my
+book worth, how did it move today, what income is coming, what moved most, and is
+anything wrong?**
+
+**It refreshes itself at startup.** Your portfolio loads as soon as the window
+paints; the market pass follows a few seconds later in the background. By the
+time you've looked at the window, the numbers are already there.
+
+### The tiles
+
+**Book value** · **Today** · **Unrealized P&L** · **Annual income** — in your
+display currency (**CAD** by default; switch at the top right).
+
+### Needs attention
+
+Things worth knowing without asking for them:
+
+- A holding **down more than 5%** on the day.
+- A symbol with **no price data**, or a **missing FX rate** — named, so you know
+  what's excluded rather than wondering why a total looks low.
+- A position that has grown past **40% of the book**.
+- **Look-through concentration** — a company that reaches 40% of the book once
+  your funds are opened up, even if no single *position* is that large. See
+  section 8.
+
+### Today's movers
+
+Each holding's move, biggest first. The **percentage is the stock's own move in
+its native currency**, so a currency swing can't distort it; the **dollar figure
+is converted** to your display currency. Click any row to chart it.
+
+### Income
+
+Average income per month, and the next payment expected — which holding, which
+month, roughly how much.
+
+### The market, in three lines
+
+- **Market** — the read for each market scored (US, Canada), with breadth, VIX
+  and the strongest and weakest sector.
+- **World** — TSX, S&P 500, Nasdaq, FTSE and Nikkei, home market first.
+- **Macro** — USD/CAD, oil, gold and the US 10-year: the rate your USD holdings
+  translate through, the two commodities that dominate the TSX, and the yield
+  every dividend payer is priced against.
+
+Two things worth knowing about these lines. They show the **Market tab's own
+numbers** — Home never computes a second, cheaper version, so the two screens
+can't disagree. And a reading is **stamped with its age**: "updated 16:25" when
+it's fresh, "as of 16:25" once it's over an hour old, so a stale number is never
+presented as current. Until a reading exists it says *"reading the market…"*
+rather than showing a placeholder.
+
+The 10-year is quoted in **basis points** ("−4 bp"), not as a percentage change
+of the yield, and is deliberately left uncoloured — green-for-up would suggest
+rising rates are good news, which for a book of dividend payers is usually the
+opposite.
+
+> **Home assembles, it never recalculates.** Book value comes from the same
+> engine as the Analytics tab and income from the same engine as the Dividends
+> tab, so a figure on Home always matches the tab it came from. If a price can't
+> be fetched, Home shows "—" rather than a fabricated balance.
+
+---
+
+## 5. Scanner
 
 The Scanner filters the market down to symbols matching your criteria and ranks
 them by a 0–100 **Score**.
@@ -160,7 +235,7 @@ Market Cap, Cap, Sector, RSI, ATR%, EMA, MACD**.
 
 Double-click a row to chart it. The buttons below add selected rows to a
 Watchlist/Portfolio, load a chart, export the results, or **🗺 Map results** —
-which sends the scan results to the **Heatmap** tab as a custom map (section 9).
+which sends the scan results to the **Heatmap** tab as a custom map (section 10).
 The status line summarizes counts and a sector breakdown.
 
 ### Presets
@@ -171,7 +246,7 @@ automatically. **Open** loads a setup file from elsewhere on disk. You can also
 
 ---
 
-## 5. Charts
+## 6. Charts
 
 The chart workspace on the right renders responsive, zoomable charts (built on
 PyQtGraph).
@@ -232,7 +307,7 @@ chart **layouts**.
 
 ---
 
-## 6. Watchlists
+## 7. Watchlists
 
 Track symbols you care about. The table shows **Item, Symbol, Last, Change %,
 Purpose**. You can import and export watchlists. Add symbols directly from Scanner
@@ -241,7 +316,7 @@ an entry can load it on the chart.
 
 ---
 
-## 7. Portfolio, Analytics & Dividends
+## 8. Portfolio, Analytics & Dividends
 
 The **Portfolio** tab is a holdings record: **ID, Portfolio, Symbol, Shares,
 Entry**. Add positions (e.g. from a Scanner result), group them by portfolio
@@ -249,7 +324,7 @@ name, and export; **click any row to chart its symbol**. This is a
 **record-keeping** ledger for positions you hold elsewhere — it does not place
 or track live orders. Your portfolio also feeds the
 **Heatmap** (Portfolio map) and the **Risk** tab's sector-exposure view. For
-simulated order entry and P&L, use **Paper Trading** (section 16).
+simulated order entry and P&L, use **Paper Trading** (section 17).
 
 ### Import your positions from IBKR (read-only)
 
@@ -259,7 +334,7 @@ from Interactive Brokers. On the Portfolio tab, under **Import from IBKR**:
 - **Positions file (CSV/XML)…** — export an Activity Statement or Flex report
   that includes the **Open Positions** section (CSV or XML) and pick the file.
 - **Fetch positions (Flex)** — a direct pull over the IBKR Flex Web Service,
-  reusing the **token and query id** you saved in the Journal tab (section 17).
+  reusing the **token and query id** you saved in the Journal tab (section 18).
   Your Flex query's Open Positions section must include at least Symbol, Quantity
   and Cost Price (add Currency / Listing Exchange too for the cleanest mapping).
 
@@ -323,6 +398,45 @@ SYMBOL's limited history").
 > Analysis only — the Analytics tab never places or tracks live orders, and the
 > figures are not financial advice.
 
+### Look-through exposure — your book by company, not by position
+
+A book measured position-by-position can understate what it actually owns. If you
+hold a bank outright **and** hold two index ETFs that each carry that bank as
+their top position, that is **one concentrated exposure reported as three
+diversified ones**.
+
+The **Look-through exposure** section (below the holdings table, filled in when
+you click **Analyze**) opens your funds up and restates the book by *company*:
+
+| Column | What it means |
+| --- | --- |
+| **Company** | The underlying company, whether you hold it directly, inside a fund, or both |
+| **Exposure** | Its total value across every route you own it |
+| **% of book** | That value as a share of the whole book |
+| **Held directly** | The part that is your own position ("—" if you own it only through a fund) |
+| **Also inside** | Which of your funds carry it |
+
+**Click any row to chart it** — including companies you hold only inside a fund
+and have no position in.
+
+Below the table, a **Sectors** line gives the sector weights of the entire book:
+funds contribute their published sector breakdown, individual holdings contribute
+their own sector, and anything unclassified stays visible rather than being
+quietly dropped.
+
+**A worked example.** A CAD book holding XDIV, XIC and RY directly: RY shows as a
+**28% position** in the holdings table, but **33% of the book** in look-through —
+because both ETFs hold RY as their largest position. XDIV is the biggest
+*position*; RY is the biggest *company*. Two different questions, two different
+answers.
+
+> **Every figure here is a floor, never a total.** Data sources publish only a
+> fund's **top ~10 holdings**, so whatever sits below that is reported separately
+> as unallocated rather than being spread across the names you *can* see — which
+> would overstate every one of them. The section tells you how much is
+> unaccounted for. A fund with no holdings data at all is **named** and counted as
+> itself, so the book never looks more diversified than the data supports.
+
 ### Dividends — the income your book pays
 
 The **Dividends** tab answers "what do my holdings actually pay me?". Pick a
@@ -354,7 +468,7 @@ being averaged away by older, smaller payments.
 
 ---
 
-## 8. Alerts
+## 9. Alerts
 
 Get notified when a symbol meets a condition — without watching the screen.
 
@@ -380,7 +494,7 @@ the in-panel log. Alerts persist between runs (`data/alerts.json`).
 
 ---
 
-## 9. Heatmap
+## 10. Heatmap
 
 A whole market at a glance, Finviz-style: every stock/ETF is a **tile sized by
 market cap** (or dollar volume) and **colored green→red by its % change**, grouped
@@ -418,7 +532,7 @@ Market while selected.
 
 ---
 
-## 10. Market dashboard
+## 11. Market dashboard
 
 A one-glance read on overall conditions:
 - A color-coded **macro headline** with a 0–100 "is it a good day to trade" read
@@ -431,9 +545,15 @@ A one-glance read on overall conditions:
 Use this before scanning to gauge whether the broad market is with you or against
 you.
 
+**It also feeds Home.** Refreshing this tab updates the market, world and macro
+lines on the **Home** tab (section 4) with these exact numbers — Home displays
+this read rather than computing its own, so the two can never disagree. At
+startup the app warms this pass in the background a few seconds after your
+portfolio loads, so Home fills itself in without you opening this tab.
+
 ---
 
-## 11. Backtest lab
+## 12. Backtest lab
 
 Test a strategy against historical data.
 
@@ -460,7 +580,7 @@ the numbers for you.
 
 ---
 
-## 12. Chart replay
+## 13. Chart replay
 
 Practice reading a chart with the future hidden — a bar-by-bar "replay" of history.
 
@@ -478,7 +598,7 @@ and drawings all work.
 
 ---
 
-## 13. Seasonality
+## 14. Seasonality
 
 See how a stock has historically behaved by the **calendar** — whether the month
 you're in has tended to be kind or cruel to that name.
@@ -519,7 +639,7 @@ to its last close), most recent first.
 
 ---
 
-## 14. Strategy builder
+## 15. Strategy builder
 
 Build your own BUY/SELL strategies **without code**:
 
@@ -539,7 +659,7 @@ defaults.
 
 ---
 
-## 15. Plugins
+## 16. Plugins
 
 Extend TradeLab Pro with **custom indicators** written in Python:
 
@@ -555,11 +675,11 @@ Extend TradeLab Pro with **custom indicators** written in Python:
 
 > **Plugins vs. data sources.** A *plugin* is a local custom **indicator** — it
 > never connects to anything. Choosing where prices come from is a separate
-> **data source** setting (section 21).
+> **data source** setting (section 22).
 
 ---
 
-## 16. Paper trading
+## 17. Paper trading
 
 A fully **simulated brokerage account** for practice — the safe way to rehearse
 order entry and watch P&L behave.
@@ -589,11 +709,11 @@ realized-P&L accounting.
 **Refresh** re-marks positions to the current price and fills any crossed limit
 orders. **Reset account** wipes everything back to the starting cash (with a
 confirmation). You can pull your paper fills straight into the **Trade Journal**
-(section 17).
+(section 18).
 
 ---
 
-## 17. Trade journal
+## 18. Trade journal
 
 Log your trades, tag them, and review what actually works.
 
@@ -629,7 +749,7 @@ re-importing the same data won't create duplicates. You can **Close** open trade
 
 ---
 
-## 18. Coach
+## 19. Coach
 
 Your **AI Trading Coach** reviews the trades in your **Journal** and grades how
 well each one was *executed* — not just whether it made money. The whole tab is
@@ -681,11 +801,11 @@ full offline review, and the chat simply shows that report instead.
 
 The Coach reads the same journal you see in the **Journal** tab and refreshes
 automatically whenever you open it (there's also a **Refresh from journal**
-button). Log or import some trades first (section 17), then check the Coach.
+button). Log or import some trades first (section 18), then check the Coach.
 
 ---
 
-## 19. Risk & position sizing
+## 20. Risk & position sizing
 
 Size trades by risk instead of by gut, and see how concentrated your book is.
 
@@ -709,7 +829,7 @@ sector).
 
 ---
 
-## 20. AI assist
+## 21. AI assist
 
 A natural-language assistant that **explains** indicators, scores, and setups in
 plain English.
@@ -750,7 +870,7 @@ price right now"* — that's the data limitation, not the model.
 
 ---
 
-## 21. Settings & your data
+## 22. Settings & your data
 
 The **Settings** tab lets you choose your **Data source** and shows where your
 data lives (database path, data folder, scan-history counts).
@@ -781,7 +901,7 @@ The database uses versioned migrations, so it upgrades cleanly across releases.
 
 ---
 
-## 22. Tips & FAQ
+## 23. Tips & FAQ
 
 **Where is my API key / IBKR token stored?** In the Windows registry under
 `HKEY_CURRENT_USER\Software\TradeLabPro\TradeLabPro` (the API key can instead come
@@ -814,7 +934,7 @@ Click the trade's row in the Coach to see exactly what added and subtracted.
 
 **Do I need an API key for the Coach?** No. All the grading, the process report,
 and the suggestions run offline with no key or internet. A key only unlocks the
-optional **AI chat** (shared with the AI Assist tab, section 20).
+optional **AI chat** (shared with the AI Assist tab, section 21).
 
 **Nothing loads / I'm offline.** The app falls back to deterministic synthetic
 data so screens stay usable. Reconnect for real Yahoo Finance data, or set
@@ -829,7 +949,7 @@ switch back to the same interval to see them.
 
 ---
 
-## 23. Glossary
+## 24. Glossary
 
 - **EMA / SMA** — Exponential / Simple Moving Average.
 - **MACD** — Moving Average Convergence Divergence (trend/momentum).
