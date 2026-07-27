@@ -86,3 +86,44 @@ def test_analytics_panel_empty_portfolio(qapp):
     panel.analyze()
     assert "No positions" in panel.headline.text()
     assert panel.holdings.rowCount() == 0
+
+
+# --- look-through -----------------------------------------------------------
+
+def test_analytics_renders_look_through(qapp):
+    import tradelab.ui.app as app
+    from tradelab.core import portfolio_analytics as pa
+    p = app.PortfolioAnalyticsPanel(_FakeDB([]))
+    p._lt_currency = "CAD"
+    rows = [{"symbol": "XDIV.TO", "market_value": 10000.0},
+            {"symbol": "RY.TO", "market_value": 8000.0}]
+    comps = {"XDIV.TO": {"top_holdings": {"RY.TO": 0.10, "TD.TO": 0.09},
+                         "sectors": {"Financials": 0.6}},
+             "RY.TO": {"top_holdings": {}, "sectors": {}}}
+    p._lt_rows = rows
+    p._on_compositions(comps, {"RY.TO": "Financials"}, "")
+
+    assert p.lookthrough.item(0, 0).text() == "RY.TO"      # biggest exposure first
+    assert p.lookthrough.item(0, 1).text() == "$9,000"     # 8000 direct + 1000 via
+    assert p.lookthrough.item(0, 3).text() == "$8,000"     # held directly
+    assert "XDIV.TO" in p.lookthrough.item(0, 4).text()    # and inside this fund
+    line = p.lt_line.text()
+    assert "RY.TO" in line and "largest company exposure" in line
+    assert "floor" in line                                 # the unreported remainder
+    assert "Financials" in p.sector_line.text()
+
+
+def test_analytics_look_through_reports_a_fetch_failure(qapp):
+    import tradelab.ui.app as app
+    p = app.PortfolioAnalyticsPanel(_FakeDB([]))
+    p._on_compositions(None, None, "network down")
+    assert "network down" in p.lt_line.text()
+
+
+def test_analytics_look_through_names_unreadable_funds(qapp):
+    import tradelab.ui.app as app
+    p = app.PortfolioAnalyticsPanel(_FakeDB([]))
+    p._lt_currency = "CAD"
+    p._lt_rows = [{"symbol": "XDIV.TO", "market_value": 1000.0}]
+    p._on_compositions({}, {}, "")
+    assert "No holdings data for XDIV.TO" in p.lt_line.text()

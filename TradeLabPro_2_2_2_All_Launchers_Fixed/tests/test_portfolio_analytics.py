@@ -252,3 +252,78 @@ def test_summarize_end_to_end_with_benchmark():
     assert r["benchmark_return_pct"] is not None
     assert r["window_days"] > 0
     assert "beta" in r["text"]
+
+
+# --- look-through -----------------------------------------------------------
+
+def _row(symbol, value):
+    return {"symbol": symbol, "market_value": value}
+
+
+def test_look_through_merges_direct_and_fund_exposure():
+    # The real shape of the user's book: a bank held outright and again as the
+    # top position inside two index funds it also owns.
+    rows = [_row("XDIV.TO", 10000.0), _row("RY.TO", 8000.0), _row("XIC.TO", 2000.0)]
+    comps = {
+        "XDIV.TO": {"top_holdings": {"RY.TO": 0.10, "TD.TO": 0.09}},
+        "XIC.TO": {"top_holdings": {"RY.TO": 0.07, "SHOP.TO": 0.05}},
+    }
+    r = pa.look_through(rows, comps)
+    top = r["exposures"][0]
+    assert top["symbol"] == "RY.TO"
+    # 8000 direct + 10% of 10000 + 7% of 2000
+    assert top["value"] == pytest.approx(8000 + 1000 + 140)
+    assert top["direct_value"] == pytest.approx(8000)
+    assert top["fund_value"] == pytest.approx(1140)
+    assert top["via"] == ["XDIV.TO", "XIC.TO"]
+    assert top["weight_pct"] == pytest.approx(9140 / 20000 * 100)
+
+
+def test_look_through_keeps_the_unreported_remainder_separate():
+    # Sources publish only a fund's top ~10 names. The rest must stay unallocated
+    # rather than being scaled up into the names we can see, which would
+    # overstate every visible exposure.
+    rows = [_row("XDIV.TO", 1000.0)]
+    r = pa.look_through(rows, {"XDIV.TO": {"top_holdings": {"RY.TO": 0.10}}})
+    assert r["exposures"][0]["value"] == pytest.approx(100.0)
+    assert r["unallocated"] == [
+        {"symbol": "XDIV.TO", "value": pytest.approx(900.0),
+         "weight_pct": pytest.approx(90.0)}]
+    assert r["funds_opened"] == ["XDIV.TO"]
+
+
+def test_look_through_counts_a_plain_stock_as_itself():
+    r = pa.look_through([_row("RY.TO", 500.0), _row("POW.TO", 300.0)], {})
+    assert [e["symbol"] for e in r["exposures"]] == ["RY.TO", "POW.TO"]
+    assert r["exposures"][0]["fund_value"] == 0
+    assert r["unallocated"] == []
+
+
+def test_look_through_names_funds_it_could_not_read():
+    # A fund with no composition data still counts, but the gap is reported so
+    # the book never looks more diversified than the data supports.
+    r = pa.look_through([_row("XDIV.TO", 100.0)], {})
+    assert r["funds_no_data"] == ["XDIV.TO"]
+    assert r["exposures"][0]["symbol"] == "XDIV.TO"
+
+
+def test_look_through_handles_an_empty_book():
+    r = pa.look_through([], {})
+    assert r["exposures"] == [] and r["largest"] is None and r["total"] == 0
+
+
+def test_look_through_sectors_blends_funds_and_single_stocks():
+    rows = [_row("XIC.TO", 1000.0), _row("RY.TO", 1000.0)]
+    comps = {"XIC.TO": {"sectors": {"Financials": 0.30, "Energy": 0.20}}}
+    out = pa.look_through_sectors(rows, comps, {"RY.TO": "Financials"})
+    by = {s["sector"]: s for s in out}
+    assert by["Financials"]["value"] == pytest.approx(300 + 1000)
+    assert by["Energy"]["value"] == pytest.approx(200)
+    # The half of the fund with no published sector stays visible, not dropped.
+    assert by["Unclassified"]["value"] == pytest.approx(500)
+    assert sum(s["weight_pct"] for s in out) == pytest.approx(100.0)
+
+
+def test_look_through_sectors_marks_unknown_stocks_unclassified():
+    out = pa.look_through_sectors([_row("ZZZ", 100.0)], {}, {})
+    assert out == [{"sector": "Unclassified", "value": 100.0, "weight_pct": 100.0}]

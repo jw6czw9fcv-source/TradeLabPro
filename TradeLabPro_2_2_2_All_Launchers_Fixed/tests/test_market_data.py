@@ -265,3 +265,36 @@ def test_yahoo_histories_survives_download_raising(monkeypatch):
 ])
 def test_market_cap_bucket(market_cap, expected):
     assert market_cap_bucket(market_cap) == expected
+
+
+# --- fund composition -------------------------------------------------------
+
+def test_canonical_sector_merges_the_two_yahoo_spellings():
+    # A fund reports "financial_services"; a stock profile says "Financial
+    # Services". Left unnormalised the same sector is counted twice under two
+    # labels, which is exactly what the look-through showed on real data.
+    from tradelab.data.market_data import canonical_sector
+    assert canonical_sector("financial_services") == "Financials"
+    assert canonical_sector("Financial Services") == "Financials"
+    assert canonical_sector("consumer_cyclical") == canonical_sector("Consumer Cyclical")
+    assert canonical_sector("healthcare") == "Health Care"
+    assert canonical_sector("") == "" and canonical_sector(None) == ""
+    assert canonical_sector("Something New") == "Something New"   # unknown passes through
+
+
+def test_fund_holding_symbol_keeps_canadian_listings_canadian():
+    # A TSX fund lists holdings as a mix of "RY" and "MFC.TO". A bare "RY" means
+    # the Toronto line; taken literally it resolves to the NYSE listing - a
+    # different security at a different price.
+    from tradelab.data.market_data import _fund_holding_symbol
+    assert _fund_holding_symbol("XDIV.TO", "RY") == "RY.TO"
+    assert _fund_holding_symbol("XDIV.TO", "MFC.TO") == "MFC.TO"
+    assert _fund_holding_symbol("SPY", "NVDA") == "NVDA"        # US fund, US holding
+    assert _fund_holding_symbol("XIC.TO", "") == ""
+
+
+def test_fund_composition_is_never_synthesized():
+    # Same rule as dividends: no source, no data - never an invented breakdown.
+    from tradelab.data import providers
+    empty = providers.SyntheticProvider().get_fund_composition("XDIV.TO")
+    assert empty == {"top_holdings": {}, "sectors": {}}

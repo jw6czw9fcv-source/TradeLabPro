@@ -263,6 +263,109 @@ def concentration(rows: list) -> dict:
     }
 
 
+def look_through(rows: list, compositions: dict) -> dict:
+    """Company-level exposure once every fund is opened up.
+
+    A book measured position-by-position can badly understate what it actually
+    owns: holding a bank directly *and* holding two index funds that each carry
+    that bank as their top position is one concentrated exposure reported as
+    three diversified ones. This restates the book by company.
+
+    `compositions` maps a symbol to {"top_holdings": {symbol: weight}} — see
+    market_data.get_fund_composition. Sources report only a fund's top ~10
+    holdings, so each fund's unreported remainder is returned separately in
+    `unallocated` rather than being spread across the names we can see; every
+    exposure here is therefore a floor, never an overstatement.
+    """
+    total = sum(h["market_value"] for h in rows if h.get("market_value")) or 0.0
+    exposure, via, direct = {}, {}, {}
+    unallocated, funds, no_data = [], [], []
+
+    for h in rows:
+        value = h.get("market_value")
+        symbol = h["symbol"]
+        if not value:
+            continue
+        holdings_map = ((compositions or {}).get(symbol) or {}).get("top_holdings") or {}
+        if not holdings_map:
+            # Either an ordinary stock or a fund we have no composition for; it
+            # counts as itself. Funds we couldn't read are named so the gap is
+            # visible instead of quietly flattering the diversification.
+            exposure[symbol] = exposure.get(symbol, 0.0) + value
+            direct[symbol] = direct.get(symbol, 0.0) + value
+            if (compositions or {}).get(symbol) is None and _looks_like_fund(symbol):
+                no_data.append(symbol)
+            continue
+        funds.append(symbol)
+        covered = 0.0
+        for held, weight in holdings_map.items():
+            part = value * float(weight)
+            covered += float(weight)
+            exposure[held] = exposure.get(held, 0.0) + part
+            via.setdefault(held, set()).add(symbol)
+        rest = value * max(0.0, 1.0 - covered)
+        if rest > 0:
+            unallocated.append({"symbol": symbol, "value": rest,
+                                "weight_pct": (rest / total * 100.0) if total else None})
+
+    out = []
+    for symbol, value in exposure.items():
+        out.append({
+            "symbol": symbol,
+            "value": value,
+            "weight_pct": (value / total * 100.0) if total else None,
+            "direct_value": direct.get(symbol, 0.0),
+            "fund_value": value - direct.get(symbol, 0.0),
+            "via": sorted(via.get(symbol, set())),
+        })
+    out.sort(key=lambda e: e["value"], reverse=True)
+    return {
+        "exposures": out,
+        "unallocated": sorted(unallocated, key=lambda u: u["value"], reverse=True),
+        "total": total,
+        "largest": out[0] if out else None,
+        "funds_opened": sorted(set(funds)),
+        "funds_no_data": sorted(set(no_data)),
+    }
+
+
+def _looks_like_fund(symbol: str) -> bool:
+    """A rough 'this was probably a fund' check, used only to decide whether a
+    missing composition is worth reporting. Never used to classify a holding."""
+    return len((symbol or "").split(".")[0]) <= 4
+
+
+def look_through_sectors(rows: list, compositions: dict, stock_sectors: dict = None) -> list:
+    """Sector weights for the whole book: a fund contributes its own published
+    sector breakdown, an individual holding contributes its sector outright.
+
+    Anything with no sector information is grouped as "Unclassified" rather than
+    dropped, so the percentages always describe the entire book.
+    """
+    total = sum(h["market_value"] for h in rows if h.get("market_value")) or 0.0
+    weights = {}
+    for h in rows:
+        value, symbol = h.get("market_value"), h["symbol"]
+        if not value:
+            continue
+        sectors = ((compositions or {}).get(symbol) or {}).get("sectors") or {}
+        if sectors:
+            covered = 0.0
+            for name, weight in sectors.items():
+                weights[name] = weights.get(name, 0.0) + value * float(weight)
+                covered += float(weight)
+            if covered < 1.0:
+                weights["Unclassified"] = weights.get("Unclassified", 0.0) + value * (1.0 - covered)
+            continue
+        name = (stock_sectors or {}).get(symbol) or "Unclassified"
+        weights[name] = weights.get(name, 0.0) + value
+    out = [{"sector": name, "value": value,
+            "weight_pct": (value / total * 100.0) if total else None}
+           for name, value in weights.items()]
+    out.sort(key=lambda s: s["value"], reverse=True)
+    return out
+
+
 def correlation(histories: dict) -> dict:
     """Correlation of daily returns between holdings, plus the average pairwise
     correlation (a quick 'how diversified is this book?' number — low/negative is

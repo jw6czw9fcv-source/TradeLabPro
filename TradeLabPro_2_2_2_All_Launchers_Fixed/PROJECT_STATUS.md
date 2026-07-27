@@ -1,7 +1,16 @@
 # TradeLab Pro Project Status
 
-Current version: 2.36.0
-Current phase: Home dashboard + market context + consistency pass (done)
+Current version: 2.37.0
+Current phase: Look-through exposure (done)
+
+## Completed in 2.37.0 (Look-through exposure)
+- `core/portfolio_analytics.py`: `look_through(rows, compositions)` — the book restated by company (direct + fund-borne, `via` names the funds), with each fund's unreported remainder kept separate in `unallocated` (**never scaled up**, so every exposure is a floor); `funds_opened`/`funds_no_data` make gaps visible. `look_through_sectors(rows, compositions, stock_sectors)` blends fund sector weights with individual holdings' sectors, keeping the unpublished part as "Unclassified".
+- Data layer: `market_data.get_fund_composition` (cached per symbol) + `_yahoo_fund_composition` (yfinance `funds_data.top_holdings` / `sector_weightings`, **no synthetic fallback**), `DataProvider.get_fund_composition` on the ABC (synthetic returns empty).
+- **`_fund_holding_symbol`** — Yahoo lists a TSX fund's holdings as a mix of `RY`, `TD`, `MFC.TO`; a bare ticker inside a `.TO/.V/.CN/.NE` fund means the Toronto listing. Taken literally `RY` is the NYSE line (different security/price/currency) and would have split the largest exposure in two.
+- **`canonical_sector`** — funds say `financial_services`, stock profiles say `Financial Services`; unnormalised, the real book reported the same sector twice (45% + 25%). One mapping now merges them (70%).
+- UI: `_FundCompositionWorker` (per-symbol fetch + `get_quote_meta` sector for non-funds, off-thread); Analytics gains the look-through table (Company / Exposure / % of book / Held directly / Also inside, click-to-chart) + summary line naming the unallocated floor + a book-wide sector line. **Both fetches start from `analyze()` and run in parallel** — starting the composition fetch from the render path let a worker outlive its panel and crashed the test process.
+- `core/home.py`: `CONCENTRATION_PCT = 40.0` shared by the position-level and look-through checks; `summarize(..., compositions=...)` exposes `look_through`; `attention(..., look_through)` adds the "once funds are opened up" item only when funds actually contribute. `_HomeWorker` now also fetches compositions (`done` signal gained an argument).
+- Verified on the real book: RY.TO 33.4% look-through vs 28.5% direct, via XDIV.TO + XIC.TO; 18% unallocated below the published top ten. Suite 774 passing.
 
 ## Completed in 2.36.0 (Home dashboard)
 - New `core/home.py` (Qt-free, offline-testable, **assembly-only**): `movers` (per-holding day move — % native, $ converted), `day_move`, `next_payment` (nearest paying month, wrapping into next year), `attention` (>5% drop, `no_data`, `fx_missing`, >40% concentration), `summarize` (delegates to `portfolio_analytics.summarize` and `dividends.summarize` so Home can never disagree with those tabs), `_headline`.

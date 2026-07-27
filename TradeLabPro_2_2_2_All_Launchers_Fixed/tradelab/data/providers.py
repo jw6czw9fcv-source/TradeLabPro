@@ -38,6 +38,13 @@ class DataProvider(ABC):
         dividend data return an empty series — income is never fabricated."""
         return pd.Series(dtype=float)
 
+    def get_fund_composition(self, symbol: str) -> dict:
+        """What a fund holds: {"top_holdings": {symbol: weight}, "sectors":
+        {name: weight}}, weights as fractions of the fund. Empty for an ordinary
+        stock, and for sources with no fund data — composition is never invented,
+        the same rule dividends follow."""
+        return {"top_holdings": {}, "sectors": {}}
+
     def get_histories(self, symbols, period: str = "1y", interval: str = "1d") -> dict:
         """Fetch history for many symbols -> {symbol: DataFrame}. The default is a
         serial loop over get_history(); providers backed by a source that accepts
@@ -69,6 +76,10 @@ class YahooProvider(DataProvider):
     def get_dividends(self, symbol):
         from tradelab.data import market_data as md
         return md._yahoo_dividends(symbol)
+
+    def get_fund_composition(self, symbol):
+        from tradelab.data import market_data as md
+        return md._yahoo_fund_composition(symbol)
 
     def available(self):
         from tradelab.data import market_data as md

@@ -175,6 +175,115 @@ def _yahoo_dividends(symbol: str) -> pd.Series:
     return divs
 
 
+_fund_composition_cache: dict = {}
+
+# Yahoo names the same sector two different ways depending on where you ask:
+# a fund's weightings come back as "financial_services", while a stock's profile
+# says "Financial Services". Left alone the two never merge, so a book split
+# between funds and single stocks reports one sector twice under two labels.
+# Everything is normalised through here to the names the rest of the app uses
+# (see core.sectors / the Market tab).
+_SECTOR_DISPLAY_NAMES = {
+    "realestate": "Real Estate", "consumercyclical": "Consumer Discretionary",
+    "consumerdiscretionary": "Consumer Discretionary", "basicmaterials": "Materials",
+    "materials": "Materials", "consumerdefensive": "Consumer Staples",
+    "consumerstaples": "Consumer Staples", "technology": "Technology",
+    "informationtechnology": "Technology", "communicationservices": "Communication Services",
+    "financialservices": "Financials", "financials": "Financials",
+    "utilities": "Utilities", "industrials": "Industrials", "energy": "Energy",
+    "healthcare": "Health Care",
+}
+
+
+def canonical_sector(name: str) -> str:
+    """One display name per sector, whatever spelling the source used."""
+    key = "".join(ch for ch in str(name or "").lower() if ch.isalpha())
+    if not key:
+        return ""
+    return _SECTOR_DISPLAY_NAMES.get(key, str(name).replace("_", " ").title())
+
+
+def get_fund_composition(symbol: str) -> dict:
+    """What a fund holds, from the active provider and cached per symbol:
+    {"top_holdings": {symbol: weight}, "sectors": {name: weight}}. An ordinary
+    stock returns empty dicts. See tradelab.data.providers for source selection.
+    """
+    from tradelab.data import providers
+    key = (providers.active_name(), symbol)
+    if key not in _fund_composition_cache:
+        _fund_composition_cache[key] = providers.active().get_fund_composition(symbol)
+    return _fund_composition_cache[key]
+
+
+def _yahoo_fund_composition(symbol: str) -> dict:
+    """Yahoo (yfinance) fund holdings and sector weights.
+
+    Like dividends, there is NO synthetic fallback: a made-up composition would
+    misstate what a book is actually exposed to. A failure, or a symbol that
+    isn't a fund, returns empty dicts and the UI says so.
+
+    Yahoo reports only the top ~10 holdings, so the weights deliberately do not
+    sum to 1 — callers must treat the remainder as unallocated rather than
+    scaling these up to 100%.
+    """
+    empty = {"top_holdings": {}, "sectors": {}}
+    if yf is None:
+        return empty
+    try:
+        funds = yf.Ticker(symbol).funds_data
+    except Exception:
+        return empty
+    if funds is None:
+        return empty
+
+    top = {}
+    try:
+        frame = funds.top_holdings
+        if frame is not None and not frame.empty:
+            weights = frame[frame.columns[-1]]
+            for holding, weight in zip(frame.index, weights):
+                try:
+                    w = float(weight)
+                except (TypeError, ValueError):
+                    continue
+                if w > 0:
+                    top[_fund_holding_symbol(symbol, str(holding))] = w
+    except Exception:
+        pass
+
+    sectors = {}
+    try:
+        for key, weight in (funds.sector_weightings or {}).items():
+            try:
+                w = float(weight)
+            except (TypeError, ValueError):
+                continue
+            if w > 0:
+                sectors[canonical_sector(key)] = w
+    except Exception:
+        pass
+    return {"top_holdings": top, "sectors": sectors}
+
+
+def _fund_holding_symbol(fund_symbol: str, holding: str) -> str:
+    """Resolve a holding ticker reported inside a fund to a full Yahoo symbol.
+
+    Yahoo is inconsistent here: a TSX fund lists its Canadian holdings as a mix
+    of bare tickers and suffixed ones ("RY", "TD", "MFC.TO"). A bare "RY" inside
+    a Canadian fund means the Toronto listing — taken literally it would resolve
+    to Royal Bank's NYSE line, a different security at a different price, and
+    silently split one exposure into two.
+    """
+    holding = (holding or "").strip().upper()
+    if not holding or "." in holding:
+        return holding
+    fund = (fund_symbol or "").upper()
+    for suffix in (".TO", ".V", ".CN", ".NE"):
+        if fund.endswith(suffix):
+            return holding + ".TO"
+    return holding
+
+
 _quote_meta_cache: dict = {}
 
 # Yahoo has become inconsistent about which name field it returns: many

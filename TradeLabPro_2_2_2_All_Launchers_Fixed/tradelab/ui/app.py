@@ -5961,6 +5961,33 @@ def _corr_color(v):
     return "#8a9099"
 
 
+class _FundCompositionWorker(QThread):
+    """Fetches what each holding contains: fund holdings and sector weights for
+    funds, and the sector of anything that isn't one. Off the UI thread because
+    this is one request per symbol, not a batch."""
+    done = Signal(object, object, str)      # compositions, stock sectors, error
+
+    def __init__(self, symbols):
+        super().__init__()
+        self.symbols = list(dict.fromkeys(symbols))
+
+    def run(self):
+        try:
+            from tradelab.data.market_data import (get_fund_composition, get_quote_meta,
+                                                   canonical_sector)
+            comps, sectors = {}, {}
+            for symbol in self.symbols:
+                comps[symbol] = get_fund_composition(symbol)
+                if not (comps[symbol] or {}).get("sectors"):
+                    # Not a fund (or no fund data): it contributes its own sector,
+                    # normalised so it merges with the funds' spelling of it.
+                    sectors[symbol] = canonical_sector(
+                        (get_quote_meta(symbol) or {}).get("sector")) or None
+            self.done.emit(comps, sectors, "")
+        except Exception as exc:
+            self.done.emit(None, None, str(exc))
+
+
 class PortfolioAnalyticsPanel(QWidget):
     """Risk analytics for the Portfolio tab's holdings: current value and
     unrealized P&L, concentration, and the book's risk profile over a history
@@ -5980,6 +6007,11 @@ class PortfolioAnalyticsPanel(QWidget):
         self.cfg = cfg
         self._worker = None
         self._chart_worker = None
+        self._lt_worker = None
+        self._lt_rows = []
+        self._lt_currency = None
+        self._lt_comps = None
+        self._lt_sectors = {}
         layout = QVBoxLayout(self)
 
         layout.addWidget(_hint(
@@ -6038,6 +6070,34 @@ class PortfolioAnalyticsPanel(QWidget):
         self.holdings.cellClicked.connect(self._chart_row)
         layout.addWidget(self.holdings)
 
+        # Look-through: the same book restated by company rather than by
+        # position, so a name held both directly and inside a fund is counted
+        # once, in full.
+        self.lt_label = QLabel("Look-through exposure (funds opened up)")
+        layout.addWidget(self.lt_label)
+        self.lt_line = QLabel("Click Analyze to read your holdings through to the "
+                              "companies inside them.")
+        self.lt_line.setWordWrap(True)
+        self.lt_line.setStyleSheet(f"color:{theme.MUTED};")
+        layout.addWidget(self.lt_line)
+        self.lookthrough = QTableWidget(0, 5)
+        self.lookthrough.setHorizontalHeaderLabels(
+            ["Company", "Exposure", "% of book", "Held directly", "Also inside"])
+        self.lookthrough.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.lookthrough.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.lookthrough.verticalHeader().setVisible(False)
+        self.lookthrough.setMaximumHeight(220)
+        self.lookthrough.setToolTip(
+            "Your book by company instead of by position: a stock you own outright and also "
+            "hold inside a fund appears once, with both parts added together.\n"
+            "Click a row to chart it.")
+        self.lookthrough.cellClicked.connect(self._chart_lookthrough_row)
+        layout.addWidget(self.lookthrough)
+
+        self.sector_line = QLabel("")
+        self.sector_line.setWordWrap(True)
+        layout.addWidget(self.sector_line)
+
         self.corr_label = QLabel("Correlation (daily returns)")
         layout.addWidget(self.corr_label)
         self.corr = QTableWidget(0, 0)
@@ -6076,6 +6136,7 @@ class PortfolioAnalyticsPanel(QWidget):
         self._worker = _MarketRefreshWorker(symbols, period=self.period.currentText())
         self._worker.done.connect(self._on_loaded)
         self._worker.start()
+        self._start_lookthrough(sorted(hold_syms))
 
     def _on_loaded(self, history):
         from tradelab.core import portfolio_analytics as pa
@@ -6094,6 +6155,9 @@ class PortfolioAnalyticsPanel(QWidget):
                             benchmark_symbol=self._bench_symbol,
                             target_currency=self._target, fx=fx)
         self._render(data)
+        self._lt_rows = data.get("holdings") or []
+        self._lt_currency = data.get("currency")
+        self._render_lookthrough_if_ready()
 
     @staticmethod
     def _pnl_color(v):
@@ -6203,9 +6267,16 @@ class PortfolioAnalyticsPanel(QWidget):
 
     def _chart_row(self, row, _col):
         """Chart the clicked holding in the main chart workspace (off-thread)."""
+        self._chart_from(self.holdings, row)
+
+    def _chart_lookthrough_row(self, row, _col):
+        """Chart a company reached through a fund — it need not be a position."""
+        self._chart_from(self.lookthrough, row)
+
+    def _chart_from(self, table, row):
         if self.chart is None or self.cfg is None or row < 0:
             return
-        item = self.holdings.item(row, 0)
+        item = table.item(row, 0)
         sym = (item.text().strip() if item else "")
         if not sym:
             return
@@ -6213,6 +6284,92 @@ class PortfolioAnalyticsPanel(QWidget):
         self._chart_worker = _HistoryWorker(sym, self.cfg.period, self.cfg.interval)
         self._chart_worker.done.connect(self._on_chart_loaded)
         self._chart_worker.start()
+
+    # --- look-through -----------------------------------------------------
+
+    def _start_lookthrough(self, symbols):
+        """Read the book through to the companies inside its funds.
+
+        Started alongside the price fetch rather than after it: the symbols are
+        known from the positions, so the two run in parallel and whichever
+        lands last draws the section.
+        """
+        self._lt_comps = None
+        self._lt_sectors = {}
+        self.lookthrough.setRowCount(0)
+        if self._lt_worker is not None and self._lt_worker.isRunning():
+            return
+        if not symbols:
+            self.lt_line.setText("")
+            return
+        self.lt_line.setText("Reading through your funds…")
+        self._lt_worker = _FundCompositionWorker(symbols)
+        self._lt_worker.done.connect(self._on_compositions)
+        self._lt_worker.start()
+
+    def _on_compositions(self, comps, stock_sectors, err):
+        if err or comps is None:
+            self.lt_line.setText(f"Could not read fund holdings: {err or 'no data'}")
+            return
+        self._lt_comps = comps
+        self._lt_sectors = stock_sectors or {}
+        self._render_lookthrough_if_ready()
+
+    def _render_lookthrough_if_ready(self):
+        """Draw once both halves have arrived — the valued holdings from the
+        price pass, and the fund compositions from their own."""
+        from tradelab.core import portfolio_analytics as pa
+        if self._lt_comps is None or not self._lt_rows:
+            return
+        self._render_lookthrough(
+            pa.look_through(self._lt_rows, self._lt_comps),
+            pa.look_through_sectors(self._lt_rows, self._lt_comps, self._lt_sectors))
+
+    def _render_lookthrough(self, d, sectors):
+        cur = self._lt_currency
+        suf = f" {cur}" if cur else ""
+        rows = d["exposures"]
+        self.lookthrough.setRowCount(len(rows))
+        for r, e in enumerate(rows):
+            self.lookthrough.setItem(r, 0, QTableWidgetItem(e["symbol"]))
+            for col, text in ((1, f"${e['value']:,.0f}"),
+                              (2, f"{e['weight_pct']:.1f}%" if e["weight_pct"] is not None else "—"),
+                              (3, f"${e['direct_value']:,.0f}" if e["direct_value"] else "—")):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.lookthrough.setItem(r, col, item)
+            self.lookthrough.setItem(r, 4, QTableWidgetItem(", ".join(e["via"]) or "—"))
+        self.lookthrough.resizeColumnsToContents()
+
+        parts = []
+        big = d.get("largest")
+        if big and big.get("fund_value"):
+            direct_pct = (big["direct_value"] / d["total"] * 100.0) if d["total"] else 0.0
+            parts.append(
+                f"<b>{big['symbol']}</b> is your largest company exposure at "
+                f"<b>{big['weight_pct']:.1f}%</b> of the book — {direct_pct:.1f}% held directly, "
+                f"the rest inside {', '.join(big['via'])}.")
+        elif big:
+            parts.append(f"<b>{big['symbol']}</b> is your largest company exposure at "
+                         f"<b>{big['weight_pct']:.1f}%</b> of the book.")
+        if d.get("funds_opened"):
+            parts.append("Opened up: " + ", ".join(d["funds_opened"]) + ".")
+        # Sources publish only a fund's top ~10 names, so say what is unaccounted
+        # for rather than letting the table imply it covers everything.
+        rest = sum(u["value"] for u in d.get("unallocated") or [])
+        if rest:
+            parts.append(f"<span style='color:{theme.MUTED}'>${rest:,.0f}{suf} "
+                         f"({rest / d['total'] * 100:.0f}%) sits in fund holdings "
+                         "below the published top ten — every figure above is a floor.</span>")
+        if d.get("funds_no_data"):
+            parts.append(f"<span style='color:{theme.WARN}'>No holdings data for "
+                         + ", ".join(d["funds_no_data"]) + " — counted as itself.</span>")
+        self.lt_line.setText(" ".join(parts))
+
+        shown = [s for s in sectors if (s["weight_pct"] or 0) >= 1.0][:8]
+        self.sector_line.setText(
+            ("<b>Sectors:</b> " + "  ·  ".join(
+                f"{s['sector']} {s['weight_pct']:.0f}%" for s in shown)) if shown else "")
 
     def _on_chart_loaded(self, symbol, df, err):
         if err or df is None or getattr(df, "empty", False):
@@ -6253,7 +6410,7 @@ class PortfolioAnalyticsPanel(QWidget):
         self.corr.resizeColumnsToContents()
 
     def shutdown(self):
-        for attr in ("_worker", "_chart_worker"):
+        for attr in ("_worker", "_chart_worker", "_lt_worker"):
             worker = getattr(self, attr, None)
             if worker is None:
                 continue
@@ -6551,9 +6708,10 @@ class DividendsPanel(QWidget):
 
 class _HomeWorker(QThread):
     """Loads everything Home needs in one background pass: prices for the
-    holdings and benchmark, the FX rates to convert them, and each holding's
-    dividend history."""
-    done = Signal(object, object, str)     # histories, dividends, error
+    holdings and benchmark, the FX rates to convert them, each holding's
+    dividend history, and the composition of any holding that turns out to be a
+    fund (so exposure can be read by company, not just by position)."""
+    done = Signal(object, object, object, str)   # histories, dividends, compositions, error
 
     def __init__(self, symbols, fx_symbols, period="1y"):
         super().__init__()
@@ -6563,13 +6721,17 @@ class _HomeWorker(QThread):
 
     def run(self):
         try:
-            from tradelab.data.market_data import get_histories, get_dividends
+            from tradelab.data.market_data import (get_histories, get_dividends,
+                                                   get_fund_composition)
             hist = get_histories(sorted(set(self.symbols) | set(self.fx_symbols)),
                                  self.period, "1d")
             divs = {s: get_dividends(s) for s in self.symbols}
-            self.done.emit(hist, divs, "")
+            # Cached per symbol in market_data, so the Analytics tab's own
+            # look-through afterwards costs nothing.
+            comps = {s: get_fund_composition(s) for s in self.symbols}
+            self.done.emit(hist, divs, comps, "")
         except Exception as exc:
-            self.done.emit(None, None, str(exc))
+            self.done.emit(None, None, None, str(exc))
 
 
 class HomePanel(QWidget):
@@ -6731,7 +6893,7 @@ class HomePanel(QWidget):
         self._worker.done.connect(self._on_loaded)
         self._worker.start()
 
-    def _on_loaded(self, history, divs, err):
+    def _on_loaded(self, history, divs, comps, err):
         from tradelab.core import home as hm_core
         from tradelab.data.market_data import is_synthetic
         self._loaded_once = True
@@ -6746,7 +6908,7 @@ class HomePanel(QWidget):
         data = hm_core.summarize(
             self._positions, history, divs or {},
             benchmark_df=history.get(self._bench), benchmark_symbol=self._bench,
-            target_currency=self._target, fx=fx)
+            target_currency=self._target, fx=fx, compositions=comps)
         self.status.setText(f"Updated {time.strftime('%H:%M')}")
         self._render(data)
 

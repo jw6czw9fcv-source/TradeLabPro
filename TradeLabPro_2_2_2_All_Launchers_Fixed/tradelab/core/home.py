@@ -19,6 +19,10 @@ from tradelab.core import dividends as dv
 # A holding that drops this much in a day is worth surfacing unprompted.
 ATTENTION_DROP_PCT = -5.0
 
+# The share of the book at which a single name is worth pointing out. Used for
+# both the position-level and the look-through reading, so the two agree.
+CONCENTRATION_PCT = 40.0
+
 
 def _day_change(close: pd.Series):
     """(absolute, percent) move on the last bar, or (None, None)."""
@@ -81,7 +85,8 @@ def next_payment(dividend_rows: list, today=None):
     return best
 
 
-def attention(analytics: dict, dividend_summary: dict, movers_rows: list) -> list:
+def attention(analytics: dict, dividend_summary: dict, movers_rows: list,
+              look_through: dict = None) -> list:
     """Things worth knowing without being asked, most important first. Each item
     is {kind, text} where kind is 'warn' or 'info'."""
     items = []
@@ -100,11 +105,23 @@ def attention(analytics: dict, dividend_summary: dict, movers_rows: list) -> lis
                                   + " — shown in native currency."})
         conc = analytics.get("concentration") or {}
         largest = conc.get("largest_pct")
-        if largest and largest >= 40:
+        if largest and largest >= CONCENTRATION_PCT:
             rows = analytics.get("holdings") or []
             name = rows[0]["symbol"] if rows else "one holding"
             items.append({"kind": "info",
                           "text": f"{name} is {largest:.0f}% of the book — concentrated."})
+    # The same question asked of companies rather than positions. Only worth
+    # saying when funds actually contribute to the total: otherwise it would
+    # just restate the position-level line above.
+    biggest = (look_through or {}).get("largest") or {}
+    if (biggest.get("weight_pct") or 0) >= CONCENTRATION_PCT and biggest.get("fund_value"):
+        direct_pct = (biggest["direct_value"] / look_through["total"] * 100.0
+                      if look_through.get("total") else 0.0)
+        via = ", ".join(biggest.get("via") or []) or "your funds"
+        items.append({"kind": "info",
+                      "text": f"{biggest['symbol']} is {biggest['weight_pct']:.0f}% of the book "
+                              f"once funds are opened up — {direct_pct:.0f}% held directly, "
+                              f"the rest inside {via}."})
     return items
 
 
@@ -192,14 +209,15 @@ def macro_row(macro: dict) -> list:
 def summarize(positions: list, histories: dict, dividends: dict = None,
               benchmark_df=None, benchmark_symbol: str = "SPY",
               target_currency: str = None, fx: dict = None,
-              market_read: dict = None, today=None) -> dict:
+              market_read: dict = None, compositions: dict = None,
+              today=None) -> dict:
     """Everything the Home tab renders. Reuses portfolio_analytics and dividends
     so every figure agrees with its own tab."""
     if not positions:
         return {"has_positions": False, "currency": target_currency,
                 "analytics": None, "income": None, "movers": [], "attention": [],
                 "day_change": None, "next_payment": None,
-                "market_read": market_read,
+                "market_read": market_read, "look_through": None,
                 "text": "No holdings yet — add positions in the Portfolio tab, "
                         "or import them from IBKR."}
 
@@ -215,6 +233,9 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
                           target_currency=target_currency, fx=fx, today=today)
 
     rows = movers(positions, histories, target_currency, fx)
+    # Company-level exposure, when fund compositions were fetched. Home only
+    # reads the headline from it; the full breakdown lives on Analytics.
+    look = pa.look_through(analytics["holdings"], compositions) if compositions else None
     result = {
         "has_positions": True,
         "currency": target_currency,
@@ -223,8 +244,9 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
         "movers": rows,
         "day_change": day_move(rows),
         "next_payment": next_payment(income.get("holdings"), today),
-        "attention": attention(analytics, income, rows),
+        "attention": attention(analytics, income, rows, look),
         "market_read": market_read,
+        "look_through": look,
     }
     result["text"] = _headline(result)
     return result

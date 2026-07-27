@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.37.0 - Look-through exposure
+
+### Added
+- **New "Look-through exposure" section on the Analytics tab.** Your book restated by *company* instead of by position: a stock you own outright and also hold inside an ETF appears once, with both parts added together. Measured on a real CAD book, a bank showing as a 28% direct position is **33% of the book** once its two index funds are opened up — the funds each hold it as their top position. The table names the companies, the amount, the share of the book, how much is held directly, and which funds the rest arrives through. Click any row to chart it, including companies you hold only inside a fund.
+- **Sector weights across the whole book** — funds contribute their published sector breakdown, individual holdings contribute their own sector, and anything unclassified stays visible rather than being dropped, so the percentages always describe the entire book.
+- **Home flags look-through concentration** in *Needs attention* — but only when funds actually contribute to the total, so it never merely restates the position-level line already there.
+
+### Fixed
+- **A bare ticker inside a Canadian fund resolved to the wrong security.** Yahoo lists a TSX fund's holdings as a mix of `RY`, `TD` and `MFC.TO`; taken literally, `RY` is Royal Bank's **NYSE** listing — a different security, at a different price, in a different currency. That would have split the single largest exposure into two smaller ones, precisely the error look-through exists to catch. Bare tickers inside a Canadian fund now resolve to the Toronto listing.
+- **One sector was counted twice under two names.** Fund weightings come back as `financial_services` while a stock profile says `Financial Services`, so a book holding both reported "Financial Services 45%" *and* "Financials 25%" for the same sector. All sector names now normalize through one mapping — the same book reads Financials 70%.
+- A background fetch could outlive the panel that started it, crashing the process. Prices and fund compositions now both start from **Analyze** and run in parallel, which also makes the look-through no slower than the prices it accompanies.
+
+### Notes
+- **Every look-through figure is a floor, never a total.** Sources publish only a fund's top ~10 holdings, so each fund's unreported remainder is reported separately as unallocated rather than being spread across the names that *are* visible, which would overstate every one of them. The section states the amount and share left unaccounted for.
+- Composition is **never synthesized** — a fund with no data is named and counted as itself, matching the rule dividends and prices already follow.
+
+### Verified
+- Full pytest suite (774) passes, including the merge of direct and fund exposure, the unallocated remainder, plain stocks, unreadable funds, empty books, sector blending across funds and single stocks, the Canadian bare-ticker resolution, sector-name normalization, and the Home attention line.
+
 ## 2.36.0 - Home dashboard, market context and a consistency pass
 
 ### Added
