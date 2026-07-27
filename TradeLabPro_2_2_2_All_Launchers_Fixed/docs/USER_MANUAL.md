@@ -1,11 +1,12 @@
 # TradeLab Pro — User Manual
 
-**Version 2.34.1**
+**Version 2.35.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: scan the
 market for setups, chart and analyze symbols, keep watchlists and a portfolio
-(**import your positions from IBKR** and see the book's **risk analytics** in
-CAD), set price/indicator **alerts**, see a whole market at a glance on a
+(**import your positions from IBKR**, see the book's **risk analytics** in CAD,
+and track the **dividend income** it pays), set price/indicator **alerts**, see a
+whole market at a glance on a
 **heatmap**, backtest strategies, build your own strategies and indicators
 without code, **replay** history bar-by-bar, study a symbol's **seasonality**,
 keep a **trade journal** (with IBKR import), have an **AI Coach** grade your
@@ -31,7 +32,7 @@ to explain what you're looking at.
 4. [Scanner](#4-scanner)
 5. [Charts](#5-charts)
 6. [Watchlists](#6-watchlists)
-7. [Portfolio & Analytics](#7-portfolio--analytics)
+7. [Portfolio, Analytics & Dividends](#7-portfolio-analytics--dividends)
 8. [Alerts](#8-alerts)
 9. [Heatmap](#9-heatmap)
 10. [Market dashboard](#10-market-dashboard)
@@ -77,8 +78,8 @@ The window is split into two halves:
 - **Left — the tabbed control panel.** The tabs are ordered to follow the
   trading process: **Market → Heatmap → News** (market context) → **Scanner →
   Watchlists → Alerts** (find & watch) → **AI Assist → Risk → Paper Trading**
-  (analyse, size & act) → **Portfolio → Analytics → Journal → Coach** (track &
-  review) →
+  (analyse, size & act) → **Portfolio → Analytics → Dividends → Journal →
+  Coach** (track & review) →
   **Backtest → Strategies → Replay → Seasonality → Plugins** (research/build) →
   **Notes → Links → Settings** (utilities). The tab bar wraps to two rows so
   every tab is visible.
@@ -209,6 +210,15 @@ dialog — the legend *is* the editing entry point. From there you can:
   "Show all sub-panes" button restores any you turned off by accident.
 - Toggle **BUY/SELL signal** markers (EMA-crossover confirmed by MACD).
 
+### Dividend markers
+For a symbol that pays a dividend, each **ex-dividend date** is marked with a
+small diamond beneath its bar — hover one to see the amount paid per share. The
+**trailing yield** also appears in the price header next to the price, e.g.
+`$46.42   +0.24 (+0.52%)   ·   Yield 3.02%`. Both come from the same calculation
+the Dividends tab uses, so the two screens always agree. Turn them off in the
+**Indicators** dialog (*Show dividend markers*). A stock that pays nothing simply
+shows neither.
+
 ### Drawing tools
 Trendline, horizontal line, vertical line, rectangle, **Fibonacci retracement**,
 and text notes. Drawings are **saved per symbol and timeframe**, so they're still
@@ -231,7 +241,7 @@ an entry can load it on the chart.
 
 ---
 
-## 7. Portfolio & Analytics
+## 7. Portfolio, Analytics & Dividends
 
 The **Portfolio** tab is a holdings record: **ID, Portfolio, Symbol, Shares,
 Entry**. Add positions (e.g. from a Scanner result), group them by portfolio
@@ -312,6 +322,35 @@ SYMBOL's limited history").
 
 > Analysis only — the Analytics tab never places or tracks live orders, and the
 > figures are not financial advice.
+
+### Dividends — the income your book pays
+
+The **Dividends** tab answers "what do my holdings actually pay me?". Pick a
+display **Currency** (CAD by default) and click **Refresh**:
+
+- **Headline tiles** — total **annual income**, the **average per month**, the
+  **portfolio yield**, the **yield on cost**, and how many holdings pay at all.
+- **Income by holding** — each position's payment **frequency** (monthly,
+  quarterly, …), its **dividend per share** for the year, the **annual income**
+  it produces, its **yield**, its **yield on cost**, and its **growth**.
+  Click a row to chart the symbol.
+- **When it arrives** — a month-by-month calendar of expected income, shaded so
+  the heavy months stand out, listing which holdings pay in each.
+
+**Yield vs. yield on cost.** *Yield* is the dividend divided by today's price —
+what a buyer gets if they buy now. *Yield on cost* divides by what **you** paid,
+so it's higher whenever the price has risen since you bought; it's highlighted
+when your cost basis is the better one. Both are computed from each holding's
+own currency, so the display currency doesn't change them.
+
+**How the annual figure is worked out.** The app annualizes the **most recent
+payment** at its detected frequency, rather than simply summing the last twelve
+months. That way a recent raise (or cut) is reflected immediately instead of
+being averaged away by older, smaller payments.
+
+> **A projection, not a promise.** The calendar and the annual figure are
+> extrapolated from past payments. Companies can raise, cut, or suspend a
+> dividend at any time. Reporting only — not financial advice.
 
 ---
 
@@ -810,6 +849,12 @@ switch back to the same interval to see them.
   (a backtest's, or your portfolio's over the history window).
 - **Beta** — how much a portfolio moves with its benchmark: ~1 tracks the market,
   <1 is more defensive, >1 amplifies its swings.
+- **Dividend yield** — the annual dividend divided by the share price. **Yield on
+  cost** divides by what *you* paid instead, so it rises as your holding
+  appreciates.
+- **Ex-dividend date** — the date a share starts trading without the upcoming
+  dividend; buy on or after it and you don't receive that payment. This is what
+  the chart's dividend markers mark.
 - **Correlation** — how closely two holdings' daily returns move together, from
   +1 (in lockstep) through 0 (unrelated) to −1 (opposite); low/negative between
   holdings means the book is more diversified.
