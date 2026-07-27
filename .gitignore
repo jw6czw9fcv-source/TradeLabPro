@@ -1,4 +1,34 @@
+# Repo-wide ignores: tooling, editor and OS clutter that can turn up anywhere.
+# Anything the app itself writes is listed in the app folder's own .gitignore,
+# next to the paths it applies to.
 
-# Generated from docs/USER_MANUAL.md by tools/build_manual_html.py — rebuild
-# rather than edit, and never commit (it would drift from the markdown).
-TradeLabPro_2_2_2_All_Launchers_Fixed/docs/USER_MANUAL.html
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Build output ---
+build/
+dist/
+*.spec
+
+# --- Editors & IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini

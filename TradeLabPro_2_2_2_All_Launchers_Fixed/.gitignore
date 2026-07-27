@@ -1,12 +1,38 @@
+# Everything the app writes at runtime. Nothing here belongs in the repo: it is
+# either your own data, a cache that rebuilds itself, or a generated file.
+
+# --- Python ---
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# --- Logs & crash reports ---
+# Matches data/logs/ too, including logs/last_error.log and the raw IBKR Flex
+# report dumped for diagnosis (it contains your account's trade history).
 logs/
+
+# --- Your data ---
+# Positions, trades, alerts and notes are yours; they must never be published to
+# a public repo. The database also holds imported IBKR positions.
 data/tradelab.db
-data/setups/
-data/strategies/
-data/paper_account.json
 data/alerts.json
 data/journal.json
 data/links.json
 data/notes.txt
+data/paper_account.json
+data/custom_universes.json
+data/setups/
+data/strategies/
+data/chart/
+
+# --- Caches ---
+# Rebuilt on demand: universe.py re-downloads the exchange lists when this is
+# missing or stale, so a fresh clone works without it. Tracking it meant a noisy
+# diff on every single run.
+data/universe_cache.json
+
+# --- Generated ---
+# Built from docs/USER_MANUAL.md by tools/build_manual_html.py. Rebuild it
+# before publishing rather than editing it; committing it would let the page
+# drift from the markdown the in-app Help viewer reads.
+docs/USER_MANUAL.html
