@@ -8,9 +8,15 @@ Reuse these helpers for any other table that wants the same standard
 """
 from PySide6.QtGui import QColor
 
-BULLISH = QColor(110, 240, 140)
-BEARISH = QColor(240, 110, 110)
-NEUTRAL = QColor(230, 190, 90)
+from tradelab.ui import theme
+
+# Derived from the app-wide semantic palette so "bullish green" is the same
+# green here, on the Analytics P&L column, and on a candle (see ui/theme.py).
+# The score-tier backgrounds below stay their own muted shades - they sit
+# behind text and would be unreadable at full saturation.
+BULLISH = QColor(theme.UP)
+BEARISH = QColor(theme.DOWN)
+NEUTRAL = QColor(theme.NEUTRAL)
 ERROR_GRAY = QColor(170, 170, 170)
 
 _SCORE_STRONG = QColor(20, 70, 35)   # score >= 85

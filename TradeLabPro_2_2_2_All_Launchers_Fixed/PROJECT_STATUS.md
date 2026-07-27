@@ -1,7 +1,17 @@
 # TradeLab Pro Project Status
 
-Current version: 2.35.0
-Current phase: Dividend tracker + chart dividend markers (done)
+Current version: 2.36.0
+Current phase: Home dashboard + market context + consistency pass (done)
+
+## Completed in 2.36.0 (Home dashboard)
+- New `core/home.py` (Qt-free, offline-testable, **assembly-only**): `movers` (per-holding day move — % native, $ converted), `day_move`, `next_payment` (nearest paying month, wrapping into next year), `attention` (>5% drop, `no_data`, `fx_missing`, >40% concentration), `summarize` (delegates to `portfolio_analytics.summarize` and `dividends.summarize` so Home can never disagree with those tabs), `_headline`.
+- Market context on Home, also assembly-only: `STRIP_INDICES`/`index_strip` (world board, TSX first) and `MACRO_ROW`/`macro_row` (USD/CAD 4dp, commodities in dollars, ^TNX as a yield with a basis-point move and `directional=False` so it is never coloured green-for-up).
+- New **Home** tab (`HomePanel`), placed first: four metric tiles, Needs attention + Today's movers in a 150px height-capped split (the container is what keeps headings tight to their boxes without stranding the lines below), income line, market read line, world line, macro line. Click-to-chart on movers; refuses synthetic price data; `shutdown()` wired into `closeEvent`.
+- `MarketPanel` now publishes what it computed: `marketRefreshed` signal, `_last_refresh`, `_global_indices`, and `market_summary()` returning per-region read/breadth/sectors/VIX plus `indices` and `macro` (regime instruments merged across scored regions). Home renders that read rather than computing a cheaper second one.
+- `MainWindow.refresh_on_startup()` — Home first (400ms after paint), then `_warm_market` 3s later, each in its own try so startup can never be taken down by a refresh failure.
+- New `ui/theme.py`: one semantic palette (UP/DOWN/NEUTRAL/MUTED/TEXT/WARN, `pnl_color`, `pct_color`, and the NOT_ADVICE/EDUCATIONAL_ONLY/ANALYSIS_ONLY strings). `ui/colors.py` and `pg_chart_widget.py` now derive from it instead of re-picking their own greens and reds.
+- Fixed: `log` was local to `main()`, so the startup-refresh error handlers would themselves raise `NameError` — now a module-level logger. Added `if __name__ == "__main__"` to `ui/app.py` (`python -m tradelab.ui.app` previously exited 0 with no window).
+- Tests: `tests/test_home.py`, `tests/test_home_panel.py`. Full suite 759 passing.
 
 ## Completed in 2.35.0 (Dividend tracker)
 - New `core/dividends.py` (Qt-free, offline-testable): `detect_frequency` (median payment spacing -> monthly/quarterly/semi/annual), `ttm_per_share` (historical fact) vs `forward_per_share` (latest payment x frequency — the projection, so a raise counts immediately), `growth_pct`, `payment_months`, `holding_income` (income, current yield, yield on cost), `payment_calendar`, `summarize`. Currency follows the v2.34.1 model: per-share amounts native, income totals in the target currency.

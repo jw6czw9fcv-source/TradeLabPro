@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.36.0 - Home dashboard, market context and a consistency pass
+
+### Added
+- **New "Home" tab — the first thing you see, and now the first tab.** One screen answering what you open the app to ask:
+  - **Book value, today's move, unrealized P&L and annual income** as headline tiles, in your display currency (CAD by default).
+  - **Needs attention** — anything worth knowing unprompted: a holding down more than 5% on the day, a symbol with no price data, a missing FX rate, or a position that has grown past 40% of the book.
+  - **Today's movers** — each holding's move, biggest first. The percentage is the stock's own move in its native currency (so FX can't distort it) while the dollar figure is converted. Click a row to chart it.
+  - **Income** — average per month and the next payment expected.
+- **The market, on Home.** Three lines of context, all rendered from the Market tab's *existing* download — no second fetch and no second calculation:
+  - **Market read** for every market scored, with breadth, VIX and the strongest/weakest sector.
+  - **World board** — TSX, S&P 500, Nasdaq, FTSE and Nikkei, home market first.
+  - **Macro row** — USD/CAD, oil, gold and the US 10-year: the rate your USD holdings translate through, the two commodities that dominate the TSX, and the yield every dividend payer is priced against.
+- **Data refreshes itself at startup.** Your portfolio figures load as soon as the window paints, and the ~170-symbol market pass follows 3 seconds later in the background, so both are already on screen instead of waiting to be asked. Until a reading exists the line says "reading the market…" rather than showing a stale or invented number.
+- `python -m tradelab.ui.app` now starts the app. It previously imported the module and exited 0 with no window and no error; `main.py` remains the supported entry point, as it checks dependencies first.
+
+### Changed
+- **One semantic palette for the whole app** (new `ui/theme.py`). Bullish green, bearish red and neutral amber were being re-picked per screen, so the same "up" could be a different green on a candle, a P&L cell and a scanner row. Every surface now derives from one definition, including `ui/colors.py` and the chart.
+- **Figures on Home are assembled, never recalculated.** Book value comes from the Analytics engine and income from the Dividends engine, so Home cannot disagree with the tab it came from — the same rule that fixed the yield and currency mismatches in 2.34.1 and 2.35.0. A test asserts the agreement.
+- The 10-year yield is quoted in **basis points** ("-4 bp"), not as a percentage change of the yield, and is deliberately left uncoloured: green-for-up would imply rising rates are good news, which for a book of dividend payers is usually the opposite.
+
+### Fixed
+- **A startup failure could have crashed the error handler itself.** The handlers guarding the startup refresh called a logger that only existed as a local inside `main()`, so the very path meant to keep startup safe would have raised `NameError`. Fixed with a module-level logger, plus a test that startup survives a broken panel.
+- Home refuses synthetic prices exactly as Analytics and Dividends do — a failed download shows "—" instead of becoming a fabricated book value.
+
+### Verified
+- Full pytest suite (759) passes, including new coverage of the movers ordering and native/converted split, the next-payment wrap into next year, the attention rules, the world board and macro formatting (FX decimals, basis points, missing data), the Market tab's exposed read, staleness labelling, and a market source that returns nothing or raises.
+- Checked against a live market refresh: US 82/100, Canada 100/100, and the macro row against real quotes (USD/CAD 1.4125, oil $81.90, gold $4,081, US 10Y 4.64%).
+
 ## 2.35.0 - Dividend tracker
 
 ### Added

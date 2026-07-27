@@ -41,8 +41,12 @@ log = get_logger(__name__)
 
 pg.setConfigOptions(antialias=True, background="#11151c", foreground="#c7d0d8")
 
-BULL_COLOR = "#3fb950"
-BEAR_COLOR = "#e5534b"
+from tradelab.ui import theme
+
+# Candles share the app-wide semantic pair, so a green candle and a green P&L
+# figure are the same green everywhere (see tradelab/ui/theme.py).
+BULL_COLOR = theme.BULL
+BEAR_COLOR = theme.BEAR
 GRID_ALPHA = 0.15
 BAR_WIDTH = 0.4  # candle/volume/MACD bar body width; bars sit 1 unit apart, so
                   # anything above ~0.6 makes adjacent bars look like they're touching.
@@ -828,7 +832,7 @@ class PGChartWidget(QWidget):
                 pct = change / prev * 100.0
                 sign = "+" if change >= 0 else ""
                 text += f"   {sign}{change:,.2f} ({sign}{pct:.2f}%)"
-                color = "#26a65b" if change >= 0 else "#e5484d"
+                color = "#3fb950" if change >= 0 else "#e5534b"
         # Trailing-12-month dividend yield, when the name pays one. Sits after
         # the price so an income holding shows its yield at a glance.
         if self._show_dividends:

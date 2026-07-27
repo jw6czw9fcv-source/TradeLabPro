@@ -9,7 +9,7 @@ from PySide6.QtGui import QAction, QImage, QTextCursor, QColor, QIcon, QPainter,
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QSpinBox, QDoubleSpinBox, QComboBox,
-    QListWidget, QLineEdit, QMessageBox, QSplitter, QFormLayout, QGroupBox, QCheckBox,
+    QListWidget, QListWidgetItem, QLineEdit, QMessageBox, QSplitter, QFormLayout, QGroupBox, QCheckBox,
     QAbstractItemView, QTextEdit, QFileDialog, QProgressBar, QScrollArea, QHeaderView,
     QMenu, QToolButton, QSizePolicy, QDialog, QTextBrowser, QSystemTrayIcon, QStyle,
     QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem, QFrame,
@@ -32,9 +32,15 @@ from tradelab.core import heatmap as hm
 from tradelab.data.universe import US_NASDAQ, US_NYSE, US_AMEX, CAN_TSX, CAN_TSX_EXPANDED
 from tradelab.strategies import strategy_choices
 from tradelab.ui.chart_widget import ChartWorkspace, ChartWidget
-from tradelab.ui import colors
+from tradelab.ui import colors, theme
 from tradelab.core.backtester import backtest_ema_macd
 from tradelab.core.ai_ranker import explain_symbol
+from tradelab.core.logging_config import get_logger
+
+# Module-level logger. main() also binds a local `log`, but background paths
+# (the startup refresh, for one) run outside it and need their own handle -
+# an error handler that itself raises NameError defeats the point.
+log = get_logger(__name__)
 
 
 def fmt_large(v):
@@ -1839,8 +1845,13 @@ class _MarketBreadthCard(QGroupBox):
 
 
 class MarketPanel(QWidget):
+    # Emitted when a refresh finishes, so panels showing this read (Home) can
+    # update without polling.
+    marketRefreshed = Signal()
+
     def __init__(self, chart=None, cfg=None):
         super().__init__()
+        self._last_refresh = None
         # chart/cfg are optional so the panel stays constructible headless (and
         # in tests); click-to-chart is simply inert without them.
         self.chart=chart; self.cfg=cfg
@@ -1949,6 +1960,10 @@ class MarketPanel(QWidget):
         # Per-region ranked sectors / breadth / read from the last refresh, so
         # flipping the market dropdown is instant.
         self._region_data={}
+        # World index name -> {last, change_pct} from the last refresh. Kept as
+        # data (not just table cells) so Home can show the same board without a
+        # second download - see market_summary().
+        self._global_indices={}
         # (symbol, period, interval) -> DataFrame. Filled during a refresh so
         # clicking a row it already downloaded charts instantly, with no fetch.
         self._history_cache={}
@@ -2201,6 +2216,52 @@ class MarketPanel(QWidget):
             self._render(history)
         finally:
             self._refreshed_once=True
+            self._last_refresh = time.time()
+            # Home shows this same read; let it pick up the fresh numbers.
+            try:
+                self.marketRefreshed.emit()
+            except RuntimeError:
+                pass
+
+    def market_summary(self):
+        """The market read for every market, for other panels (Home) to display.
+
+        Hands back exactly what this tab computed - the same read, breadth and
+        sector ranking - so a market figure shown elsewhere can never disagree
+        with the Market tab. Returns None until a refresh has happened.
+        """
+        if not self._region_data:
+            return None
+        reads = {}
+        for region, data in self._region_data.items():
+            read = (data or {}).get("read")
+            if not read:
+                continue
+            breadth = (data or {}).get("stock_breadth") or {}
+            ranked = (data or {}).get("ranked") or []
+            regime = (data or {}).get("regime") or {}
+            reads[region] = {
+                "label": read.get("label"),
+                "score": read.get("score"),
+                "summary": read.get("summary"),
+                "pct_above_200": breadth.get("pct_above_200"),
+                "strongest": ranked[0]["name"] if ranked else None,
+                "weakest": ranked[-1]["name"] if ranked else None,
+                "vix": (regime.get("^VIX") or {}).get("last"),
+            }
+        if not reads:
+            return None
+        # Macro instruments come from whichever markets have been scored. The
+        # two regime sets overlap (oil, gold, the US 10-year), so first one in
+        # wins - they're the same download either way.
+        macro = {}
+        for data in self._region_data.values():
+            for sym, trend in ((data or {}).get("regime") or {}).items():
+                if trend and sym not in macro:
+                    macro[sym] = {"last": trend.get("last"),
+                                  "change_pct": trend.get("change_pct")}
+        return {"reads": reads, "as_of": getattr(self, "_last_refresh", None),
+                "indices": dict(self._global_indices), "macro": macro}
 
     def _render(self, history):
         from tradelab.core.market import GLOBAL_INDICES, analyze_trend, market_read
@@ -2209,6 +2270,7 @@ class MarketPanel(QWidget):
         for r,(name,sym,region,_open_utc,open_local) in enumerate(GLOBAL_INDICES):
             trend=analyze_trend(history.get(sym))
             last=trend["last"]; ch=trend["change_pct"]
+            self._global_indices[name]={"last": last, "change_pct": ch}
             self.global_table.setItem(r,2,QTableWidgetItem(f"{last:,.2f}" if last is not None else "—"))
             self.global_table.setItem(r,3,QTableWidgetItem(f"{ch:+.2f}%" if ch is not None else "—"))
             self.global_table.setItem(r,4,QTableWidgetItem(_vs_sma_text(trend["above_sma50"])))
@@ -2782,7 +2844,7 @@ class BacktestPanel(QWidget):
         self.tabs.addTab(self._build_walk_forward(), "Walk-Forward")
         layout.addWidget(self.tabs)
 
-        self.status=QLabel("Research only, not financial advice."); self.status.setWordWrap(True)
+        self.status=QLabel("Research only — not financial advice."); self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
     def _base_cfg(self):
@@ -3198,7 +3260,7 @@ class AIAssistantPanel(QWidget):
 
         layout.addWidget(_hint(
             "Natural-language assistant. It explains indicators, scores and setups "
-            "in plain English. Educational only - NOT financial advice. Uses your own "
+            "in plain English. Educational only — not financial advice. Uses your own "
             "Anthropic API key (per-use cost billed to you); with no key it falls back "
             "to the offline rules-based Trade Coach."))
 
@@ -3337,8 +3399,8 @@ class AIAssistantPanel(QWidget):
         self._refresh_status()
 
 
-_COACH_GRADE_COLORS = {"A": "#3fb950", "B": "#5fd657", "C": "#d29922",
-                       "D": "#f0883e", "F": "#f85149"}
+_COACH_GRADE_COLORS = {"A": "#3fb950", "B": "#5fd657", "C": "#e3b341",
+                       "D": "#f0883e", "F": "#e5534b"}
 
 
 class _CoachWorker(QThread):
@@ -3519,7 +3581,7 @@ class CoachPanel(QWidget):
             pnl = e.pnl
             pnl_item = QTableWidgetItem(f"{pnl:,.0f}" if pnl is not None else "—")
             if pnl is not None:
-                pnl_item.setForeground(QColor("#3fb950" if pnl >= 0 else "#f85149"))
+                pnl_item.setForeground(QColor("#3fb950" if pnl >= 0 else "#e5534b"))
             self.table.setItem(row, 5, pnl_item)
             self.table.setItem(row, 6, QTableWidgetItem(e.strategy or ""))
         self.table.resizeColumnsToContents()
@@ -3536,7 +3598,7 @@ class CoachPanel(QWidget):
             if delta > 0:
                 tag = f"<span style='color:#3fb950'>+{delta}</span>"
             elif delta < 0:
-                tag = f"<span style='color:#f85149'>{delta}</span>"
+                tag = f"<span style='color:#e5534b'>{delta}</span>"
             else:
                 tag = "·"
             lines.append(f"&nbsp;&nbsp;{tag}  {text}")
@@ -5815,13 +5877,13 @@ class SeasonalityPanel(QWidget):
         item = QTableWidgetItem(f"{value:+.1f}%" if value is not None else "—")
         item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         if colorize and value is not None:
-            item.setForeground(QColor("#3fb950" if value >= 0 else "#f85149"))
+            item.setForeground(QColor("#3fb950" if value >= 0 else "#e5534b"))
         if bold:
             f = item.font(); f.setBold(True); item.setFont(f)
         return item
 
     def _render(self, symbol, data):
-        read_col = {"historically strong": "#3fb950", "historically weak": "#f85149"}
+        read_col = {"historically strong": "#3fb950", "historically weak": "#e5534b"}
         cur = data.get("current") or {}
         colour = read_col.get(cur.get("read"), "#c7d0d8")
         self.headline.setText(f"<b>{symbol}</b> — {data['text']}")
@@ -6035,7 +6097,7 @@ class PortfolioAnalyticsPanel(QWidget):
 
     @staticmethod
     def _pnl_color(v):
-        return "#3fb950" if (v or 0) >= 0 else "#f85149"
+        return "#3fb950" if (v or 0) >= 0 else "#e5534b"
 
     def _set_metric(self, key, text, colour=None):
         lbl = self.metrics[key]
@@ -6070,7 +6132,7 @@ class PortfolioAnalyticsPanel(QWidget):
         self._set_metric("vol", f"{vol:.1f}%" if vol is not None else "—")
         dd = d["max_drawdown_pct"]
         self._set_metric("dd", f"{dd:.1f}%" if dd is not None else "—",
-                         "#f85149" if dd is not None else None)
+                         "#e5534b" if dd is not None else None)
 
         c = d["concentration"]
         parts = []
@@ -6314,7 +6376,7 @@ class DividendsPanel(QWidget):
         layout.addWidget(self.calendar)
 
         disclaimer = QLabel("Projected from past payments — dividends can be cut or raised "
-                            "at any time. Reporting only, not financial advice.")
+                            "at any time. Reporting only — not financial advice.")
         disclaimer.setStyleSheet("color:#8a9099; font-size:11px;")
         layout.addWidget(disclaimer)
 
@@ -6424,7 +6486,7 @@ class DividendsPanel(QWidget):
                        "#3fb950" if better else None)
             g = h["growth_pct"]
             self._cell(self.table, r, 8, f"{g:+.1f}%" if g is not None else "—",
-                       ("#3fb950" if g >= 0 else "#f85149") if g is not None else None)
+                       ("#3fb950" if g >= 0 else "#e5534b") if g is not None else None)
         self.table.resizeColumnsToContents()
 
         cal = d["calendar"]
@@ -6456,6 +6518,386 @@ class DividendsPanel(QWidget):
         if self.chart is None or self.cfg is None or row < 0:
             return
         item = self.table.item(row, 0)
+        sym = (item.text().strip() if item else "")
+        if not sym:
+            return
+        self.status.setText(f"Charting {sym}…")
+        self._chart_worker = _HistoryWorker(sym, self.cfg.period, self.cfg.interval)
+        self._chart_worker.done.connect(self._on_chart_loaded)
+        self._chart_worker.start()
+
+    def _on_chart_loaded(self, symbol, df, err):
+        if err or df is None or getattr(df, "empty", False):
+            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            return
+        try:
+            self.chart.plot(symbol, df, self.cfg)
+            self.status.setText(f"Charted {symbol}.")
+        except Exception as exc:
+            self.status.setText(f"Could not chart {symbol}: {exc}")
+
+    def shutdown(self):
+        for attr in ("_worker", "_chart_worker"):
+            worker = getattr(self, attr, None)
+            if worker is None:
+                continue
+            try:
+                worker.done.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            worker.wait(3000)
+            setattr(self, attr, None)
+
+
+class _HomeWorker(QThread):
+    """Loads everything Home needs in one background pass: prices for the
+    holdings and benchmark, the FX rates to convert them, and each holding's
+    dividend history."""
+    done = Signal(object, object, str)     # histories, dividends, error
+
+    def __init__(self, symbols, fx_symbols, period="1y"):
+        super().__init__()
+        self.symbols = list(symbols)
+        self.fx_symbols = list(fx_symbols)
+        self.period = period
+
+    def run(self):
+        try:
+            from tradelab.data.market_data import get_histories, get_dividends
+            hist = get_histories(sorted(set(self.symbols) | set(self.fx_symbols)),
+                                 self.period, "1d")
+            divs = {s: get_dividends(s) for s in self.symbols}
+            self.done.emit(hist, divs, "")
+        except Exception as exc:
+            self.done.emit(None, None, str(exc))
+
+
+class HomePanel(QWidget):
+    """The first thing you see: your book in one screen.
+
+    Deliberately assembles rather than calculates — every figure comes from the
+    same engines behind the Analytics and Dividends tabs, so Home can never
+    disagree with them. Refreshes itself once at startup so the numbers are
+    already there when you arrive.
+    """
+
+    _TILES = [("value", "Book value"), ("today", "Today"),
+              ("unreal", "Unrealized P&L"), ("income", "Annual income")]
+
+    def __init__(self, db: Database, chart=None, cfg=None, market_source=None):
+        super().__init__()
+        self.db = db
+        self.chart = chart
+        self.cfg = cfg
+        # Callable returning the Market tab's own read (see
+        # MarketPanel.market_summary). Home never recomputes the market itself:
+        # showing a second, cheaper calculation would let the two screens
+        # disagree about the same day.
+        self.market_source = market_source
+        self._worker = None
+        self._chart_worker = None
+        self._loaded_once = False
+        layout = QVBoxLayout(self)
+
+        top = QHBoxLayout()
+        title = QLabel("Your portfolio at a glance")
+        title.setStyleSheet("font-size:16px; font-weight:bold;")
+        top.addWidget(title)
+        top.addStretch()
+        self.currency = QComboBox(); self.currency.addItems(["CAD", "USD", "Native (mixed)"])
+        refresh = QPushButton("Refresh"); refresh.clicked.connect(self.refresh)
+        top.addWidget(QLabel("Currency")); top.addWidget(self.currency); top.addWidget(refresh)
+        layout.addLayout(top)
+
+        self.status = QLabel(); self.status.setStyleSheet(f"color:{theme.MUTED};")
+        layout.addWidget(self.status)
+
+        self.headline = QLabel("Loading your portfolio…")
+        self.headline.setWordWrap(True)
+        self.headline.setStyleSheet("font-size:14px;")
+        layout.addWidget(self.headline)
+
+        tiles = QHBoxLayout()
+        self.metrics = {}
+        for key, label in self._TILES:
+            box = QVBoxLayout()
+            cap = QLabel(label); cap.setStyleSheet(f"color:{theme.MUTED}; font-size:12px;")
+            val = QLabel("—"); val.setStyleSheet("font-size:20px; font-weight:bold;")
+            box.addWidget(cap); box.addWidget(val)
+            holder = QWidget(); holder.setLayout(box)
+            tiles.addWidget(holder)
+            self.metrics[key] = val
+        layout.addLayout(tiles)
+
+        # Anything that wants attention, and the day's biggest moves. Each
+        # column keeps its heading tight against its own widget: without the
+        # explicit spacing/margins (and the trailing stretch) the layout hands
+        # the leftover height to the gap between them, so the labels drift far
+        # above the boxes they name.
+        split = QHBoxLayout()
+
+        left = QVBoxLayout()
+        left.setSpacing(4)
+        left.setContentsMargins(0, 0, 0, 0)
+        attention_label = QLabel("Needs attention")
+        attention_label.setStyleSheet("font-weight:bold;")
+        left.addWidget(attention_label)
+        self.attention = QListWidget()
+        self.attention.setMaximumHeight(120)
+        left.addWidget(self.attention)
+        split.addLayout(left, 1)
+
+        right = QVBoxLayout()
+        right.setSpacing(4)
+        right.setContentsMargins(0, 0, 0, 0)
+        movers_label = QLabel("Today's movers")
+        movers_label.setStyleSheet("font-weight:bold;")
+        right.addWidget(movers_label)
+        self.movers = QTableWidget(0, 3)
+        self.movers.setHorizontalHeaderLabels(["Symbol", "Change %", "Value"])
+        self.movers.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.movers.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.movers.verticalHeader().setVisible(False)
+        self.movers.setMaximumHeight(120)
+        self.movers.setToolTip("Click a holding to chart it.")
+        self.movers.cellClicked.connect(self._chart_row)
+        right.addWidget(self.movers)
+        split.addLayout(right, 1)
+        # Hold the two columns in a height-capped container. Left to itself the
+        # section would absorb the panel's spare height - which either pushed
+        # the headings away from their boxes or, once the columns were pinned,
+        # stranded the income/market lines at the very bottom of the tab.
+        split_box = QWidget()
+        split_box.setLayout(split)
+        split_box.setMaximumHeight(150)
+        layout.addWidget(split_box)
+
+        # Income + market context, the two "what's next" lines.
+        self.income_line = QLabel("")
+        self.income_line.setWordWrap(True)
+        layout.addWidget(self.income_line)
+
+        self.market_line = QLabel("")
+        self.market_line.setWordWrap(True)
+        layout.addWidget(self.market_line)
+
+        # The world board and the macro row that moves a Canadian book. Both are
+        # rendered from the Market tab's existing download, so they cost nothing
+        # beyond the refresh that already happened.
+        self.world_line = QLabel("")
+        self.world_line.setWordWrap(True)
+        layout.addWidget(self.world_line)
+
+        self.macro_line = QLabel("")
+        self.macro_line.setWordWrap(True)
+        layout.addWidget(self.macro_line)
+
+        layout.addStretch()
+        hint = QLabel("Figures come from the Analytics and Dividends tabs — open those for the "
+                      "full breakdown. " + theme.ANALYSIS_ONLY)
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color:{theme.MUTED}; font-size:11px;")
+        layout.addWidget(hint)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Populate on first view; the startup prefetch usually beats the user here.
+        if not self._loaded_once and self.db.positions():
+            self.refresh()
+
+    def refresh(self):
+        from tradelab.core.portfolio_analytics import currency_of, fx_pair_symbol
+        if self._worker is not None and self._worker.isRunning():
+            return
+        positions = self.db.positions()
+        if not positions:
+            self.headline.setText("No holdings yet — add positions in the Portfolio tab, "
+                                  "or import them from IBKR.")
+            self.status.setText("")
+            self._loaded_once = True
+            return
+        self._positions = positions
+        choice = self.currency.currentText()
+        self._target = None if choice.startswith("Native") else choice
+        self._bench = "SPY"
+        symbols = sorted({str(p["symbol"]).upper() for p in positions})
+        self._fx_pairs = {}
+        if self._target:
+            for ccy in {currency_of(s) for s in symbols} | {currency_of(self._bench)}:
+                if ccy != self._target:
+                    self._fx_pairs[ccy] = fx_pair_symbol(ccy, self._target)
+        self.status.setText("Refreshing…")
+        self._worker = _HomeWorker(symbols + [self._bench], self._fx_pairs.values())
+        self._worker.done.connect(self._on_loaded)
+        self._worker.start()
+
+    def _on_loaded(self, history, divs, err):
+        from tradelab.core import home as hm_core
+        from tradelab.data.market_data import is_synthetic
+        self._loaded_once = True
+        if err or history is None:
+            self.status.setText(f"Could not refresh: {err or 'no data'}")
+            return
+        # Real money: never show fabricated prices (same rule as Analytics).
+        history = {s: df for s, df in history.items()
+                   if df is not None and not is_synthetic(df)}
+        fx = ({ccy: history.get(sym) for ccy, sym in self._fx_pairs.items()}
+              if self._target else None)
+        data = hm_core.summarize(
+            self._positions, history, divs or {},
+            benchmark_df=history.get(self._bench), benchmark_symbol=self._bench,
+            target_currency=self._target, fx=fx)
+        self.status.setText(f"Updated {time.strftime('%H:%M')}")
+        self._render(data)
+
+    def _set_tile(self, key, text, colour=None):
+        lbl = self.metrics[key]
+        lbl.setText(text)
+        lbl.setStyleSheet("font-size:20px; font-weight:bold;"
+                          + (f" color:{colour};" if colour else ""))
+
+    def _render(self, d):
+        cur = d.get("currency")
+        suf = f" {cur}" if cur else ""
+        self.headline.setText(d["text"])
+        if not d["has_positions"]:
+            for key, _ in self._TILES:
+                self._set_tile(key, "—")
+            return
+
+        a = d["analytics"] or {}
+        value = a.get("total_value")
+        self._set_tile("value", f"${value:,.0f}{suf}" if value else "—")
+
+        day = d.get("day_change")
+        self._set_tile("today", f"{day:+,.0f}{suf}" if day is not None else "—",
+                       theme.pnl_color(day) if day is not None else None)
+
+        unreal, pct = a.get("total_unrealized"), a.get("total_unrealized_pct")
+        if unreal is None:
+            txt = "—"
+        else:
+            txt = f"{unreal:+,.0f}" + (f" ({pct:+.1f}%)" if pct is not None else "")
+        self._set_tile("unreal", txt,
+                       theme.pnl_color(unreal) if unreal is not None else None)
+
+        income = (d.get("income") or {}).get("total_annual_income")
+        self._set_tile("income", f"${income:,.0f}{suf}" if income else "—",
+                       theme.UP if income else None)
+
+        self.attention.clear()
+        items = d.get("attention") or []
+        if not items:
+            entry = QListWidgetItem("Nothing needs attention.")
+            entry.setForeground(QColor(theme.MUTED))
+            self.attention.addItem(entry)
+        for item in items:
+            entry = QListWidgetItem(("⚠  " if item["kind"] == "warn" else "•  ") + item["text"])
+            entry.setForeground(QColor(theme.DOWN if item["kind"] == "warn" else theme.TEXT))
+            self.attention.addItem(entry)
+
+        rows = (d.get("movers") or [])[:5]
+        self.movers.setRowCount(len(rows))
+        for r, m in enumerate(rows):
+            self.movers.setItem(r, 0, QTableWidgetItem(m["symbol"]))
+            for col, text in ((1, f"{m['change_pct']:+.2f}%"),
+                              (2, f"{m['change_value']:+,.0f}")):
+                cell = QTableWidgetItem(text)
+                cell.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                cell.setForeground(QColor(theme.pnl_color(m["change_pct"])))
+                self.movers.setItem(r, col, cell)
+        self.movers.resizeColumnsToContents()
+
+        nxt = d.get("next_payment")
+        inc = d.get("income") or {}
+        if nxt:
+            self.income_line.setText(
+                f"<b>Income:</b> about ${inc.get('monthly_average', 0):,.0f}{suf} a month · "
+                f"next payment {nxt['symbol']} in {nxt['name']} "
+                f"(~${nxt['amount']:,.0f}{suf})")
+        elif inc.get("total_annual_income"):
+            self.income_line.setText(
+                f"<b>Income:</b> about ${inc['monthly_average']:,.0f}{suf} a month.")
+        else:
+            self.income_line.setText("<b>Income:</b> none of your holdings pay a dividend.")
+
+        self.refresh_market_line()
+
+    def refresh_market_line(self):
+        """Show the Market tab's read for every market it has scored.
+
+        Called both after a Home refresh and whenever the Market tab finishes
+        its own, so the line fills in on its own once the background warm-up
+        completes.
+        """
+        summary = None
+        if self.market_source is not None:
+            try:
+                summary = self.market_source()
+            except Exception:
+                summary = None
+        if not summary or not summary.get("reads"):
+            self.market_line.setText(
+                f"<b>Market:</b> <span style='color:{theme.MUTED}'>reading the market…"
+                "</span>  (or open the Market tab)")
+            self.world_line.setText("")
+            self.macro_line.setText("")
+            return
+
+        parts = []
+        for region, read in summary["reads"].items():
+            colour = _READ_COLORS.get(read.get("label"), theme.TEXT)
+            seg = (f"{region} <span style='color:{colour}'><b>{read.get('label')}</b>"
+                   f" · {read.get('score')}/100</span>")
+            parts.append(seg)
+        line = "<b>Market:</b> " + "   ·   ".join(parts)
+
+        # A little context from whichever market was scored first, plus the age
+        # of the reading so an old number is never presented as current.
+        first = next(iter(summary["reads"].values()))
+        extras = []
+        if first.get("pct_above_200") is not None:
+            extras.append(f"{first['pct_above_200']:.0f}% above 200-day")
+        if first.get("vix") is not None:
+            extras.append(f"VIX {first['vix']:.1f}")
+        if first.get("strongest"):
+            extras.append(f"strongest {first['strongest']}")
+        if first.get("weakest"):
+            extras.append(f"weakest {first['weakest']}")
+        as_of = summary.get("as_of")
+        if as_of:
+            age_min = (time.time() - as_of) / 60.0
+            stamp = time.strftime("%H:%M", time.localtime(as_of))
+            extras.append(f"as of {stamp}" if age_min > 60 else f"updated {stamp}")
+        if extras:
+            line += (f"<br><span style='color:{theme.MUTED}'>"
+                     + "  ·  ".join(extras) + "</span>")
+        self.market_line.setText(line)
+        self._render_context_lines(summary)
+
+    def _render_context_lines(self, summary):
+        """The world board and the macro row, formatted by core.home from the
+        Market tab's own download — no second fetch, no second calculation."""
+        from tradelab.core import home as hm_core
+
+        def coloured(items):
+            out = []
+            for it in items:
+                pct = it.get("change_pct")
+                colour = (theme.pnl_color(pct)
+                          if it.get("directional") and pct is not None else theme.TEXT)
+                out.append(f"<span style='color:{colour}'>{it['text']}</span>")
+            return "  ·  ".join(out)
+
+        strip = hm_core.index_strip(summary.get("indices"))
+        self.world_line.setText(("<b>World:</b> " + coloured(strip)) if strip else "")
+        macro = hm_core.macro_row(summary.get("macro"))
+        self.macro_line.setText(("<b>Macro:</b> " + coloured(macro)) if macro else "")
+
+    def _chart_row(self, row, _col):
+        if self.chart is None or self.cfg is None or row < 0:
+            return
+        item = self.movers.item(row, 0)
         sym = (item.text().strip() if item else "")
         if not sym:
             return
@@ -6525,7 +6967,12 @@ class MainWindow(QMainWindow):
         self.alerts_panel = AlertsPanel(symbol_provider=self.db.watch_symbols)
         self.heatmap_panel = HeatmapPanel(self.db, self.chart, self.cfg)
         self._heatmap_page = _scroll_tab(self.heatmap_panel)
+        self.home_panel = HomePanel(self.db, self.chart, self.cfg)
         self.market_panel = MarketPanel(self.chart, self.cfg)
+        # Home displays the Market tab's own read rather than computing a second
+        # one, and updates itself whenever that tab refreshes.
+        self.home_panel.market_source = self.market_panel.market_summary
+        self.market_panel.marketRefreshed.connect(self.home_panel.refresh_market_line)
         self.news_panel = NewsPanel()
         self.ai_panel = AIAssistantPanel()
         self.risk_panel = RiskPanel(self.db)
@@ -6547,6 +6994,7 @@ class MainWindow(QMainWindow):
         # a tall tab can't force the window past the screen height):
         #   1) Market context  2) Find & watch  3) Analyze, size & act
         #   4) Track & review  5) Research/build  6) Utilities.
+        tabs.addTab(_scroll_tab(self.home_panel), "Home")              # your book at a glance
         tabs.addTab(_scroll_tab(self.market_panel), "Market")          # is it a good day?
         tabs.addTab(self._heatmap_page, "Heatmap")                    # where's the strength?
         tabs.addTab(_scroll_tab(self.news_panel), "News")             # any catalysts?
@@ -6754,6 +7202,40 @@ class MainWindow(QMainWindow):
         except Exception:
             QTimer.singleShot(0, self.showMaximized)
 
+    def refresh_on_startup(self):
+        """Warm the Home tab's figures shortly after launch.
+
+        Two passes, in order of what you want on screen first:
+
+        1. **Home** - the handful of symbols you actually hold, plus a benchmark
+           and FX. Quick, so your portfolio figures appear almost immediately.
+        2. **Market** - the ~170-symbol macro read, started a few seconds later
+           so it never competes with the first pass. It runs batched and off the
+           UI thread, and Home's market line fills itself in when it lands.
+
+        The Heatmap and other heavy screens stay on demand. Failures are silent
+        by design: each panel shows its own status and the app is fully usable
+        without either pass.
+        """
+        try:
+            if self.db.positions():
+                self.home_panel.refresh()
+        except Exception:
+            log.exception("Startup refresh failed")
+        # Warm the market read after Home has had a head start. Guarded
+        # separately so a problem scheduling it can't take the first pass down
+        # with it - nothing here is allowed to interfere with startup.
+        try:
+            QTimer.singleShot(3000, self._warm_market)
+        except Exception:
+            log.exception("Could not schedule the market warm-up")
+
+    def _warm_market(self):
+        try:
+            self.market_panel.refresh_market()
+        except Exception:
+            log.exception("Startup market warm-up failed")
+
     def closeEvent(self, event):
         try:
             self._settings.setValue("MainWindow/geometry", self.saveGeometry())
@@ -6775,6 +7257,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.journal_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.home_panel.shutdown()
         except Exception:
             pass
         try:
@@ -6844,4 +7330,16 @@ def run_app():
     win.activateWindow()
     QTimer.singleShot(250, win.raise_)
     QTimer.singleShot(300, win.activateWindow)
+    # Warm the Home tab's data just after the window paints, so the portfolio
+    # figures are already on screen instead of waiting for the user to ask.
+    # Deliberately after the window is up: the fetch runs on a worker thread,
+    # but scheduling it late keeps the very first paint instant.
+    QTimer.singleShot(400, win.refresh_on_startup)
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    # So `python -m tradelab.ui.app` starts the app instead of importing the
+    # module and exiting 0 with no window and no error. main.py stays the
+    # supported entry point - it checks dependencies first, which this does not.
+    run_app()
