@@ -49,7 +49,7 @@ def test_home_populates_tiles_and_movers(qapp):
     p = _panel(qapp, positions)
     hist = {"XDIV.TO": _hist(43.0, 46.42), "RY.TO": _hist(280.0, 295.01),
             "SPY": _hist(600.0, 640.0), "USDCAD=X": _hist(1.40, 1.41)}
-    p._on_loaded(hist, {}, {}, "")
+    p._on_loaded(hist, {}, {}, {}, "")
 
     assert p.metrics["value"].text().startswith("$")
     assert "CAD" in p.metrics["value"].text()
@@ -68,7 +68,7 @@ def test_home_empty_book_is_graceful(qapp):
 
 def test_home_reports_fetch_failure(qapp):
     p = _panel(qapp, [{"symbol": "A", "shares": 1, "entry_price": 1}])
-    p._on_loaded(None, None, None, "network down")
+    p._on_loaded(None, None, None, None, "network down")
     assert "network down" in p.status.text()
 
 
@@ -76,7 +76,7 @@ def test_home_refuses_synthetic_prices(qapp):
     # Same rule as Analytics: a failed download must not become a fake balance.
     from tradelab.data.market_data import synthetic_ohlcv
     p = _panel(qapp, [{"symbol": "FAKE", "shares": 100, "entry_price": 10.0}])
-    p._on_loaded({"FAKE": synthetic_ohlcv("FAKE")}, {}, {}, "")
+    p._on_loaded({"FAKE": synthetic_ohlcv("FAKE")}, {}, {}, {}, "")
     assert p.metrics["value"].text() == "—"       # no fabricated book value
 
 
@@ -85,7 +85,7 @@ def test_home_attention_lists_a_big_drop(qapp):
     p = _panel(qapp, positions)
     df = _hist(100.0, 100.0)
     df.iloc[-1, df.columns.get_loc("Close")] = 90.0     # -10% on the last bar
-    p._on_loaded({"CRASH": df}, {}, {}, "")
+    p._on_loaded({"CRASH": df}, {}, {}, {}, "")
     texts = [p.attention.item(i).text() for i in range(p.attention.count())]
     assert any("CRASH" in t and "down" in t for t in texts)
 
@@ -257,13 +257,42 @@ def test_home_flags_look_through_concentration(qapp):
             "SPY": _hist(600.0, 640.0), "USDCAD=X": _hist(1.40, 1.41)}
     comps = {"XDIV.TO": {"top_holdings": {"RY.TO": 0.10, "TD.TO": 0.09}},
              "RY.TO": {"top_holdings": {}}}
-    p._on_loaded(hist, {}, comps, "")
+    p._on_loaded(hist, {}, comps, {}, "")
     texts = [p.attention.item(i).text() for i in range(p.attention.count())]
     assert any("RY.TO" in t and "opened up" in t for t in texts)
 
 
 def test_home_without_compositions_says_nothing_about_look_through(qapp):
     p = _panel(qapp, [{"symbol": "RY.TO", "shares": 30, "entry_price": 264.45}])
-    p._on_loaded({"RY.TO": _hist(295.0, 295.0)}, {}, {}, "")
+    p._on_loaded({"RY.TO": _hist(295.0, 295.0)}, {}, {}, {}, "")
     texts = [p.attention.item(i).text() for i in range(p.attention.count())]
     assert not any("opened up" in t for t in texts)
+
+
+def test_home_lists_upcoming_dates(qapp):
+    from datetime import date, timedelta
+    p = _panel(qapp, [{"symbol": "POW.TO", "shares": 100, "entry_price": 40.0}])
+    soon = date.today() + timedelta(days=3)
+    cals = {"POW.TO": {"earnings": soon, "ex_dividend": None}}
+    p._on_loaded({"POW.TO": _hist(45.0, 46.0)}, {}, {}, cals, "")
+    text = p.upcoming_line.text()
+    assert "Coming up" in text and "POW.TO reports in 3 days" in text
+    from tradelab.ui import theme
+    assert theme.WARN in text            # within 3 days, flagged
+
+
+def test_home_explains_an_empty_schedule(qapp):
+    # An ETF publishes no calendar. That's normal, not a failure, and the line
+    # has to say so rather than looking like the lookup broke.
+    p = _panel(qapp, [{"symbol": "XDIV.TO", "shares": 300, "entry_price": 43.26}])
+    cals = {"XDIV.TO": {"earnings": None, "ex_dividend": None}}
+    p._on_loaded({"XDIV.TO": _hist(46.0, 46.42)}, {}, {}, cals, "")
+    text = p.upcoming_line.text()
+    assert "nothing scheduled" in text
+    assert "No calendar published for XDIV.TO" in text
+
+
+def test_home_without_calendars_shows_no_upcoming_line(qapp):
+    p = _panel(qapp, [{"symbol": "A", "shares": 1, "entry_price": 1}])
+    p._on_loaded({"A": _hist(10.0, 11.0)}, {}, {}, {}, "")
+    assert p.upcoming_line.text() == ""

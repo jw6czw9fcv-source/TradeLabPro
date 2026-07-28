@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.38.0 - Coming up: scheduled dates for your holdings
+
+### Added
+- **A "Coming up" line on the Home tab** — the dates your own holdings have scheduled: when each next **reports earnings** and when each next trades **ex-dividend**. On a real book it reads *"POW.TO reports in 3 days · KTOS reports in 8 days · RY.TO reports in 31 days · +1 more"*. Anything within three days is highlighted.
+- Dates are read once per refresh alongside prices and cached per symbol, so the line costs nothing beyond the refresh that already happens at startup.
+
+### Notes — what this deliberately does not do
+- **Past dates are dropped.** An ex-dividend that happened last week is history, not a heads-up.
+- **Distant dates are dropped** (45-day horizon). Beyond about six weeks a date is trivia rather than something to know today, and estimated earnings dates that far out often move.
+- **Nothing is inferred.** A date is either published or absent. ETFs have no earnings and generally publish no calendar at all, so the line **names the holdings that had none** ("No calendar published for VTI, XDIV.TO, XIC.TO — funds rarely have one") rather than leaving a silence you would have to interpret.
+- **No economic calendar and no analyst actions.** CPI, PPI, central-bank decisions and rating changes are *not* included: no source wired into this app publishes them reliably, and a hardcoded table of dates goes stale without saying so. A wrong date on a real-money screen is worse than no date. The reasoning is recorded in `core/events.py` so it isn't quietly reversed later.
+
+### Verified
+- Full pytest suite (799) passes, including ordering, the past-date and horizon cutoffs, both event kinds for one holding, holdings with no calendar, the summary text and its overflow count, timestamp inputs, and the Home line in all three states.
+- Checked against a real CAD book: 4 of 7 holdings publish dates, the three ETFs publish none, and both already-past ex-dividend dates were correctly excluded.
+
 ## 2.37.0 - Look-through exposure
 
 ### Added

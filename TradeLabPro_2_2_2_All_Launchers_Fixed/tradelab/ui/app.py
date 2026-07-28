@@ -6709,9 +6709,11 @@ class DividendsPanel(QWidget):
 class _HomeWorker(QThread):
     """Loads everything Home needs in one background pass: prices for the
     holdings and benchmark, the FX rates to convert them, each holding's
-    dividend history, and the composition of any holding that turns out to be a
-    fund (so exposure can be read by company, not just by position)."""
-    done = Signal(object, object, object, str)   # histories, dividends, compositions, error
+    dividend history, the composition of any holding that turns out to be a fund
+    (so exposure can be read by company, not just by position), and the dates
+    each one has scheduled."""
+    # histories, dividends, compositions, calendars, error
+    done = Signal(object, object, object, object, str)
 
     def __init__(self, symbols, fx_symbols, period="1y"):
         super().__init__()
@@ -6722,16 +6724,17 @@ class _HomeWorker(QThread):
     def run(self):
         try:
             from tradelab.data.market_data import (get_histories, get_dividends,
-                                                   get_fund_composition)
+                                                   get_fund_composition, get_calendar)
             hist = get_histories(sorted(set(self.symbols) | set(self.fx_symbols)),
                                  self.period, "1d")
             divs = {s: get_dividends(s) for s in self.symbols}
-            # Cached per symbol in market_data, so the Analytics tab's own
-            # look-through afterwards costs nothing.
+            # Both are cached per symbol in market_data, so the Analytics tab's
+            # own look-through afterwards costs nothing.
             comps = {s: get_fund_composition(s) for s in self.symbols}
-            self.done.emit(hist, divs, comps, "")
+            cals = {s: get_calendar(s) for s in self.symbols}
+            self.done.emit(hist, divs, comps, cals, "")
         except Exception as exc:
-            self.done.emit(None, None, None, str(exc))
+            self.done.emit(None, None, None, None, str(exc))
 
 
 class HomePanel(QWidget):
@@ -6839,6 +6842,11 @@ class HomePanel(QWidget):
         self.income_line.setWordWrap(True)
         layout.addWidget(self.income_line)
 
+        # Dates your holdings have scheduled — earnings and ex-dividend only.
+        self.upcoming_line = QLabel("")
+        self.upcoming_line.setWordWrap(True)
+        layout.addWidget(self.upcoming_line)
+
         self.market_line = QLabel("")
         self.market_line.setWordWrap(True)
         layout.addWidget(self.market_line)
@@ -6893,7 +6901,7 @@ class HomePanel(QWidget):
         self._worker.done.connect(self._on_loaded)
         self._worker.start()
 
-    def _on_loaded(self, history, divs, comps, err):
+    def _on_loaded(self, history, divs, comps, cals, err):
         from tradelab.core import home as hm_core
         from tradelab.data.market_data import is_synthetic
         self._loaded_once = True
@@ -6908,7 +6916,8 @@ class HomePanel(QWidget):
         data = hm_core.summarize(
             self._positions, history, divs or {},
             benchmark_df=history.get(self._bench), benchmark_symbol=self._bench,
-            target_currency=self._target, fx=fx, compositions=comps)
+            target_currency=self._target, fx=fx, compositions=comps,
+            calendars=cals)
         self.status.setText(f"Updated {time.strftime('%H:%M')}")
         self._render(data)
 
@@ -6983,7 +6992,35 @@ class HomePanel(QWidget):
         else:
             self.income_line.setText("<b>Income:</b> none of your holdings pay a dividend.")
 
+        self._render_upcoming(d.get("events"))
         self.refresh_market_line()
+
+    def _render_upcoming(self, schedule):
+        """Scheduled dates for your holdings — earnings and ex-dividend.
+
+        A quiet line is normal rather than a failure: ETFs have no earnings and
+        publish no calendar, so a book held mostly in funds genuinely has little
+        to show. The line says which holdings had nothing rather than leaving
+        you to wonder whether the lookup broke.
+        """
+        if not schedule:
+            self.upcoming_line.setText("")
+            return
+        events = schedule.get("events") or []
+        if events:
+            soonest = events[0]["days_away"]
+            colour = theme.WARN if soonest <= 3 else theme.TEXT
+            text = (f"<b>Coming up:</b> <span style='color:{colour}'>"
+                    f"{schedule['text']}</span>")
+        else:
+            text = (f"<b>Coming up:</b> <span style='color:{theme.MUTED}'>"
+                    f"nothing scheduled in the next {schedule['horizon_days']} days"
+                    "</span>")
+        missing = schedule.get("no_data") or []
+        if missing:
+            text += (f"<br><span style='color:{theme.MUTED}'>No calendar published for "
+                     + ", ".join(missing) + " — funds rarely have one.</span>")
+        self.upcoming_line.setText(text)
 
     def refresh_market_line(self):
         """Show the Market tab's read for every market it has scored.

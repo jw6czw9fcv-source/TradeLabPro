@@ -15,6 +15,7 @@ import pandas as pd
 
 from tradelab.core import portfolio_analytics as pa
 from tradelab.core import dividends as dv
+from tradelab.core import events as ev
 
 # A holding that drops this much in a day is worth surfacing unprompted.
 ATTENTION_DROP_PCT = -5.0
@@ -210,14 +211,14 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
               benchmark_df=None, benchmark_symbol: str = "SPY",
               target_currency: str = None, fx: dict = None,
               market_read: dict = None, compositions: dict = None,
-              today=None) -> dict:
+              calendars: dict = None, today=None) -> dict:
     """Everything the Home tab renders. Reuses portfolio_analytics and dividends
     so every figure agrees with its own tab."""
     if not positions:
         return {"has_positions": False, "currency": target_currency,
                 "analytics": None, "income": None, "movers": [], "attention": [],
                 "day_change": None, "next_payment": None,
-                "market_read": market_read, "look_through": None,
+                "market_read": market_read, "look_through": None, "events": None,
                 "text": "No holdings yet — add positions in the Portfolio tab, "
                         "or import them from IBKR."}
 
@@ -236,6 +237,11 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
     # Company-level exposure, when fund compositions were fetched. Home only
     # reads the headline from it; the full breakdown lives on Analytics.
     look = pa.look_through(analytics["holdings"], compositions) if compositions else None
+    # Dates your holdings have scheduled. Only the published ones — see
+    # core/events.py for what this deliberately leaves out.
+    schedule = ev.summarize(
+        calendars, today=today,
+        symbols=[h["symbol"] for h in analytics["holdings"]]) if calendars else None
     result = {
         "has_positions": True,
         "currency": target_currency,
@@ -247,6 +253,7 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
         "attention": attention(analytics, income, rows, look),
         "market_read": market_read,
         "look_through": look,
+        "events": schedule,
     }
     result["text"] = _headline(result)
     return result

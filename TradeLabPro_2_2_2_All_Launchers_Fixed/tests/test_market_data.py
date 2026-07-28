@@ -298,3 +298,26 @@ def test_fund_composition_is_never_synthesized():
     from tradelab.data import providers
     empty = providers.SyntheticProvider().get_fund_composition("XDIV.TO")
     assert empty == {"top_holdings": {}, "sectors": {}}
+
+
+# --- scheduled dates --------------------------------------------------------
+
+def test_first_date_handles_both_yahoo_shapes():
+    # Earnings come back as a list (a confirmed date, or a low/high estimate
+    # range); the ex-dividend date is a bare date.
+    from datetime import date, datetime
+    from tradelab.data.market_data import _first_date
+    assert _first_date([date(2026, 8, 27)]) == date(2026, 8, 27)
+    assert _first_date([date(2026, 8, 27), date(2026, 8, 21)]) == date(2026, 8, 21)
+    assert _first_date(date(2026, 7, 26)) == date(2026, 7, 26)
+    assert _first_date(datetime(2026, 7, 26, 9, 30)) == date(2026, 7, 26)
+    assert _first_date(None) is None and _first_date([]) is None
+    assert _first_date(["not a date"]) is None
+
+
+def test_calendar_is_never_synthesized():
+    # Same rule as dividends and fund composition: no source, no date. An
+    # invented earnings date on a real-money screen is worse than none.
+    from tradelab.data import providers
+    assert providers.SyntheticProvider().get_calendar("RY.TO") == {
+        "earnings": None, "ex_dividend": None}

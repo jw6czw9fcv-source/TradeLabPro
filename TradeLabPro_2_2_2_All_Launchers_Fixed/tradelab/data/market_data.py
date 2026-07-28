@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 import numpy as np
 import pandas as pd
 
@@ -282,6 +284,57 @@ def _fund_holding_symbol(fund_symbol: str, holding: str) -> str:
         if fund.endswith(suffix):
             return holding + ".TO"
     return holding
+
+
+_calendar_cache: dict = {}
+
+
+def get_calendar(symbol: str) -> dict:
+    """Scheduled dates for a symbol from the active provider, cached per symbol:
+    {"earnings": date|None, "ex_dividend": date|None}. See
+    tradelab.data.providers for source selection."""
+    from tradelab.data import providers
+    key = (providers.active_name(), symbol)
+    if key not in _calendar_cache:
+        _calendar_cache[key] = providers.active().get_calendar(symbol)
+    return _calendar_cache[key]
+
+
+def _yahoo_calendar(symbol: str) -> dict:
+    """Yahoo (yfinance) earnings and ex-dividend dates.
+
+    No synthetic fallback and no inference: a date is either published or it is
+    absent. ETFs have no earnings and typically return nothing at all here,
+    which is correct — an invented date on a real-money screen is worse than no
+    date, and the caller says nothing rather than guessing.
+    """
+    empty = {"earnings": None, "ex_dividend": None}
+    if yf is None:
+        return empty
+    try:
+        cal = yf.Ticker(symbol).calendar
+    except Exception:
+        return empty
+    if not isinstance(cal, dict) or not cal:
+        return empty
+    return {"earnings": _first_date(cal.get("Earnings Date")),
+            "ex_dividend": _first_date(cal.get("Ex-Dividend Date"))}
+
+
+def _first_date(value):
+    """Yahoo returns earnings as a list (a confirmed date, or a low/high
+    estimate range) and the ex-dividend date as a bare date. Take the earliest
+    real date out of either shape."""
+    if value is None:
+        return None
+    values = list(value) if isinstance(value, (list, tuple)) else [value]
+    dates = []
+    for item in values:
+        if isinstance(item, datetime):
+            dates.append(item.date())
+        elif isinstance(item, date):
+            dates.append(item)
+    return min(dates) if dates else None
 
 
 _quote_meta_cache: dict = {}

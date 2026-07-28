@@ -1,7 +1,14 @@
 # TradeLab Pro Project Status
 
-Current version: 2.37.0
-Current phase: Look-through exposure (done)
+Current version: 2.38.0
+Current phase: Scheduled holding dates ("Coming up") (done)
+
+## Completed in 2.38.0 (Coming up: scheduled dates)
+- New `core/events.py` (Qt-free, offline-testable): `upcoming(calendars, today, horizon_days, symbols)` -> sorted `{symbol, kind, date, days_away, text}`; `EARNINGS`/`EX_DIVIDEND`; `HORIZON_DAYS = 45`; `describe_when` (today/tomorrow/in N days); `next_for`; `summarize` (events + `no_data` + one-line `text`); `text_for` (caps at 3, "+N more").
+- **Rules, all deliberate:** past dates dropped (a done ex-div is history); beyond the 45-day horizon dropped (estimates that far out move); **nothing inferred** — a date is published or absent. Module docstring records why the **economic calendar (CPI/PPI/FOMC/BoC) and analyst actions are excluded**: no reliable wired-in source, and a hardcoded table goes stale silently.
+- Data layer: `market_data.get_calendar` (cached) + `_yahoo_calendar` (yfinance `Ticker().calendar`, no synthetic fallback) + `_first_date` (earnings arrive as a list — a confirmed date or a low/high estimate range — while ex-dividend is a bare date); `DataProvider.get_calendar` on the ABC (synthetic returns both None).
+- UI: `HomePanel.upcoming_line` + `_render_upcoming` — amber when the soonest event is <=3 days, and **names holdings with no calendar** so a quiet line reads as "funds have none", not "the lookup broke". `_HomeWorker` now fetches calendars too (`done` signal gained an argument); `home.summarize(..., calendars=...)` exposes `events`.
+- Verified on the real book: POW.TO reports in 3 days, KTOS in 8, RY.TO in 31, IBKR ex-div in 35; VTI/XDIV.TO/XIC.TO publish nothing; POW's and RY's already-past ex-div dates correctly excluded. Suite 799 passing.
 
 ## Completed in 2.37.0 (Look-through exposure)
 - `core/portfolio_analytics.py`: `look_through(rows, compositions)` — the book restated by company (direct + fund-borne, `via` names the funds), with each fund's unreported remainder kept separate in `unallocated` (**never scaled up**, so every exposure is a floor); `funds_opened`/`funds_no_data` make gaps visible. `look_through_sectors(rows, compositions, stock_sectors)` blends fund sector weights with individual holdings' sectors, keeping the unpublished part as "Unclassified".

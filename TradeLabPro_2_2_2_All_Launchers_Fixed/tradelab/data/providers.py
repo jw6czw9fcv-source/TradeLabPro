@@ -38,6 +38,12 @@ class DataProvider(ABC):
         dividend data return an empty series — income is never fabricated."""
         return pd.Series(dtype=float)
 
+    def get_calendar(self, symbol: str) -> dict:
+        """Scheduled dates for a symbol: {"earnings": date|None,
+        "ex_dividend": date|None}. Empty for sources without them, and for
+        anything with no scheduled date — a date is never guessed."""
+        return {"earnings": None, "ex_dividend": None}
+
     def get_fund_composition(self, symbol: str) -> dict:
         """What a fund holds: {"top_holdings": {symbol: weight}, "sectors":
         {name: weight}}, weights as fractions of the fund. Empty for an ordinary
@@ -80,6 +86,10 @@ class YahooProvider(DataProvider):
     def get_fund_composition(self, symbol):
         from tradelab.data import market_data as md
         return md._yahoo_fund_composition(symbol)
+
+    def get_calendar(self, symbol):
+        from tradelab.data import market_data as md
+        return md._yahoo_calendar(symbol)
 
     def available(self):
         from tradelab.data import market_data as md
