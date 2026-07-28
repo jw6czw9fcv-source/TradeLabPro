@@ -1,10 +1,10 @@
 # TradeLab Pro — User Manual
 
-**Version 2.37.0**
+**Version 2.38.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
-**Home** dashboard showing your book, the market read and the day's movers at a
-glance, scan the
+**Home** dashboard showing your book, the market read, the day's movers and the
+dates your holdings have scheduled, scan the
 market for setups, chart and analyze symbols, keep watchlists and a portfolio
 (**import your positions from IBKR**, see the book's **risk analytics** in CAD,
 read your ETFs through to the **companies inside them**,
@@ -130,8 +130,8 @@ is always reachable on any screen size.
 
 The first tab, and the first thing you see. It answers the questions you
 actually open the app to ask, without you having to click anything: **what is my
-book worth, how did it move today, what income is coming, what moved most, and is
-anything wrong?**
+book worth, how did it move today, what income is coming, what moved most, what
+is coming up, and is anything wrong?**
 
 **It refreshes itself at startup.** Your portfolio loads as soon as the window
 paints; the market pass follows a few seconds later in the background. By the
@@ -164,6 +164,38 @@ is converted** to your display currency. Click any row to chart it.
 
 Average income per month, and the next payment expected — which holding, which
 month, roughly how much.
+
+### Coming up
+
+The dates your own holdings have scheduled — when each next **reports earnings**
+and when each next trades **ex-dividend**:
+
+> **Coming up:** POW.TO reports in 3 days · KTOS reports in 8 days · RY.TO
+> reports in 31 days · +1 more
+
+Anything within three days is highlighted. Only the next few are listed; the
+rest are counted.
+
+**What it leaves out, on purpose:**
+
+- **Dates already past.** An ex-dividend that happened last week is history, not
+  something to act on.
+- **Dates more than 45 days out.** Beyond about six weeks a date is trivia
+  rather than something to know today, and estimated earnings dates that far
+  ahead often move.
+- **Anything not actually published.** Nothing here is inferred or estimated.
+
+**A quiet line is normal.** ETFs have no earnings and most publish no calendar
+at all, so a book held mostly in funds genuinely has little to show. Rather than
+leaving a silence you would have to interpret, the line **names** the holdings
+that had nothing: *"No calendar published for VTI, XDIV.TO, XIC.TO — funds
+rarely have one."* That way an empty schedule never looks like a broken lookup.
+
+> **No economic calendar.** CPI, PPI, central-bank decisions and analyst rating
+> changes are deliberately **not** included. No data source wired into the app
+> publishes them reliably, and a hardcoded list of dates goes stale without
+> announcing it — a wrong date on a screen about real money is worse than no
+> date at all.
 
 ### The market, in three lines
 
