@@ -31,3 +31,6 @@ docs/USER_MANUAL.html
 # IS committed: the app loads it at runtime and the build embeds it, and Pillow
 # (needed to regenerate it) is not a runtime dependency.
 resources/tradelab_preview.png
+
+# Inno Setup's compiled installer — rebuild it, don't commit 130 MB.
+installer/Output/
