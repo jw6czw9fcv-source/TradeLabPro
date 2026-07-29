@@ -10,9 +10,8 @@ import logging.handlers
 import os
 from pathlib import Path
 
-from tradelab.core.config import ROOT_DIR
+from tradelab.core.config import LOG_DIR
 
-LOG_DIR = ROOT_DIR / "logs"
 LOG_FILE = LOG_DIR / "tradelab.log"
 
 # Set TRADELAB_LOG_DIR to send the log somewhere else. The test suite uses this

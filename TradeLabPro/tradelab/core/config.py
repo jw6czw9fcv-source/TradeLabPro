@@ -1,10 +1,33 @@
+import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "TradeLab Pro"
 APP_VERSION = '2.38.0 Coming up: earnings and ex-dividend dates for your holdings'
-ROOT_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT_DIR / "data"
+
+# True when running from a packaged .exe rather than the source tree.
+FROZEN = bool(getattr(sys, "frozen", False))
+
+if FROZEN:
+    # Two different roots once packaged, and conflating them loses data.
+    #
+    # ROOT_DIR is where the bundle unpacked itself: read-only files that ship
+    # inside the executable, like the user manual.
+    ROOT_DIR = Path(getattr(sys, "_MEIPASS", None) or Path(sys.executable).parent)
+    # Everything the app *writes* has to live outside the bundle. A one-file
+    # build unpacks to a temp folder that Windows deletes on exit — writing the
+    # database there would throw away your portfolio every time you closed the
+    # app — and an installed copy under Program Files is read-only anyway.
+    DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / APP_NAME
+    LOG_DIR = DATA_DIR / "logs"
+    PLUGINS_DIR = DATA_DIR / "plugins"
+else:
+    ROOT_DIR = Path(__file__).resolve().parents[2]
+    DATA_DIR = ROOT_DIR / "data"
+    LOG_DIR = ROOT_DIR / "logs"
+    PLUGINS_DIR = ROOT_DIR / "plugins"
+
 DB_PATH = DATA_DIR / "tradelab.db"
 
 @dataclass

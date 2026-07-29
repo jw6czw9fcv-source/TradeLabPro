@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QInputDialog, QSlider, QGraphicsItem, QLayout, QStackedWidget, QButtonGroup
 )
 
-from tradelab.core.config import APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR, ROOT_DIR
+from tradelab.core.config import (APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR,
+                                  ROOT_DIR, LOG_DIR)
 from tradelab.data.database import Database
 from tradelab.data.universe import list_symbols, available_universes, refresh_exchange_cache, import_universe_file, universe_metadata
 from tradelab.data.market_data import get_history, get_histories
@@ -1102,7 +1103,7 @@ class ScannerPanel(QWidget):
         return cfg
 
     def scanner_error_popup(self, title: str, details: str):
-        log_dir = DATA_DIR / "logs"
+        log_dir = LOG_DIR
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "scanner_error.log"
         log_path.write_text(str(details), encoding="utf-8")
@@ -4872,7 +4873,7 @@ class IbkrFlexWorker(QThread):
                 rows = flex_trade_row_count(text)
                 saved = ""
                 try:
-                    out = ROOT_DIR / "logs" / "ibkr_flex_last.xml"
+                    out = LOG_DIR / "ibkr_flex_last.xml"
                     out.parent.mkdir(parents=True, exist_ok=True)
                     out.write_text(text, encoding="utf-8")
                     saved = " Raw report saved to logs/ibkr_flex_last.xml."
@@ -7512,10 +7513,9 @@ def run_app():
 
     def show_exception(exc_type, exc_value, exc_traceback):
         import traceback
-        from tradelab.core.config import DATA_DIR
         msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
         log.error("Uncaught exception:\n%s", msg)
-        log_dir = DATA_DIR / "logs"
+        log_dir = LOG_DIR
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "last_error.log"
         log_path.write_text(msg, encoding="utf-8")

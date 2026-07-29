@@ -17,9 +17,12 @@ env/
 ENV/
 
 # --- Build output ---
+# The .exe and PyInstaller's scratch folder are generated; rebuild them rather
+# than committing 129 MB. TradeLabPro.spec is the opposite - it is hand-written
+# source that describes how to build, so it stays tracked.
 build/
 dist/
-*.spec
+dist_debug/
 
 # --- Editors & IDEs ---
 .vscode/

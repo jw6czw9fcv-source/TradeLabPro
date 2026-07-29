@@ -19,10 +19,8 @@ import importlib.util
 import traceback
 from pathlib import Path
 
-from tradelab.core.config import ROOT_DIR
+from tradelab.core.config import PLUGINS_DIR
 from tradelab.core import filters
-
-PLUGINS_DIR = ROOT_DIR / "plugins"
 
 _loaded: dict = {}   # name -> module
 _errors: dict = {}   # filename -> short error string
