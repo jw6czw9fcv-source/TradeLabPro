@@ -20,6 +20,9 @@ datas = [
     ("docs/images", "docs/images"),
     # Shipped sample plugins, so the Plugins tab isn't empty on a fresh machine.
     ("plugins", "plugins"),
+    # The window/taskbar icon is loaded at runtime, so it has to ship too - the
+    # `icon=` argument below only sets the icon on the .exe file itself.
+    ("resources/tradelab.ico", "resources"),
 ]
 
 hiddenimports = [
@@ -71,4 +74,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    # Sets the icon on the .exe file itself, as Explorer shows it. Regenerate
+    # with: python tools/make_icon.py
+    icon="resources/tradelab.ico",
 )

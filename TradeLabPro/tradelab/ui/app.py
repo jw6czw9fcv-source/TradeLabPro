@@ -7511,6 +7511,12 @@ def run_app():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
+    # Window and taskbar icon. ROOT_DIR resolves to the bundle when packaged, so
+    # this works from source and from the .exe alike (the spec ships it).
+    icon_path = ROOT_DIR / "resources" / "tradelab.ico"
+    if icon_path.is_file():
+        app.setWindowIcon(QIcon(str(icon_path)))
+
     def show_exception(exc_type, exc_value, exc_traceback):
         import traceback
         msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))

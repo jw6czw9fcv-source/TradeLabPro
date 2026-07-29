@@ -26,3 +26,8 @@ data.old/
 # before publishing rather than editing it; committing it would let the page
 # drift from the markdown the in-app Help viewer reads.
 docs/USER_MANUAL.html
+
+# The icon's contact sheet, for eyeballing the small sizes. tradelab.ico itself
+# IS committed: the app loads it at runtime and the build embeds it, and Pillow
+# (needed to regenerate it) is not a runtime dependency.
+resources/tradelab_preview.png
