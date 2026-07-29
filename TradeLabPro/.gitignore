@@ -12,24 +12,14 @@ __pycache__/
 logs/
 
 # --- Your data ---
-# Positions, trades, alerts and notes are yours; they must never be published to
-# a public repo. The database also holds imported IBKR positions.
-data/tradelab.db
-data/alerts.json
-data/journal.json
-data/links.json
-data/notes.txt
-data/paper_account.json
-data/custom_universes.json
-data/setups/
-data/strategies/
-data/chart/
-
-# --- Caches ---
-# Rebuilt on demand: universe.py re-downloads the exchange lists when this is
-# missing or stale, so a fresh clone works without it. Tracking it meant a noisy
-# diff on every single run.
-data/universe_cache.json
+# The app now keeps your portfolio, journal, alerts and notes in
+# %LOCALAPPDATA%\TradeLab Pro, outside this checkout entirely (see
+# config.user_data_dir). These two folders are what older versions wrote here -
+# data.old is the pre-move backup - and both are ignored wholesale rather than
+# file by file: everything inside them is yours, including imported IBKR
+# positions, and none of it belongs in a public repo.
+data/
+data.old/
 
 # --- Generated ---
 # Built from docs/USER_MANUAL.md by tools/build_manual_html.py. Rebuild it
