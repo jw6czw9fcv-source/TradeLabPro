@@ -1,18 +1,24 @@
-"""Where a packaged build reads and writes.
+"""Where the app reads and writes, from source and from a packaged .exe.
 
-Once frozen into an .exe there are two different roots, and conflating them
-loses data: the bundle is read-only (and, for a one-file build, a temp folder
-Windows deletes on exit), so anything the app writes has to live outside it.
+Two rules are being pinned here:
+
+1. **One data folder, however the app was started.** The .exe and a run from
+   source must open the same portfolio, journal and alerts — otherwise the two
+   drift apart and a trade logged in one is invisible in the other.
+2. **Nothing writable inside the bundle.** A one-file build unpacks to a temp
+   folder Windows deletes on exit, so a database written there would take the
+   whole portfolio with it every time the app closed.
 """
 import importlib
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 
-def _reload_config(monkeypatch, frozen: bool, meipass: str = None,
-                   localappdata: str = None):
+def _reload(monkeypatch, frozen: bool, meipass: str = None,
+            localappdata: str = None, data_dir: str = None):
     monkeypatch.setattr(sys, "frozen", frozen, raising=False)
     if meipass is not None:
         monkeypatch.setattr(sys, "_MEIPASS", meipass, raising=False)
@@ -20,6 +26,11 @@ def _reload_config(monkeypatch, frozen: bool, meipass: str = None,
         monkeypatch.delattr(sys, "_MEIPASS", raising=False)
     if localappdata is not None:
         monkeypatch.setenv("LOCALAPPDATA", localappdata)
+    # The suite normally forces this at the temp dir set in conftest; drop it so
+    # these tests can exercise the real resolution rules.
+    monkeypatch.delenv("TRADELAB_DATA_DIR", raising=False)
+    if data_dir is not None:
+        monkeypatch.setenv("TRADELAB_DATA_DIR", data_dir)
     import tradelab.core.config as config
     return importlib.reload(config)
 
@@ -37,41 +48,64 @@ def _restore_config():
     importlib.reload(plugins)
 
 
-def test_running_from_source_uses_the_repo(monkeypatch):
-    cfg = _reload_config(monkeypatch, frozen=False)
-    assert cfg.FROZEN is False
-    assert cfg.DATA_DIR == cfg.ROOT_DIR / "data"
-    assert cfg.LOG_DIR == cfg.ROOT_DIR / "logs"
+def test_source_and_packaged_share_one_data_folder(tmp_path, monkeypatch):
+    appdata = tmp_path / "AppData"
+    from_source = _reload(monkeypatch, frozen=False, localappdata=str(appdata))
+    source_data, source_db = from_source.DATA_DIR, from_source.DB_PATH
+
+    packaged = _reload(monkeypatch, frozen=True, meipass=str(tmp_path / "_MEI1"),
+                       localappdata=str(appdata))
+    assert packaged.DATA_DIR == source_data, "the .exe and source must not diverge"
+    assert packaged.DB_PATH == source_db
+    assert source_data == appdata / packaged.APP_NAME
+
+
+def test_data_never_lands_in_the_source_tree(tmp_path, monkeypatch):
+    cfg = _reload(monkeypatch, frozen=False, localappdata=str(tmp_path / "AppData"))
+    # Real positions do not belong inside a git checkout.
+    assert cfg.ROOT_DIR not in cfg.DATA_DIR.parents
     assert (cfg.ROOT_DIR / "tradelab").is_dir()      # really is the source tree
 
 
 def test_packaged_writes_outside_the_bundle(tmp_path, monkeypatch):
-    bundle, appdata = tmp_path / "_MEI12345", tmp_path / "AppData"
-    cfg = _reload_config(monkeypatch, frozen=True, meipass=str(bundle),
-                         localappdata=str(appdata))
+    bundle = tmp_path / "_MEI12345"
+    cfg = _reload(monkeypatch, frozen=True, meipass=str(bundle),
+                  localappdata=str(tmp_path / "AppData"))
     assert cfg.FROZEN is True
-    # The manual and other shipped files come out of the bundle...
-    assert cfg.ROOT_DIR == bundle
-    # ...but nothing writable may live there, or it is gone when the app exits.
-    for writable in (cfg.DATA_DIR, cfg.DB_PATH, cfg.LOG_DIR, cfg.PLUGINS_DIR):
+    assert cfg.ROOT_DIR == bundle                    # the manual ships in here
+    for writable in (cfg.DATA_DIR, cfg.DB_PATH, cfg.LOG_DIR):
         assert bundle not in Path(writable).parents, f"{writable} is inside the bundle"
-    assert cfg.DATA_DIR == appdata / cfg.APP_NAME
-    assert cfg.DB_PATH == appdata / cfg.APP_NAME / "tradelab.db"
 
 
-def test_packaged_falls_back_to_home_without_localappdata(tmp_path, monkeypatch):
+def test_the_data_dir_can_be_overridden(tmp_path, monkeypatch):
+    cfg = _reload(monkeypatch, frozen=False, data_dir=str(tmp_path / "elsewhere"))
+    assert cfg.DATA_DIR == tmp_path / "elsewhere"
+    assert cfg.DB_PATH == tmp_path / "elsewhere" / "tradelab.db"
+
+
+def test_falls_back_to_home_without_localappdata(tmp_path, monkeypatch):
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    cfg = _reload_config(monkeypatch, frozen=True, meipass=str(tmp_path / "bundle"))
+    cfg = _reload(monkeypatch, frozen=True, meipass=str(tmp_path / "bundle"))
     assert cfg.DATA_DIR == tmp_path / cfg.APP_NAME
 
 
-def test_logging_and_plugins_follow_the_writable_root(tmp_path, monkeypatch):
-    cfg = _reload_config(monkeypatch, frozen=True, meipass=str(tmp_path / "b"),
-                         localappdata=str(tmp_path / "AppData"))
+def test_logs_follow_the_data_and_plugins_follow_the_install(tmp_path, monkeypatch):
+    cfg = _reload(monkeypatch, frozen=True, meipass=str(tmp_path / "b"),
+                  localappdata=str(tmp_path / "AppData"))
     import tradelab.core.logging_config as lc
     import tradelab.core.plugins as pl
     importlib.reload(lc)
     importlib.reload(pl)
     assert lc.LOG_FILE.parent == cfg.LOG_DIR == cfg.DATA_DIR / "logs"
-    assert pl.PLUGINS_DIR == cfg.DATA_DIR / "plugins"
+    # Plugins are code that ships with the app, not data you accumulate.
+    assert pl.PLUGINS_DIR == cfg.ROOT_DIR / "plugins"
+
+
+def test_the_suite_cannot_touch_the_real_portfolio():
+    # conftest redirects the whole run; without it a bare Database() would open
+    # the portfolio actually being traded.
+    from tradelab.core import config
+    assert os.environ.get(config.DATA_DIR_ENV), "conftest should set the override"
+    real = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / config.APP_NAME
+    assert config.DATA_DIR.resolve() != real.resolve()

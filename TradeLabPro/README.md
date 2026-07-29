@@ -21,13 +21,17 @@ pyinstaller TradeLabPro.spec --noconfirm
 The executable is around 130 MB (most of it Qt) and takes a few seconds to start,
 since a one-file build unpacks itself each time.
 
-**Where a packaged build keeps your data.** Not inside the .exe: it unpacks to a
-temporary folder that Windows deletes on exit, so anything written there would be
-lost when you close the app. The database, journal, alerts, notes, logs and
-plugins all live in `%LOCALAPPDATA%\TradeLab Pro\` instead. Running from source
-is unchanged — data stays in `data/` next to the code. That means the packaged
-app starts with an empty portfolio; copy `data\tradelab.db` across if you want
-your existing positions in it.
+## Where your data lives
+In `%LOCALAPPDATA%\TradeLab Pro\` — whichever way you start the app. The .exe and
+a run from source open the **same** portfolio, journal and alerts, so a trade
+logged in one is never invisible in the other.
+
+It sits outside both the source tree (real positions do not belong in a git
+checkout) and the executable (a one-file build unpacks to a temp folder Windows
+deletes on exit, which would throw the database away on every close).
+
+Set `TRADELAB_DATA_DIR` to run against a different set of data. The test suite
+uses it so a run can never touch your real portfolio.
 
 ## Notes
 - ETFs are now located under My Lists, not Exchanges.

@@ -26,6 +26,15 @@ os.environ.setdefault(
     tempfile.mkdtemp(prefix="tradelab_test_logs_"),
 )
 
+# And out of the real data folder. Now that source runs and the packaged .exe
+# share one location, a test that builds a bare Database() would otherwise open
+# the portfolio you actually trade - which is how a demo NVDA position once
+# ended up in it. Point the whole suite at a throwaway directory instead.
+os.environ.setdefault(
+    "TRADELAB_DATA_DIR",
+    tempfile.mkdtemp(prefix="tradelab_test_data_"),
+)
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 

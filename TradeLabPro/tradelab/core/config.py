@@ -9,26 +9,40 @@ APP_VERSION = '2.38.0 Coming up: earnings and ex-dividend dates for your holding
 # True when running from a packaged .exe rather than the source tree.
 FROZEN = bool(getattr(sys, "frozen", False))
 
-if FROZEN:
-    # Two different roots once packaged, and conflating them loses data.
-    #
-    # ROOT_DIR is where the bundle unpacked itself: read-only files that ship
-    # inside the executable, like the user manual.
-    ROOT_DIR = Path(getattr(sys, "_MEIPASS", None) or Path(sys.executable).parent)
-    # Everything the app *writes* has to live outside the bundle. A one-file
-    # build unpacks to a temp folder that Windows deletes on exit — writing the
-    # database there would throw away your portfolio every time you closed the
-    # app — and an installed copy under Program Files is read-only anyway.
-    DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / APP_NAME
-    LOG_DIR = DATA_DIR / "logs"
-    PLUGINS_DIR = DATA_DIR / "plugins"
-else:
-    ROOT_DIR = Path(__file__).resolve().parents[2]
-    DATA_DIR = ROOT_DIR / "data"
-    LOG_DIR = ROOT_DIR / "logs"
-    PLUGINS_DIR = ROOT_DIR / "plugins"
+# ROOT_DIR is where the app's own files live: read-only things that ship with
+# it, like the user manual the Help viewer reads. Inside the bundle when frozen,
+# the source tree otherwise.
+ROOT_DIR = (Path(getattr(sys, "_MEIPASS", None) or Path(sys.executable).parent)
+            if FROZEN else Path(__file__).resolve().parents[2])
 
+# Point this somewhere else to run against a different set of data.
+DATA_DIR_ENV = "TRADELAB_DATA_DIR"
+
+
+def user_data_dir() -> Path:
+    """The one place your data lives, however the app was started.
+
+    Deliberately outside both the source tree and the bundle, so the packaged
+    .exe and a run from source see the *same* portfolio, journal and alerts
+    instead of quietly drifting apart as two separate installs. It also keeps
+    real positions out of a git checkout, and a one-file build unpacks to a temp
+    folder Windows deletes on exit — writing a database there would throw the
+    whole portfolio away every time the app closed.
+    """
+    override = os.environ.get(DATA_DIR_ENV)
+    if override:
+        return Path(override)
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / APP_NAME
+
+
+DATA_DIR = user_data_dir()
+LOG_DIR = DATA_DIR / "logs"
 DB_PATH = DATA_DIR / "tradelab.db"
+
+# Plugins are code shipped with the app rather than data you accumulate, so they
+# stay with the install: the samples in the repo for a source run, the bundled
+# copy for the .exe.
+PLUGINS_DIR = ROOT_DIR / "plugins"
 
 @dataclass
 class ScannerConfig:
