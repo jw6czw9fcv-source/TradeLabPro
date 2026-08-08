@@ -86,6 +86,110 @@ def next_payment(dividend_rows: list, today=None):
     return best
 
 
+# A curve needs points. Two dots in the first days of January is a line
+# segment, not a year, and drawing it would imply more than it knows.
+YTD_MIN_POINTS = 3
+
+# How far into January the curve may start before something is clearly missing.
+# The first session of the year lands on the 2nd or 3rd; a start later than this
+# means a holding's history, not the calendar, decided where the year begins.
+YTD_LATE_START_DAYS = 7
+
+
+def ytd_curve(positions: list, histories: dict, target: str = None,
+              fx: dict = None, today=None) -> dict | None:
+    """The book's value through this year, for the chart on Home.
+
+    Today's share counts valued at every close since the year began, converted
+    day by day so FX moves show up too, and anchored to last year's final close
+    when the history reaches that far back — January's first move should be
+    measured from where the book actually closed the year, not from its own
+    first bar.
+
+    What this is *not*: an account statement. It knows what you hold now, never
+    when you bought it, so a position opened in March is valued back to January
+    as though you had held it all along, and contributions, withdrawals, trades
+    and dividends received are all absent. An imported IBKR position carries a
+    share count and an average price and no trade date, so nothing better is
+    available from the data we have; `reconstructed` keeps that caveat attached
+    to the numbers rather than leaving it in a docstring.
+
+    None when the year can't be drawn — nothing priced, or too few sessions of
+    it so far.
+    """
+    equity = pa.portfolio_equity(positions, histories, target, fx)
+    if equity is None or equity.empty:
+        return None
+    now = pd.Timestamp(today) if today is not None else equity.index[-1]
+    year_start = pd.Timestamp(year=now.year, month=1, day=1)
+    this_year = equity[equity.index >= year_start]
+    if this_year.shape[0] < YTD_MIN_POINTS:
+        return None
+
+    prior = equity[equity.index < year_start]
+    from_last_year = not prior.empty
+    curve = pd.concat([prior.iloc[[-1]], this_year]) if from_last_year else this_year
+    start, last = float(curve.iloc[0]), float(curve.iloc[-1])
+    change = last - start
+
+    result = {
+        "series": curve,
+        "start_value": start,
+        "last_value": last,
+        "change": change,
+        "change_pct": (change / start * 100.0) if start else None,
+        "start_date": curve.index[0],
+        "as_of": curve.index[-1],
+        "high": float(curve.max()),
+        "low": float(curve.min()),
+        "high_date": curve.idxmax(),
+        "low_date": curve.idxmin(),
+        "max_drawdown_pct": pa.max_drawdown(curve),
+        "from_last_year": from_last_year,
+        "limited_by": _ytd_limited_by(positions, histories, curve, year_start,
+                                      from_last_year),
+        "currency": target,
+        "reconstructed": True,
+    }
+    result["text"] = _ytd_text(result)
+    return result
+
+
+def _ytd_limited_by(positions, histories, curve, year_start, from_last_year):
+    """The holding whose short history cut the year short, or None.
+
+    The equity curve spans only the dates every priced holding has in common,
+    so one recently-listed name silently moves the start of "the year" to
+    March. Naming it is the difference between a chart that's wrong and a chart
+    that says why it's short.
+    """
+    if from_last_year or (curve.index[0] - year_start).days <= YTD_LATE_START_DAYS:
+        return None
+    starts = {}
+    for pos in pa.aggregate_positions(positions):
+        close = pa._close((histories or {}).get(pos["symbol"]))
+        if close is not None and not close.empty:
+            starts[pos["symbol"]] = close.index[0]
+    if not starts:
+        return None
+    latest = max(starts, key=lambda s: starts[s])
+    return latest if starts[latest] >= curve.index[0] else None
+
+
+def _ytd_text(r: dict) -> str:
+    ccy = f" {r['currency']}" if r.get("currency") else ""
+    direction = "up" if r["change"] >= 0 else "down"
+    parts = [f"{direction} ${abs(r['change']):,.0f}{ccy}"]
+    if r["change_pct"] is not None:
+        parts[0] += f" ({r['change_pct']:+.1f}%)"
+    since = ("since last year's close" if r["from_last_year"]
+             else f"since {r['start_date']:%d %b}")
+    parts.append(since)
+    if r["max_drawdown_pct"] is not None and r["max_drawdown_pct"] < 0:
+        parts.append(f"deepest dip {r['max_drawdown_pct']:.1f}%")
+    return " · ".join(parts) + "."
+
+
 def attention(analytics: dict, dividend_summary: dict, movers_rows: list,
               look_through: dict = None) -> list:
     """Things worth knowing without being asked, most important first. Each item
@@ -217,7 +321,7 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
     if not positions:
         return {"has_positions": False, "currency": target_currency,
                 "analytics": None, "income": None, "movers": [], "attention": [],
-                "day_change": None, "next_payment": None,
+                "day_change": None, "next_payment": None, "ytd": None,
                 "market_read": market_read, "look_through": None, "events": None,
                 "text": "No holdings yet — add positions in the Portfolio tab, "
                         "or import them from IBKR."}
@@ -251,6 +355,9 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
         "day_change": day_move(rows),
         "next_payment": next_payment(income.get("holdings"), today),
         "attention": attention(analytics, income, rows, look),
+        # The year so far, drawn from the same equity curve Analytics measures
+        # risk on — so the chart and the drawdown figure can't disagree.
+        "ytd": ytd_curve(positions, histories, target_currency, fx, today=today),
         "market_read": market_read,
         "look_through": look,
         "events": schedule,

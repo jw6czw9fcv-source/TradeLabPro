@@ -189,3 +189,103 @@ def test_summarize_matches_the_source_tabs():
         income["total_annual_income"])
     assert "CAD" in r["text"] and "dividends" in r["text"]
     assert r["next_payment"] is not None
+
+
+# --- the year-so-far curve --------------------------------------------------
+
+def _daily(closes, start):
+    """A daily-bar frame of `closes` beginning on `start` (business days)."""
+    idx = pd.date_range(start=start, periods=len(closes), freq="B")
+    v = np.asarray(closes, dtype=float)
+    return pd.DataFrame({"Open": v, "High": v, "Low": v, "Close": v,
+                         "Volume": [0] * len(v)}, index=idx)
+
+
+def test_ytd_curve_starts_from_last_years_close():
+    # 20 sessions of 2025 at $100, then 2026 rising to $110. The year began
+    # where the book closed last year, not at its own first bar.
+    closes = [100.0] * 20 + list(np.linspace(100.0, 110.0, 60))
+    hist = {"A": _daily(closes, "2025-12-04")}
+    pos = [{"symbol": "A", "shares": 10, "entry_price": 90.0}]
+    r = home.ytd_curve(pos, hist)
+    assert r["from_last_year"] is True
+    assert r["start_value"] == pytest.approx(1000.0)      # 10 x $100
+    assert r["last_value"] == pytest.approx(1100.0)
+    assert r["change"] == pytest.approx(100.0)
+    assert r["change_pct"] == pytest.approx(10.0)
+    assert r["start_date"].year == 2025                   # the anchor bar
+    assert r["limited_by"] is None
+    assert "up $100" in r["text"] and "+10.0%" in r["text"]
+
+
+def test_ytd_curve_without_last_year_measures_from_january():
+    hist = {"A": _daily(list(np.linspace(50.0, 55.0, 40)), "2026-01-02")}
+    pos = [{"symbol": "A", "shares": 100, "entry_price": 50.0}]
+    r = home.ytd_curve(pos, hist)
+    assert r["from_last_year"] is False
+    assert r["start_value"] == pytest.approx(5000.0)
+    assert r["start_date"] == pd.Timestamp("2026-01-02")
+    assert r["limited_by"] is None                        # January is not "late"
+    assert "since 02 Jan" in r["text"]
+
+
+def test_ytd_curve_needs_more_than_a_couple_of_sessions():
+    # Two dots in the first days of January is a line segment, not a year.
+    hist = {"A": _daily([10.0, 10.5], "2026-01-02")}
+    pos = [{"symbol": "A", "shares": 1, "entry_price": 10.0}]
+    assert home.ytd_curve(pos, hist) is None
+    assert home.ytd_curve(pos, {}) is None
+    assert home.ytd_curve([], hist) is None
+
+
+def test_ytd_curve_names_the_holding_that_shortened_the_year():
+    # The curve spans only dates every holding shares, so a name listed in
+    # March moves the start of "the year" to March. Say which one.
+    hist = {"OLD": _daily([100.0] * 200, "2025-10-01"),
+            "NEW": _daily([20.0] * 60, "2026-03-02")}
+    pos = [{"symbol": "OLD", "shares": 10, "entry_price": 90.0},
+           {"symbol": "NEW", "shares": 50, "entry_price": 18.0}]
+    r = home.ytd_curve(pos, hist)
+    assert r["limited_by"] == "NEW"
+    assert r["start_date"] == pd.Timestamp("2026-03-02")
+    assert r["from_last_year"] is False
+
+
+def test_ytd_curve_is_reported_in_the_display_currency():
+    hist = {"VTI": _daily([100.0] * 40, "2025-12-15")}
+    fx = {"USD": pd.Series([1.4] * 40,
+                           index=pd.date_range("2025-12-15", periods=40, freq="B"))}
+    r = home.ytd_curve([{"symbol": "VTI", "shares": 10, "entry_price": 90.0}],
+                       hist, target="CAD", fx=fx)
+    assert r["last_value"] == pytest.approx(10 * 100.0 * 1.4)
+    assert r["currency"] == "CAD"
+    assert "CAD" in r["text"]
+
+
+def test_ytd_curve_reports_the_deepest_dip():
+    # Eight sessions of 2025 (the last is 31 Dec), then the swing in January.
+    closes = [100.0] * 8 + [100.0, 120.0, 90.0, 110.0] + [110.0] * 10
+    hist = {"A": _daily(closes, "2025-12-22")}
+    r = home.ytd_curve([{"symbol": "A", "shares": 1, "entry_price": 100.0}], hist)
+    assert r["max_drawdown_pct"] == pytest.approx(-25.0)   # 120 -> 90
+    assert r["high"] == pytest.approx(120.0) and r["low"] == pytest.approx(90.0)
+    assert "deepest dip -25.0%" in r["text"]
+
+
+def test_ytd_curve_matches_the_analytics_equity_curve():
+    # The chart and Analytics' risk figures must be the same curve, so a
+    # drawdown on Home can never disagree with the one on Analytics.
+    pos = [{"symbol": "A", "shares": 10, "entry_price": 90.0}]
+    hist = {"A": _daily(list(np.linspace(100.0, 130.0, 80)), "2026-01-02")}
+    r = home.ytd_curve(pos, hist)
+    equity = pa.portfolio_equity(pos, hist)
+    assert r["last_value"] == pytest.approx(float(equity.iloc[-1]))
+    assert r["series"].equals(equity[equity.index >= pd.Timestamp("2026-01-01")])
+
+
+def test_summarize_carries_the_year_curve():
+    pos = [{"symbol": "A", "shares": 10, "entry_price": 90.0}]
+    hist = {"A": _daily(list(np.linspace(100.0, 110.0, 80)), "2025-12-01")}
+    r = home.summarize(pos, hist, target_currency=None, today=TODAY)
+    assert r["ytd"]["change_pct"] is not None
+    assert home.summarize([], {})["ytd"] is None

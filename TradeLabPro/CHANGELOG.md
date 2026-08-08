@@ -1,5 +1,43 @@
 # Changelog
 
+## 2.40.0 - Your workplace retirement plan, fund by fund
+
+### Added
+- **A Retirement tab** for money the app cannot reach: a group RRSP, a pension, any plan whose funds have no ticker and no public price. Built around the only input that exists — what the statement says, a few times a year.
+- **Paste your statement.** Copy the fund table straight off the plan's website: one fund per line, category headings ignored. Two numbers on a line are read as units and unit value, one as a balance. Canadian and US number formatting both parse (`12 049,25 $` and `1,234.56`), and re-pasting a date **corrects** that statement rather than doubling it.
+- **Paste your fund fact sheets.** The plan already publishes each fund against **its own benchmark** — often a blend no ETF replicates — over 3 months to 10 years. Those figures are stored verbatim, dated, and laid out side by side, ranked. Column headings are read rather than assumed, so a fund with no 10-year column can't have its 5-year figure reported as a decade's.
+- **The fee column, which is the point.** Fact sheet returns are struck **before** the plan's investment management fee. Set the fee once and every excess figure gains an after-fee twin: a fund that beats its index by less than it charges did not beat it for you. Per-fund overrides for anything priced differently.
+- **A plan-level return weighted by what you actually hold** — not an average of the funds, and it says what share of the plan it speaks for when a sheet is missing.
+- **Two returns per fund, never conflated.** *Fund return* is the unit value moving, which contributions cannot flatter — the column to compare funds on. *Your return* is an XIRR over what you paid in and when. Employer money is tracked separately, because a 100% match is a payroll benefit, not performance.
+- **A rebased comparison chart** (`ui/widgets/rebased_chart.py`): every fund restated to 100 at its first statement, so the laggard is visible without reading a number.
+- New `core/retirement.py` (Qt-free, offline-testable): `xirr` by bisection, `modified_dietz`, `fund_return`, `personal_return`, `parse_statement`, `parse_published`, `published_rows`, `plan_published`, `rebased`, and a JSON-backed `RetirementBook`.
+
+### Notes — what this deliberately does not do
+- **No connection to any plan.** There is no API, and entering credentials for a financial portal is not something the app will do. Everything is pasted or typed by you, and stays in your data folder.
+- **One statement is a balance, not a return.** With a single date every return column reads "—" with a reason, rather than a number the data cannot support. The first paste starts the clock; the second answers the question.
+- **Short windows are not annualized** (270-day floor). A 3% gain over seven weeks is not a 24% year, and reporting it as one is how a fund gets switched for nothing. An annual fee is likewise not charged against a 3-month return.
+- **Dollar balances are corrected, not trusted.** With no unit values, returns fall back to chain-linked Modified Dietz and the tab **says so** — that path depends on every contribution having been recorded. Where units jumped without a contribution on file, it names the gap instead of absorbing it into "performance".
+- **The chart uses unit values only.** A balance rises when you contribute; drawing that as performance would be a lie, so those funds are left off rather than drawn wrong.
+- **Nothing is recommended.** Returns, benchmarks and fees are laid side by side as facts. Which fund to hold is not the app's call.
+
+### Verified
+- Full pytest suite (911) passes, including the XIRR against a known rate, the Modified Dietz correction for a late contribution, the fee turning a +0.03 pp win into a -1.72 pp loss, holdings-weighted plan returns, column-heading mapping, French worded dates, the statement parser against a real Canada Life layout, and the panel's paste-preview-before-write, index editing, synthetic-data refusal and empty states.
+
+## 2.39.0 - Your account year-to-date, charted on Home
+
+### Added
+- **A chart of the book's year on the Home tab**, under the tiles: what your account has been worth at every close since January, in your display currency. Green when the year is up, red when it's down, with the starting value on a dashed line, the move in dollars and percent in the header, and the deepest dip along the way. **Hover anywhere on the line** for that day's value and how far it stood from the start.
+- **Anchored to last year's final close** whenever the price history reaches back that far, so January's first move is measured from where the book actually ended the year — not from its own first bar, which would report a flat start on a day the book moved.
+- New `core/home.ytd_curve()` (Qt-free) and a reusable `ui/widgets/equity_curve.py`. The curve is the **same equity series Analytics measures drawdown and volatility on**, so the chart and the risk figures can never disagree; the widget contains no portfolio maths of its own.
+
+### Notes — what the chart deliberately is not
+- **It is not an account statement.** It values **today's share counts** back through the year, so a position opened in March is drawn as though you had held it since January, and contributions, withdrawals, trades made during the year and dividends received are absent. An imported IBKR position carries a share count and an average price but **no trade date**, so nothing more accurate is available from that data. The note under the chart says this every time rather than leaving a curve that looks like a broker statement.
+- **A short curve says why it's short.** The book is only valued on days every holding traded, so a name that listed part-way through the year shortens it — the chart names that holding instead of quietly starting the year in March.
+- **Too little of the year is stated, not drawn.** In the first days of January the chart says so rather than running a line through two points.
+
+### Verified
+- Full pytest suite (819) passes, including the last-year anchor, a book with no prior-year history, the three-session minimum, the holding that shortens the year, currency conversion, the deepest-dip figure, agreement with `portfolio_analytics.portfolio_equity`, and the panel's chart, footnote, cursor readout and empty states.
+
 ## 2.38.0 - Coming up: scheduled dates for your holdings
 
 ### Added

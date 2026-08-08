@@ -1,7 +1,25 @@
 # TradeLab Pro Project Status
 
-Current version: 2.38.0
-Current phase: Scheduled holding dates ("Coming up") (done)
+Current version: 2.40.0
+Current phase: Workplace retirement plan tracking (done)
+
+## Completed in 2.40.0 (The plan you can't import)
+- New `core/retirement.py` (Qt-free, offline-testable). Model: `Account` -> `Fund` -> `Snapshot` (units / unit_value / value) + `Flow` (contribution / employer / withdrawal) + `Published` (a fact sheet's figure for one horizon, with the fund's own index).
+- **Two returns, never conflated.** `fund_return` prefers unit values (exact — a unit price cannot be moved by buying more units) and falls back to chain-linked `modified_dietz` over dollar balances, reporting `method` either way. `personal_return` is an `xirr` (bisection, not Newton: irregular contributions hand Newton a near-zero derivative) treating the **first snapshot as the opening stake**, so no history is required — flows dated on or before it are already inside that balance and are ignored.
+- **`parse_published`** reads a fund fact sheet's compound-returns block. Column headings are *read, never assumed* — a fund too young for a 10-year column would otherwise have its 5-year figure reported as a decade's. French worded dates ("au 31 mars 2026") parse.
+- **The fee is modelled, not footnoted.** Sheet returns are struck before the plan's investment management fee; `published_rows` reports `excess_pct` as published and `net_excess_pct` after the fee. On the real plan this is decisive: the index fund's +0.03 pp one-year edge becomes roughly -1.5 pp after a 1.5% fee. An annual fee is not applied to the 3-month row.
+- `plan_published` weights by holdings (not a plain average) and reports `covered_pct` + `missing` so a figure speaking for 60% of the money reads differently from one speaking for all of it.
+- `parse_statement` handles the real Canada Life layout: category headings skipped, `12 049,25 $` and `1,234.56` both parsed (last separator wins), re-pasting a date corrects that statement instead of doubling it. `unrecorded_units` flags a unit jump with no contribution on file rather than absorbing it into performance.
+- New `ui/widgets/rebased_chart.py` — every fund restated to 100 at its first statement. **Unit values only**: a dollar balance rises when you contribute, and charting that as performance would mislead.
+- New **Retirement** tab (`RetirementPanel`, after Dividends): statement paste with **preview before write**, fact-sheet paste per fund, plan fee input, horizon picker, funds table (index column editable, everything else output), published-returns table, rebased chart, contributions table, and a "needs" list naming what is missing. Refuses synthetic index data like Analytics and Dividends. `shutdown()` wired into `closeEvent`.
+- Tests: `tests/test_retirement.py`, `tests/test_retirement_panel.py`. Full suite 911 passing.
+
+## Completed in 2.39.0 (The book's year, charted on Home)
+- New `core/home.ytd_curve(positions, histories, target, fx, today)` (Qt-free): slices `portfolio_analytics.portfolio_equity` at the calendar year and **anchors it to last year's final close** when the history reaches back that far (`from_last_year`), returning the series plus start/last/change/change_pct, high/low, `max_drawdown_pct`, `limited_by` and a one-line `text`. `YTD_MIN_POINTS = 3` (two dots in January is not a year); `YTD_LATE_START_DAYS = 7` decides when a late start is a holding's fault rather than the calendar's.
+- `_ytd_limited_by` names the holding whose short history cut the year short — the equity curve spans only dates every priced holding shares, so one recently-listed name silently moves "the start of the year" to March.
+- New `ui/widgets/equity_curve.py` — `EquityCurveWidget` (pyqtgraph): direction-coloured line + tinted area, dashed baseline with a labelled anchor, `MoneyAxis` short-dollar ticks (`$412k`), bars plotted at index with the chart's own `BarDateAxis` so weekends leave no gaps, and a cursor readout (date, value, % from start) that falls back to the period summary. **No portfolio maths in the widget** — it renders a series someone else computed.
+- `HomePanel.ytd_chart` + `_render_ytd` sit under the tiles; `home.summarize` exposes `ytd`. The footnote states the caveat every time: today's share counts valued backwards, **not an account statement** (no contributions, withdrawals, intra-year trades or dividends received) — an imported IBKR position has no trade date, so nothing better exists in the data.
+- Suite 819 passing.
 
 ## Completed in 2.38.0 (Coming up: scheduled dates)
 - New `core/events.py` (Qt-free, offline-testable): `upcoming(calendars, today, horizon_days, symbols)` -> sorted `{symbol, kind, date, days_away, text}`; `EARNINGS`/`EX_DIVIDEND`; `HORIZON_DAYS = 45`; `describe_when` (today/tomorrow/in N days); `next_for`; `summarize` (events + `no_data` + one-line `text`); `text_for` (caps at 3, "+N more").

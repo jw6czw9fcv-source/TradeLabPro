@@ -296,3 +296,56 @@ def test_home_without_calendars_shows_no_upcoming_line(qapp):
     p = _panel(qapp, [{"symbol": "A", "shares": 1, "entry_price": 1}])
     p._on_loaded({"A": _hist(10.0, 11.0)}, {}, {}, {}, "")
     assert p.upcoming_line.text() == ""
+
+
+# --- the year-so-far chart --------------------------------------------------
+
+def test_home_draws_the_year_curve(qapp):
+    positions = [{"symbol": "XDIV.TO", "shares": 300, "entry_price": 43.26}]
+    p = _panel(qapp, positions)
+    p._on_loaded({"XDIV.TO": _hist(43.0, 46.42), "SPY": _hist(600.0, 640.0),
+                  "USDCAD=X": _hist(1.40, 1.41)}, {}, {}, {}, "")
+    chart = p.ytd_chart
+    assert chart._values.size > 2
+    assert chart._values[-1] == pytest.approx(300 * 46.42)     # last close x shares
+    assert "CAD" in chart.title.text()
+    # The readout carries the period summary until the cursor takes it over.
+    assert "%" in chart.readout.text()
+    # The caveat is not optional: this is today's shares valued backwards.
+    assert "not an account statement" in chart.footnote.text()
+
+
+def test_home_year_curve_readout_follows_the_cursor(qapp):
+    p = _panel(qapp, [{"symbol": "A", "shares": 10, "entry_price": 1.0}])
+    p._on_loaded({"A": _hist(100.0, 120.0)}, {}, {}, {}, "")
+    chart = p.ytd_chart
+    text = chart._point_text(0, float(chart._values[0]))
+    assert "$" in text and "%" in text
+    last = chart._point_text(len(chart._values) - 1, float(chart._values[-1]))
+    assert "+" in last                       # the book is up on the last bar
+
+
+def test_home_year_curve_is_empty_without_holdings(qapp):
+    import tradelab.ui.app as app
+    p = app.HomePanel(_FakeDB([]))
+    p.refresh()
+    assert p.ytd_chart._values.size == 0
+    assert "No holdings" in p.ytd_chart.readout.text()
+
+
+def test_home_year_curve_says_when_there_is_too_little_of_the_year(qapp):
+    p = _panel(qapp, [{"symbol": "A", "shares": 10, "entry_price": 1.0}])
+    p._render_ytd(None)
+    assert p.ytd_chart._values.size == 0
+    assert "Not enough of this year" in p.ytd_chart.readout.text()
+
+
+def test_home_year_curve_names_a_holding_that_shortened_it(qapp):
+    p = _panel(qapp, [{"symbol": "NEW", "shares": 10, "entry_price": 1.0}])
+    p._render_ytd({"series": pd.Series(
+        [10.0, 11.0, 12.0],
+        index=pd.date_range("2026-03-02", periods=3, freq="B")),
+        "start_value": 10.0, "currency": "CAD", "text": "up $2 (+20.0%).",
+        "start_date": pd.Timestamp("2026-03-02"), "from_last_year": False,
+        "limited_by": "NEW"})
+    assert "NEW has no price history before then" in p.ytd_chart.footnote.text()

@@ -1,9 +1,10 @@
 # TradeLab Pro — User Manual
 
-**Version 2.38.0**
+**Version 2.40.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
-**Home** dashboard showing your book, the market read, the day's movers and the
+**Home** dashboard showing your book, a chart of its year so far, the market
+read, the day's movers and the
 dates your holdings have scheduled, scan the
 market for setups, chart and analyze symbols, keep watchlists and a portfolio
 (**import your positions from IBKR**, see the book's **risk analytics** in CAD,
@@ -36,7 +37,7 @@ to explain what you're looking at.
 5. [Scanner](#5-scanner)
 6. [Charts](#6-charts)
 7. [Watchlists](#7-watchlists)
-8. [Portfolio, Analytics & Dividends](#8-portfolio-analytics--dividends)
+8. [Portfolio, Analytics, Dividends & Retirement](#8-portfolio-analytics-dividends--retirement)
 9. [Alerts](#9-alerts)
 10. [Heatmap](#10-heatmap)
 11. [Market dashboard](#11-market-dashboard)
@@ -141,6 +142,33 @@ time you've looked at the window, the numbers are already there.
 
 **Book value** · **Today** · **Unrealized P&L** · **Annual income** — in your
 display currency (**CAD** by default; switch at the top right).
+
+### This year
+
+A chart of what the book has been worth since the year began, in your display
+currency. The line is **green when the year is up, red when it's down**; the
+dashed line is where the year started, and the header states the move in dollars
+and percent along with the **deepest dip** along the way. Hover anywhere on the
+line to read that day's value and how far it stood from the start.
+
+The year is anchored to **last year's final close** whenever the price history
+reaches that far back, so January's first move is measured from where the book
+actually ended the year rather than from its own first bar.
+
+> **This is a chart of what you hold, not a statement of your account.** It
+> values **today's share counts** at every close since January — so a position
+> you opened in March is valued back to January as though you had always held
+> it, and **contributions, withdrawals, trades made during the year and
+> dividends received are not in it**. An imported IBKR position carries a share
+> count and an average price but **no trade date**, so nothing more accurate is
+> available from that data; the note under the chart says so every time rather
+> than letting the line be mistaken for a broker statement.
+
+Two smaller honesty notes. The book is only valued on days **every** holding
+traded, so a name that listed part-way through the year shortens the curve — when
+that happens the chart **names the holding** responsible instead of quietly
+starting the year in March. And in the first days of January, before there are
+enough sessions to draw, it says so rather than drawing a line through two dots.
 
 ### Needs attention
 
@@ -348,7 +376,7 @@ an entry can load it on the chart.
 
 ---
 
-## 8. Portfolio, Analytics & Dividends
+## 8. Portfolio, Analytics, Dividends & Retirement
 
 The **Portfolio** tab is a holdings record: **ID, Portfolio, Symbol, Shares,
 Entry**. Add positions (e.g. from a Scanner result), group them by portfolio
@@ -497,6 +525,59 @@ being averaged away by older, smaller payments.
 > **A projection, not a promise.** The calendar and the annual figure are
 > extrapolated from past payments. Companies can raise, cut, or suspend a
 > dividend at any time. Reporting only — not financial advice.
+
+### The Retirement tab — a workplace plan the app can't connect to
+
+A group RRSP or a pension is the one account TradeLab can't fetch. Its funds
+have no ticker and no public price: the unit values live behind the plan
+administrator's login and nowhere else. The **Retirement** tab is built around
+the only input that actually exists — what your statement says, a few times a
+year — and it never asks for your login.
+
+**Paste your statement.** Copy the fund table straight off the plan's website
+into the *Enter a statement* box: one fund per line, category headings ignored.
+A line with two numbers is read as units and unit value; one number is read as a
+balance. Canadian formatting works (`12 049,25 $`), so does American
+(`1,234.56`). Click **Read** to see what was understood — **nothing is saved
+until you click Save**. Pasting the same date again corrects that statement
+rather than adding a second copy.
+
+**Paste your fund fact sheets.** Most plans publish, per fund, its return
+against **its own benchmark** over 3 months to 10 years. That is better than
+anything this app can compute: it's the fund's real benchmark, often a blend no
+ETF replicates, over horizons you could never rebuild from statements. Paste a
+sheet's compound-returns table — the header row plus the *Fonds* / *Indice*
+rows — pick the fund, and click **Read sheet**.
+
+**Set the plan fee. This is the part that changes answers.** Fact sheet returns
+are struck **before** the plan's investment management fee. Type that fee once
+and every excess figure gains an *After fee* twin. A fund that beats its index
+by 0.03 points and charges 1.5% did not beat it for you — it lost by about 1.5
+points. Without the fee column that fund looks like a winner.
+
+**Two returns, and they answer different questions.**
+
+| Column | What it means | When to use it |
+|---|---|---|
+| **Fund return** | The unit value moving. Your contributions cannot flatter it. | Comparing your funds against each other |
+| **Your return** | An XIRR over what you paid in and when | Checking how your own money did |
+
+Employer contributions are tracked separately: a 100% match is a payroll
+benefit, not investment performance, and mixing the two inflates the figure.
+
+**The chart** restates every fund to 100 at its first statement, so the one
+lagging is the line at the bottom — no numbers to read. It uses unit values
+only: a dollar balance rises when you contribute, and drawing that as
+performance would mislead.
+
+> **One statement is a balance, not a return.** With a single date, every return
+> column shows "—" with the reason. That's arithmetic, not a bug — a price does
+> not imply a return, you need two. Your first paste starts the clock; the
+> second answers the question.
+
+> **What it won't do.** It won't connect to your plan, and it won't tell you
+> which fund to hold. Returns, benchmarks and fees are laid side by side as
+> facts. Reporting only — not financial advice.
 
 ---
 
