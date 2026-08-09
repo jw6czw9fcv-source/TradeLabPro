@@ -3,7 +3,7 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
-2.40.0 - Your workplace retirement plan, fund by fund - a Retirement tab for a group RRSP or pension the app can't connect to: paste the statement, paste the fund fact sheets, and see which fund beat its own benchmark after the fee you pay
+2.41.0 - Your ETF workbook, in the app - an ETF Screener tab that compares funds and totals a target allocation: type the weights, hit refresh for returns and risk from Yahoo, and see what the mix actually holds
 
 ## Run
 1. Run `install_requirements.bat` if needed.

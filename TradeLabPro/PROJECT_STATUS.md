@@ -1,7 +1,17 @@
 # TradeLab Pro Project Status
 
-Current version: 2.40.0
-Current phase: Workplace retirement plan tracking (done)
+Current version: 2.41.0
+Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.41.0 (The ETF workbook, in the app)
+- **Schema v3** (`SCHEMA_V3` in `data/database.py`): one `etf_screener` row per fund, mirroring the columns of the `Portefeuille_FNB.xlsx` workbook it replaces. Percentages stored as fractions, as the workbook stored them.
+- **Typed columns and computed columns never cross.** `etf_upsert` touches only the keys it is given (so editing one cell can't blank the row) and ignores unknown ones; `etf_update_metrics` is restricted to `ETF_METRIC_COLUMNS` and **drops `None`** — a fund with eight years of history keeps the ten-year figure already on file instead of having a refresh erase it.
+- New `core/etf_metrics.py` (Qt-free, offline-testable): `trailing_return`, `risk_metrics`, `get_prices`, `compute_metrics` — the maths of `tools/maj_rendements.py`, unchanged, ported off the spreadsheet. Returns >= 1 year annualized, adjusted close (dividends reinvested), 3% risk-free rate for Sharpe. **A column with too little history is not written**, never estimated.
+- `composition_summary(funds, weight_key)` replaces the workbook's SUMPRODUCT block, and adds what the spreadsheet could not say: `covered` per row, so a weighted 10-year return standing on half the allocation is reported as half, not as the whole.
+- New **ETF Screener** tab (`EtfScreenerPanel`, after Watchlists): 30-column editable table, add/remove tickers, percent-in / percent-out editing (type `20`, `20%` or `62,5 %`), and the three model compositions from the workbook (Reco ★ / Spéculatif ★ / Ma compo) totalled side by side with an OK/à-ajuster check.
+- `EtfMetricsWorker` (QThread, `ScanWorker` pattern) refreshes returns/risk with a progress bar and a Stop button — one 11-year download per fund, spaced 0.6 s, so a thirty-fund refresh cannot freeze the UI. A dead symbol is skipped and counted, not fatal.
+- `tools/import_etf_screener.py` — one-off, idempotent Excel import (31 funds). Blank cells are omitted rather than written as zero. `tools/maj_rendements.py` kept alongside it as the original script; the workbook itself is gitignored (personal allocations, public repo).
+- Tests: `tests/test_etf_metrics.py`, `tests/test_etf_screener_panel.py`, `tests/test_etf_import.py`, plus the ETF block in `tests/test_database.py`. Full suite 975 passing.
 
 ## Completed in 2.40.0 (The plan you can't import)
 - New `core/retirement.py` (Qt-free, offline-testable). Model: `Account` -> `Fund` -> `Snapshot` (units / unit_value / value) + `Flow` (contribution / employer / withdrawal) + `Published` (a fact sheet's figure for one horizon, with the fund's own index).

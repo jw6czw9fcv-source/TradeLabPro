@@ -1,9 +1,14 @@
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from tradelab.core.config import DATA_DIR, DB_PATH
 from tradelab.core.logging_config import get_logger
 
 log = get_logger(__name__)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 # ---------------------------------------------------------------------------
 # Schema is versioned. Each entry in MIGRATIONS is applied, in order, exactly
@@ -67,10 +72,51 @@ CREATE TABLE IF NOT EXISTS chart_drawings (
 );
 """
 
-MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2]
+# v3: ETF Screener - one row per fund, mirroring the columns of the
+# Portefeuille_FNB.xlsx workbook this replaces. Two kinds of column live side
+# by side and must never overwrite each other: what you typed (category,
+# weights, risk, notes, the model portfolios) and what yfinance computed
+# (returns, volatility, drawdown, Sharpe). Returns are stored as fractions
+# (0.25 = 25%), the way the workbook stored them.
+SCHEMA_V3 = """
+CREATE TABLE IF NOT EXISTS etf_screener (
+    ticker TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    exchange TEXT NOT NULL DEFAULT '',
+    currency TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT '',
+    pct_can REAL,
+    pct_us REAL,
+    pct_intl REAL,
+    pct_bond REAL,
+    pct_gold REAL,
+    risk INTEGER,
+    mer REAL,
+    ret_1m REAL,
+    ret_3m REAL,
+    ret_6m REAL,
+    ret_1a REAL,
+    ret_3a REAL,
+    ret_5a REAL,
+    ret_10a REAL,
+    volatility REAL,
+    max_drawdown REAL,
+    sharpe REAL,
+    reco_star REAL,
+    spec_star REAL,
+    ma_compo REAL,
+    notes TEXT DEFAULT '',
+    suggested_account TEXT DEFAULT '',
+    yahoo TEXT NOT NULL DEFAULT '',
+    updated_at TEXT
+);
+"""
+
+MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
-SCHEMA = SCHEMA_V1 + SCHEMA_V2
+SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3
 
 
 class Database:
@@ -208,3 +254,65 @@ class Database:
             (symbol.upper(), timeframe),
         ).fetchone()
         return row["drawings_json"] if row else None
+
+    # -- ETF Screener ---------------------------------------------------------
+    ETF_COLUMNS = [
+        "ticker", "name", "category", "exchange", "currency", "region",
+        "pct_can", "pct_us", "pct_intl", "pct_bond", "pct_gold", "risk", "mer",
+        "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
+        "volatility", "max_drawdown", "sharpe", "reco_star", "spec_star",
+        "ma_compo", "notes", "suggested_account", "yahoo", "updated_at",
+    ]
+
+    # Everything etf_metrics computes. Kept apart from the rest so a refresh
+    # can never reach a column you typed by hand.
+    ETF_METRIC_COLUMNS = {
+        "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
+        "volatility", "max_drawdown", "sharpe",
+    }
+
+    def etf_list(self) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM etf_screener ORDER BY ticker").fetchall()
+        return [dict(r) for r in rows]
+
+    def etf_get(self, ticker: str) -> dict | None:
+        row = self.conn.execute("SELECT * FROM etf_screener WHERE ticker=?", (ticker.upper(),)).fetchone()
+        return dict(row) if row else None
+
+    def etf_upsert(self, ticker: str, **fields):
+        """Insert or update one fund. Only the columns named in `fields` are
+        touched, so the same call serves both "add a ticker" (sparse fields)
+        and "edit one cell" (e.g. Ma compo) without clobbering the rest of the
+        row. Unknown keys are ignored rather than raising - the panel passes
+        whatever column it just edited."""
+        ticker = (ticker or "").upper().strip()
+        if not ticker:
+            return
+        cols = [c for c in fields if c in self.ETF_COLUMNS and c != "ticker"]
+        if self.etf_get(ticker) is None:
+            all_cols = ["ticker"] + cols
+            placeholders = ",".join("?" for _ in all_cols)
+            values = [ticker] + [fields[c] for c in cols]
+            self.conn.execute(
+                f"INSERT INTO etf_screener({','.join(all_cols)}) VALUES ({placeholders})", values)
+        elif cols:
+            set_clause = ",".join(f"{c}=?" for c in cols)
+            values = [fields[c] for c in cols] + [ticker]
+            self.conn.execute(f"UPDATE etf_screener SET {set_clause} WHERE ticker=?", values)
+        self.conn.commit()
+
+    def etf_delete(self, ticker: str):
+        self.conn.execute("DELETE FROM etf_screener WHERE ticker=?", (ticker.upper(),))
+        self.conn.commit()
+
+    def etf_update_metrics(self, ticker: str, metrics: dict):
+        """Write back the computed columns only. A None is dropped rather than
+        written: a fund with eight years of history has no ten-year number,
+        and blanking the one already in the row would lose data the refresh
+        cannot replace."""
+        fields = {k: v for k, v in metrics.items()
+                  if k in self.ETF_METRIC_COLUMNS and v is not None}
+        if not fields:
+            return
+        fields["updated_at"] = _now_iso()
+        self.etf_upsert(ticker, **fields)

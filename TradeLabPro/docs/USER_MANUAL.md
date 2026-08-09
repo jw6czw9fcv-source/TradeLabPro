@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.40.0**
+**Version 2.41.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
 **Home** dashboard showing your book, a chart of its year so far, the market
@@ -36,7 +36,7 @@ to explain what you're looking at.
 4. [Home](#4-home)
 5. [Scanner](#5-scanner)
 6. [Charts](#6-charts)
-7. [Watchlists](#7-watchlists)
+7. [Watchlists & ETF Screener](#7-watchlists--etf-screener)
 8. [Portfolio, Analytics, Dividends & Retirement](#8-portfolio-analytics-dividends--retirement)
 9. [Alerts](#9-alerts)
 10. [Heatmap](#10-heatmap)
@@ -367,12 +367,64 @@ chart **layouts**.
 
 ---
 
-## 7. Watchlists
+## 7. Watchlists & ETF Screener
 
 Track symbols you care about. The table shows **Item, Symbol, Last, Change %,
 Purpose**. You can import and export watchlists. Add symbols directly from Scanner
 results, or by right-clicking a **Heatmap** tile → *Add to watchlist*. Selecting
 an entry can load it on the chart.
+
+### ETF Screener
+
+A watchlist tells you what to look at. The **ETF Screener** tab is for the other
+question — *which fund, and how much of it* — and it is built for the way people
+actually answer that: in a spreadsheet, comparing a dozen funds side by side and
+nudging percentages until the mix looks right. That spreadsheet now lives in the
+app.
+
+**The table.** One row per fund, one column per thing you compare on: name,
+category, region, what the fund holds in **Canada / the US / international /
+bonds / gold**, a **risk** rating of your own from 1 to 5, the **MER**, returns
+from **one month to ten years**, **volatility**, **worst drawdown**, **Sharpe**,
+free-text **notes**, and the **account** you'd hold it in. Click any cell in a
+column you own and type. Percentages go in the way you'd say them — `20`, `20%`
+and `62,5 %` all mean the same thing — and the cell redraws as `20.0%` so what
+you typed and what was stored can never disagree.
+
+**Add and remove.** Type a ticker, optionally the symbol **Yahoo** knows it by
+(TSX listings end in `.TO`), and *Ajouter*. Leave the Yahoo box empty and the
+ticker is used as-is. *Retirer la sélection* removes the highlighted rows.
+
+**Returns and risk, in one click.** *Rafraîchir rendements/risque* downloads
+eleven years of history for every fund and recomputes the return columns —
+annualized past a year, with dividends reinvested — plus volatility, worst
+drawdown and Sharpe. It runs in the background with a progress bar and a
+**Stop** button; a fund Yahoo doesn't recognise is counted and skipped rather
+than stopping the run. **The refresh never touches what you typed**: category,
+weights, risk, notes and your compositions are yours.
+
+**The three compositions.** Below the table, *Reco ★*, *Spéculatif ★* and *Ma
+compo* are totalled side by side: what each mix holds by region, its weighted
+risk, its weighted MER, its weighted ten-year return, and whether the weights
+add up to 100% (`OK ✓` or *à ajuster*). Change a weight in the table and the
+totals move with it.
+
+**Two things the tab deliberately won't do.** A fund that listed five years ago
+has **no** ten-year return, so that cell stays empty instead of annualizing
+history it doesn't have — and a refresh that can't compute a figure leaves the
+one already there rather than blanking it. And when a total rests on only part
+of your allocation, it says so — `(sur 50 % de l'allocation)` — because counting
+the funds that lack the figure as zero would report your mix as worse than it
+is.
+
+**Starting from an existing workbook.** `python tools/import_etf_screener.py
+<fichier.xlsx>` loads a `Portefeuille_FNB.xlsx`-shaped sheet into the tab in one
+pass (headers on row 7). It's idempotent — running it twice doesn't duplicate
+anything — but it is an *import*, not a sync: values in the file overwrite the
+matching cells in the app. Needs `pip install openpyxl`.
+
+The star columns are labels carried over from your own workbook, not the app's
+opinion, and the suggested account is a general guide rather than tax advice.
 
 ---
 

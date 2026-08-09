@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "TradeLab Pro"
-APP_VERSION = '2.40.0 Your workplace retirement plan, fund by fund'
+APP_VERSION = '2.41.0 Your ETF workbook, in the app'
 
 # True when running from a packaged .exe rather than the source tree.
 FROZEN = bool(getattr(sys, "frozen", False))

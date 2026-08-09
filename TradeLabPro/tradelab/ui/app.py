@@ -1437,6 +1437,385 @@ class WatchlistPanel(QWidget):
         sym = item.text(); self.chart.plot(sym, get_history(sym, self.cfg.period, self.cfg.interval), self.cfg)
 
 
+class EtfMetricsWorker(QThread):
+    """Fetches 11 years of history and computes returns/risk for a batch of
+    ETF Screener rows off the UI thread. One request per fund, deliberately
+    spaced (Yahoo rate-limits), so a full refresh of thirty funds runs for a
+    minute or more - the same reason ScanWorker exists."""
+    progress = Signal(int, int, str)          # done, total, ticker just processed
+    row_done = Signal(str, object)            # ticker, metrics dict | None
+    finished_all = Signal(int, int, bool)     # updated, skipped, stopped early
+
+    SLEEP = 0.6   # pause between symbols, as in tools/maj_rendements.py
+
+    def __init__(self, rows: list):
+        super().__init__()
+        self.rows = rows          # [(ticker, yahoo_symbol), ...]
+        self._stop = False
+
+    def request_stop(self):
+        self._stop = True
+
+    def run(self):
+        from tradelab.core.etf_metrics import compute_metrics
+        updated = skipped = 0
+        total = len(self.rows)
+        for i, (ticker, yahoo) in enumerate(self.rows, start=1):
+            if self._stop:
+                break
+            try:
+                metrics = compute_metrics(yahoo)
+            except Exception:
+                # A single bad symbol must not take the whole refresh with it.
+                log.exception("ETF Screener: metrics failed for %s", yahoo)
+                metrics = None
+            if metrics:
+                updated += 1
+            else:
+                skipped += 1
+            try:
+                self.row_done.emit(ticker, metrics)
+                self.progress.emit(i, total, ticker)
+            except RuntimeError:
+                # The panel went away while we were still running.
+                self._stop = True
+                break
+            if i < total and not self._stop:
+                time.sleep(self.SLEEP)
+        try:
+            self.finished_all.emit(updated, skipped, self._stop)
+        except RuntimeError:
+            pass
+
+
+class EtfScreenerPanel(QWidget):
+    """Compare funds and build a target allocation — the Portefeuille_FNB.xlsx
+    workbook, in the app and backed by SQLite instead of a spreadsheet.
+
+    Two halves that never overwrite each other: what you type (category,
+    regional weights, risk, notes, the three model compositions) and what
+    Yahoo computes on refresh (returns, volatility, drawdown, Sharpe, via
+    core/etf_metrics.py — the same maths the maj_rendements.py script ran).
+    Percentages are stored as fractions and shown as percents, so 0.25 in the
+    database reads "25.0%" here and edits back the way you'd type it.
+    """
+
+    # (column key, header, editable)
+    COLUMNS = [
+        ("ticker", "Ticker", False),
+        ("name", "Nom", True),
+        ("category", "Catégorie", True),
+        ("region", "Région", True),
+        ("exchange", "Bourse", True),
+        ("currency", "Devise", True),
+        ("pct_can", "% Can", True),
+        ("pct_us", "% US", True),
+        ("pct_intl", "% Intl", True),
+        ("pct_bond", "% Obl.", True),
+        ("pct_gold", "% Or/Alt", True),
+        ("risk", "Risque", True),
+        ("mer", "MER", True),
+        ("ret_1m", "Rend 1M", False),
+        ("ret_3m", "Rend 3M", False),
+        ("ret_6m", "Rend 6M", False),
+        ("ret_1a", "Rend 1A", False),
+        ("ret_3a", "Rend 3A", False),
+        ("ret_5a", "Rend 5A", False),
+        ("ret_10a", "Rend 10A", False),
+        ("volatility", "Volatilité", False),
+        ("max_drawdown", "Pire baisse", False),
+        ("sharpe", "Sharpe", False),
+        ("reco_star", "Reco ★", True),
+        ("spec_star", "Spéculatif ★", True),
+        ("ma_compo", "Ma compo ✏️", True),
+        ("suggested_account", "Compte suggéré", True),
+        ("notes", "Notes", True),
+        ("yahoo", "Yahoo", True),
+        ("updated_at", "MàJ", False),
+    ]
+
+    # Stored as a fraction, typed and shown as a percent.
+    PERCENT_COLUMNS = {
+        "pct_can", "pct_us", "pct_intl", "pct_bond", "pct_gold", "mer",
+        "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
+        "volatility", "max_drawdown", "reco_star", "spec_star", "ma_compo",
+    }
+    NUMERIC_COLUMNS = PERCENT_COLUMNS | {"risk", "sharpe"}
+
+    # Which weight column the composition summary reads.
+    COMPOSITIONS = [("Ma compo", "ma_compo"), ("Reco ★", "reco_star"),
+                    ("Spéculatif ★", "spec_star")]
+
+    def __init__(self, db: Database):
+        super().__init__()
+        self.db = db
+        self.worker = None
+        self._loading = False   # itemChanged fires while we repopulate; ignore it then
+
+        layout = QVBoxLayout(self)
+
+        row = QHBoxLayout()
+        self.ticker_edit = QLineEdit(); self.ticker_edit.setPlaceholderText("Ticker (ex. VFV)")
+        self.ticker_edit.setMaximumWidth(160)
+        self.ticker_edit.returnPressed.connect(self.add_fund)
+        self.yahoo_edit = QLineEdit(); self.yahoo_edit.setPlaceholderText("Symbole Yahoo (ex. VFV.TO)")
+        self.yahoo_edit.setMaximumWidth(220)
+        self.yahoo_edit.returnPressed.connect(self.add_fund)
+        self.yahoo_edit.setToolTip("Le symbole que Yahoo Finance connaît. TSX = suffixe .TO. "
+                                   "Vide = on réutilise le ticker.")
+        add_btn = QPushButton("Ajouter"); add_btn.clicked.connect(self.add_fund)
+        remove_btn = QPushButton("Retirer la sélection"); remove_btn.clicked.connect(self.remove_selected)
+        self.refresh_btn = QPushButton("Rafraîchir rendements/risque")
+        self.refresh_btn.setToolTip("Télécharge 11 ans d'historique par fonds (Yahoo Finance) et recalcule "
+                                    "les rendements et le risque. N'écrase jamais ce que tu as saisi.")
+        self.refresh_btn.clicked.connect(self.refresh_metrics)
+        self.stop_btn = QPushButton("Arrêter"); self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self.stop_refresh)
+        row.addWidget(self.ticker_edit); row.addWidget(self.yahoo_edit)
+        row.addWidget(add_btn); row.addWidget(remove_btn)
+        row.addStretch(1)
+        row.addWidget(self.refresh_btn); row.addWidget(self.stop_btn)
+        layout.addLayout(row)
+
+        self.progress = QProgressBar(); self.progress.setVisible(False)
+        layout.addWidget(self.progress)
+
+        self.table = QTableWidget(0, len(self.COLUMNS))
+        self.table.setHorizontalHeaderLabels([label for _, label, _ in self.COLUMNS])
+        self.table.setSortingEnabled(True)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setAlternatingRowColors(True)
+        self.table.setMinimumHeight(320)
+        self.table.itemChanged.connect(self._on_item_changed)
+        layout.addWidget(self.table, 1)
+
+        self.status = QLabel("")
+        layout.addWidget(self.status)
+
+        summary_box = QGroupBox("Résultats de la composition")
+        summary_layout = QVBoxLayout(summary_box)
+        self.summary = QTableWidget(0, 1 + len(self.COMPOSITIONS))
+        self.summary.setHorizontalHeaderLabels([""] + [label for label, _ in self.COMPOSITIONS])
+        self.summary.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.summary.setSelectionMode(QAbstractItemView.NoSelection)
+        self.summary.verticalHeader().setVisible(False)
+        self.summary.setMaximumHeight(300)
+        summary_layout.addWidget(self.summary)
+        summary_layout.addWidget(QLabel(
+            "Les pourcentages se saisissent tels quels (20 = 20 %). Une figure suivie de "
+            "« sur X % » ne couvre que cette part de l'allocation — les fonds sans la donnée "
+            "en sont exclus plutôt que comptés à zéro. Analyse, pas un conseil financier."))
+        layout.addWidget(summary_box)
+
+        self.reload()
+
+    # -- data -------------------------------------------------------------
+    def reload(self):
+        """Repaint the whole table from the database. Sorting is switched off
+        while the rows go in: with it on, Qt re-sorts after every setItem and
+        the row you are half-way through filling moves out from under you."""
+        funds = self.db.etf_list()
+        self._loading = True
+        sorting = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(0)
+        self.table.setRowCount(len(funds))
+        for r, fund in enumerate(funds):
+            for c, (key, _label, editable) in enumerate(self.COLUMNS):
+                self.table.setItem(r, c, self._make_item(key, fund.get(key), editable))
+        self.table.setSortingEnabled(sorting)
+        self.table.resizeColumnsToContents()
+        self._loading = False
+        self.status.setText(f"{len(funds)} fonds. Clique une cellule pour la modifier.")
+        self._refresh_summary(funds)
+
+    def _make_item(self, key, value, editable):
+        item = table_item(
+            value if value is not None else "",
+            numeric=key in self.NUMERIC_COLUMNS,
+            display=self._format(key, value),
+        )
+        if not editable:
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        return item
+
+    def _format(self, key, value):
+        if value is None or value == "":
+            return ""
+        if key in self.PERCENT_COLUMNS:
+            try:
+                decimals = 2 if key == "mer" else 1
+                return f"{float(value) * 100:.{decimals}f}%"
+            except (TypeError, ValueError):
+                return str(value)
+        if key == "sharpe":
+            try:
+                return f"{float(value):.2f}"
+            except (TypeError, ValueError):
+                return str(value)
+        if key == "risk":
+            try:
+                return str(int(float(value)))
+            except (TypeError, ValueError):
+                return str(value)
+        if key == "updated_at":
+            return str(value)[:10]
+        return str(value)
+
+    def _parse(self, key, text):
+        """Turn what was typed into what the column stores. Anything that
+        isn't a number in a numeric column clears the cell rather than being
+        stored as text - the summary sums these."""
+        text = (text or "").strip()
+        if key in self.PERCENT_COLUMNS:
+            if not text:
+                return None
+            try:
+                return float(text.replace("%", "").replace(",", ".").strip()) / 100.0
+            except ValueError:
+                return None
+        if key == "sharpe":
+            try:
+                return float(text.replace(",", "."))
+            except ValueError:
+                return None
+        if key == "risk":
+            try:
+                return int(float(text.replace(",", ".")))
+            except ValueError:
+                return None
+        return text
+
+    def _col_key(self, col: int) -> str:
+        return self.COLUMNS[col][0]
+
+    def add_fund(self):
+        ticker = self.ticker_edit.text().strip().upper()
+        if not ticker:
+            self.status.setText("Entre un ticker à ajouter.")
+            return
+        yahoo = self.yahoo_edit.text().strip() or ticker
+        existed = self.db.etf_get(ticker) is not None
+        self.db.etf_upsert(ticker, yahoo=yahoo)
+        self.ticker_edit.clear(); self.yahoo_edit.clear()
+        self.reload()
+        if existed:
+            self.status.setText(f"{ticker} était déjà là — symbole Yahoo mis à jour ({yahoo}).")
+
+    def remove_selected(self):
+        rows = {i.row() for i in self.table.selectedIndexes()}
+        tickers = [self.table.item(r, 0).text() for r in rows if self.table.item(r, 0)]
+        if not tickers:
+            self.status.setText("Sélectionne d'abord une ou plusieurs lignes.")
+            return
+        for ticker in tickers:
+            self.db.etf_delete(ticker)
+        self.reload()
+        self.status.setText(f"Retiré : {', '.join(sorted(tickers))}.")
+
+    def _on_item_changed(self, item):
+        if self._loading:
+            return
+        row, col = item.row(), item.column()
+        key = self._col_key(col)
+        ticker_item = self.table.item(row, 0)
+        if ticker_item is None or key == "ticker":
+            return
+        ticker = ticker_item.text().strip().upper()
+        if not ticker:
+            return
+        value = self._parse(key, item.text())
+        self.db.etf_upsert(ticker, **{key: value})
+        # Re-render the cell so a typed "20" comes back as "20.0%", and refresh
+        # the totals the edit just moved.
+        self._loading = True
+        item.setText(self._format(key, value))
+        if isinstance(item, SortableTableWidgetItem):
+            item.sort_value = value if key in self.NUMERIC_COLUMNS else None
+        self._loading = False
+        self._refresh_summary()
+
+    # -- composition summary ----------------------------------------------
+    def _refresh_summary(self, funds=None):
+        from tradelab.core.etf_metrics import COMPOSITION_ROWS, composition_summary
+
+        if funds is None:
+            funds = self.db.etf_list()
+        summaries = [composition_summary(funds, key) for _label, key in self.COMPOSITIONS]
+
+        self.summary.setRowCount(1 + len(COMPOSITION_ROWS))
+        self.summary.setItem(0, 0, table_item("Total alloué (doit = 100 %)"))
+        for c, summary in enumerate(summaries, start=1):
+            total = summary["total"]
+            mark = "OK ✓" if abs(total - 1.0) < 0.005 else "à ajuster"
+            self.summary.setItem(0, c, table_item(f"{total * 100:.1f}%  {mark}"))
+        for r, (label, column, kind) in enumerate(COMPOSITION_ROWS, start=1):
+            self.summary.setItem(r, 0, table_item(label))
+            for c, summary in enumerate(summaries, start=1):
+                cell = summary["rows"][column]
+                self.summary.setItem(r, c, table_item(
+                    self._format_summary(column, kind, cell, summary["total"])))
+        self.summary.resizeColumnsToContents()
+
+    def _format_summary(self, column, kind, cell, total):
+        value, covered = cell["value"], cell["covered"]
+        if total <= 0:
+            return "—"
+        if kind == "pct":
+            decimals = 2 if column == "mer" else 1
+            text = f"{value * 100:.{decimals}f}%"
+        else:
+            text = f"{value:.2f}"
+        if covered <= 0:
+            return "—"
+        if covered < total - 0.005:
+            text += f"  (sur {covered / total * 100:.0f} % de l'allocation)"
+        return text
+
+    # -- refresh (Yahoo Finance) -------------------------------------------
+    def refresh_metrics(self):
+        if self.worker is not None and self.worker.isRunning():
+            return
+        rows = [(f["ticker"], f["yahoo"] or f["ticker"]) for f in self.db.etf_list()]
+        if not rows:
+            self.status.setText("Aucun fonds à rafraîchir. Ajoute d'abord des tickers.")
+            return
+        self.progress.setVisible(True)
+        self.progress.setRange(0, len(rows))
+        self.progress.setValue(0)
+        self.refresh_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.status.setText(f"Rafraîchissement de {len(rows)} fonds via Yahoo Finance…")
+        self.worker = EtfMetricsWorker(rows)
+        self.worker.progress.connect(self._on_progress)
+        self.worker.row_done.connect(self._on_row_done)
+        self.worker.finished_all.connect(self._on_refresh_finished)
+        self.worker.start()
+
+    def stop_refresh(self):
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.request_stop()
+            self.status.setText("Arrêt demandé — fin du fonds en cours…")
+
+    def _on_progress(self, done, total, ticker):
+        self.progress.setValue(done)
+        self.status.setText(f"{done}/{total} — {ticker}…")
+
+    def _on_row_done(self, ticker, metrics):
+        if metrics:
+            self.db.etf_update_metrics(ticker, metrics)
+
+    def _on_refresh_finished(self, updated, skipped, stopped):
+        self.progress.setVisible(False)
+        self.refresh_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.reload()
+        head = "Arrêté" if stopped else "Terminé"
+        self.status.setText(
+            f"{head} : {updated} fonds mis à jour, {skipped} sans données utilisables "
+            f"(historique trop court ou symbole Yahoo inconnu).")
+
+
 class _IbkrPositionsWorker(QThread):
     """Pulls open positions from the IBKR Flex Web Service off the UI thread.
     Read-only; no orders, no funds."""
@@ -7972,6 +8351,7 @@ class MainWindow(QMainWindow):
         # Build every panel first, then add the tabs in the order a trader
         # actually works through them (see below).
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
+        self.etf_screener_panel = EtfScreenerPanel(self.db)
         self.portfolio_panel = PortfolioPanel(self.db, self.chart, self.cfg)
         self.analytics_panel = PortfolioAnalyticsPanel(self.db, self.chart, self.cfg)
         self.dividends_panel = DividendsPanel(self.db, self.chart, self.cfg)
@@ -8015,6 +8395,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(self.news_panel), "News")             # any catalysts?
         tabs.addTab(_scroll_tab(self.scanner_panel), "Scanner")       # find setups
         tabs.addTab(_scroll_tab(self.watch_panel), "Watchlists")      # shortlist
+        tabs.addTab(_scroll_tab(self.etf_screener_panel), "ETF Screener")  # compare funds, build an allocation
         tabs.addTab(_scroll_tab(self.alerts_panel), "Alerts")         # get notified
         tabs.addTab(_scroll_tab(self.ai_panel), "AI Assist")          # analyse a setup
         tabs.addTab(_scroll_tab(self.risk_panel), "Risk")             # size the trade

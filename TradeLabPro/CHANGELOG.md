@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.41.0 - Your ETF workbook, in the app
+
+### Added
+- **An ETF Screener tab**, after Watchlists: the fund-comparison workbook you kept in Excel, now a table the app owns. One row per fund, thirty columns — name, category, region, what it holds in Canada / the US / international / bonds / gold, risk, MER, returns from one month to ten years, volatility, worst drawdown, Sharpe, notes, and which account it belongs in.
+- **Type percentages the way you say them.** `20`, `20%` and `62,5 %` all land as the same stored fraction, and the cell redraws as `20.0%` so what you typed and what was stored can't disagree. Clearing a number stores nothing rather than zero — a blank cell means "not known", and a zero would drag every total that touches it.
+- **One button for returns and risk.** *Rafraîchir rendements/risque* pulls eleven years of history per fund from Yahoo and recomputes 1M→10A (annualized past a year, dividends reinvested), annualized volatility, worst drawdown and Sharpe. It runs off the UI thread with a progress bar and a **Stop** button, spaced to stay under Yahoo's rate limit; a fund with no usable data is counted and skipped, not fatal.
+- **The three compositions, totalled.** *Reco ★*, *Spéculatif ★* and *Ma compo* sit side by side under the table with what each mix actually holds: regional split, weighted risk, weighted MER, weighted ten-year return, and whether the weights add to 100%.
+- New `core/etf_metrics.py` (Qt-free, offline-testable): `trailing_return`, `risk_metrics`, `get_prices`, `compute_metrics`, `composition_summary`.
+- `tools/import_etf_screener.py` loads an existing `Portefeuille_FNB.xlsx` into the table once — idempotent, so re-running it doesn't duplicate anything. `tools/maj_rendements.py` ships alongside as the original standalone script.
+
+### Notes — what this deliberately does not do
+- **A refresh never touches what you typed.** Returns and risk go to their own columns; category, weights, risk rating, notes and every composition are yours and are left alone. The two halves are separated in the database layer, not by convention.
+- **A missing number is not computed.** A fund that listed five years ago has no ten-year return, so the column stays empty rather than annualizing what isn't there — and a refresh that can't compute a figure leaves the one already on file instead of blanking it.
+- **A total says how much of the allocation it speaks for.** Weight half a book in funds with no ten-year figure and the weighted ten-year return reads `(sur 50 % de l'allocation)`, because the alternative — counting the missing half as zero — reports a mix as worse than it is.
+- **Nothing is recommended.** The star columns are labels carried over from your own workbook, not the app's opinion, and account placement is a general guide, not tax advice.
+
+### Verified
+- Full pytest suite (975) passes, including annualization over three years, the un-annualized six-month window, Sharpe going negative against the risk-free rate, the drawdown after a 30% drop, short history writing only the columns it can support, metrics never reaching a user column, `None` never blanking a stored figure, percent-in/percent-out cell editing, non-editable computed columns, the composition totals and their coverage note, and the Excel importer's header mapping and blank-cell handling.
+
 ## 2.40.0 - Your workplace retirement plan, fund by fund
 
 ### Added

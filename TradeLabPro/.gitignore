@@ -21,6 +21,12 @@ logs/
 data/
 data.old/
 
+# The ETF workbook tools/import_etf_screener.py reads. It holds your own target
+# allocations and notes, and the repo is public - the importer and its tests
+# both work without it (the tests build their own sheet). Keep the file locally;
+# delete this line if you ever decide the allocations are fine to publish.
+tools/Portefeuille_FNB.xlsx
+
 # --- Generated ---
 # Built from docs/USER_MANUAL.md by tools/build_manual_html.py. Rebuild it
 # before publishing rather than editing it; committing it would let the page
