@@ -147,6 +147,159 @@ def compute_metrics(symbol: str, prices: pd.Series | None = None) -> dict | None
     return out or None
 
 
+def rebased_series(histories: dict, base: float = 100.0) -> dict:
+    """Several funds on one scale: each restated to `base` at the first date
+    they all share.
+
+    Funds trade at unrelated prices — one unit of VFV is $150, one unit of MNT
+    is $40 — so plotting them raw is a set of lines at different altitudes and
+    no comparison at all. Rebasing from a *common* start is what makes the
+    laggard the line at the bottom; rebasing each from its own first bar would
+    silently compare different periods.
+    """
+    closes = {}
+    for symbol, df in (histories or {}).items():
+        if df is None:
+            continue
+        series = df["Close"] if hasattr(df, "columns") and "Close" in getattr(df, "columns", []) else df
+        try:
+            series = series.dropna()
+        except AttributeError:
+            continue
+        if series is None or len(series) < 2:
+            continue
+        closes[symbol] = series
+    if not closes:
+        return {}
+
+    start = max(series.index[0] for series in closes.values())
+    out = {}
+    for symbol, series in closes.items():
+        window = series[series.index >= start]
+        if len(window) < 2:
+            continue
+        first = float(window.iloc[0])
+        if first <= 0:
+            continue
+        out[symbol] = {
+            "dates": list(window.index),
+            "values": [float(v) / first * base for v in window],
+        }
+    return out
+
+
+def fund_symbol(fund: dict) -> str:
+    """The symbol a fund is priced and held under — the Yahoo listing when
+    there is one, since VFV.TO is what a Canadian book actually holds and VFV
+    is a different security."""
+    return str(fund.get("yahoo") or fund.get("ticker") or "").strip().upper()
+
+
+def rebalance(funds: list[dict], holding_rows: list[dict], weight_key: str = "my_mix") -> dict:
+    """A target allocation against the book actually held.
+
+    `holding_rows` is `portfolio_analytics.holdings()` output — symbol plus
+    `market_value` already converted to the display currency. Matching is by
+    the fund's Yahoo symbol.
+
+    Percentages are of the **whole book**, not of the part the plan describes,
+    and `unmatched` names the holdings the plan says nothing about. A target
+    measured only against the funds it happens to mention would report a book
+    as on-plan while half of it sat in something the plan never mentioned.
+    """
+    held = {}
+    for row in holding_rows or []:
+        symbol = str(row.get("symbol", "")).strip().upper()
+        value = row.get("market_value")
+        if symbol and value:
+            held[symbol] = held.get(symbol, 0.0) + float(value)
+    total = sum(held.values())
+
+    rows, matched_value = [], 0.0
+    for fund in funds:
+        target = _weight(fund, weight_key)
+        symbol = fund_symbol(fund)
+        value = held.get(symbol, 0.0)
+        if not target and not value:
+            continue
+        matched_value += value
+        actual = (value / total) if total else 0.0
+        rows.append({
+            "ticker": fund.get("ticker", ""),
+            "symbol": symbol,
+            "target_pct": target,
+            "actual_pct": actual,
+            "drift_pct": actual - target,
+            "market_value": value,
+            # Positive = buy this much to reach the target, negative = trim.
+            "amount": (target * total) - value if total else 0.0,
+        })
+    rows.sort(key=lambda r: abs(r["drift_pct"]), reverse=True)
+    unmatched = sorted(s for s in held if s not in {r["symbol"] for r in rows})
+    return {
+        "rows": rows,
+        "total": total,
+        "covered": (matched_value / total) if total else 0.0,
+        "unmatched": unmatched,
+    }
+
+
+# Two funds whose asset mixes differ by less than this (summed absolute
+# difference across the five buckets) are treated as the same exposure. 0.10
+# keeps VCN/XIC and VIU/XEF together without merging VFV and VGT.
+OVERLAP_TOLERANCE = 0.10
+_MIX_COLUMNS = ("pct_can", "pct_us", "pct_intl", "pct_bond", "pct_gold")
+
+
+def _mix(fund: dict) -> list[float] | None:
+    values = []
+    for column in _MIX_COLUMNS:
+        value = fund.get(column)
+        if value is None or value == "":
+            return None
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            return None
+    return values
+
+
+def overlaps(funds: list[dict], weight_key: str = "my_mix",
+             tolerance: float = OVERLAP_TOLERANCE) -> list[dict]:
+    """Pairs of funds in one allocation that buy the same thing twice.
+
+    Holding VCN and XIC together is not diversification — it is the Canadian
+    market at twice the trading cost. This flags pairs that both carry weight
+    and whose published asset mix is the same within `tolerance`, saying which
+    test caught them. It compares what the table knows; a pair with no mix
+    filled in is compared on category alone, and a pair with neither is not
+    guessed at.
+    """
+    weighted = [f for f in funds if _weight(f, weight_key) > 0]
+    found = []
+    for i, a in enumerate(weighted):
+        for b in weighted[i + 1:]:
+            mix_a, mix_b = _mix(a), _mix(b)
+            distance = None
+            if mix_a is not None and mix_b is not None:
+                distance = sum(abs(x - y) for x, y in zip(mix_a, mix_b))
+            same_category = bool(a.get("category")) and a.get("category") == b.get("category")
+            if distance is not None and distance <= tolerance:
+                reason = ("same category and near-identical mix" if same_category
+                          else "near-identical asset mix")
+            elif distance is None and same_category:
+                reason = "same category"
+            else:
+                continue
+            found.append({
+                "a": a.get("ticker", ""), "b": b.get("ticker", ""),
+                "reason": reason, "distance": distance,
+                "combined_weight": _weight(a, weight_key) + _weight(b, weight_key),
+            })
+    found.sort(key=lambda o: o["combined_weight"], reverse=True)
+    return found
+
+
 def _weight(fund: dict, weight_key: str) -> float:
     try:
         return float(fund.get(weight_key) or 0.0)

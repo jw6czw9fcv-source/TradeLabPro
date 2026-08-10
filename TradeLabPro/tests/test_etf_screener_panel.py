@@ -243,6 +243,171 @@ def test_finish_handler_says_when_it_was_stopped(panel):
     assert "Stopped" in panel.status.text()
 
 
+# -- filter, watchlist / portfolio, export ----------------------------------
+
+def _add(panel, *tickers):
+    for ticker in tickers:
+        panel.ticker_edit.setText(ticker)
+        panel.add_fund()
+
+
+def test_filter_hides_rows_that_do_not_match(panel):
+    panel.db.etf_upsert("VFV", name="Vanguard S&P 500", category="S&P 500")
+    panel.db.etf_upsert("VAB", name="Vanguard Bonds", category="Bonds")
+    panel.reload()
+    panel.filter_edit.setText("bond")
+    hidden = [panel.table.isRowHidden(r) for r in range(panel.table.rowCount())]
+    assert hidden.count(False) == 1
+    assert not panel.table.isRowHidden(
+        [r for r in range(2) if _cell(panel, r, "ticker").text() == "VAB"][0])
+
+
+def test_filter_matches_the_ticker_too(panel):
+    _add(panel, "VFV", "XUU")
+    panel.filter_edit.setText("xuu")
+    assert sum(not panel.table.isRowHidden(r) for r in range(2)) == 1
+
+
+def test_clearing_the_filter_shows_everything_again(panel):
+    _add(panel, "VFV", "XUU")
+    panel.filter_edit.setText("vfv")
+    panel.filter_edit.setText("")
+    assert all(not panel.table.isRowHidden(r) for r in range(2))
+
+
+def test_filtering_does_not_change_the_totals(panel):
+    """Hiding a row is a view change; the allocation still holds what it holds."""
+    panel.db.etf_upsert("VFV", my_mix=0.5)
+    panel.db.etf_upsert("VAB", my_mix=0.5)
+    panel.reload()
+    before = panel.summary.item(0, _summary_col(panel, "my_mix")).text()
+    panel.filter_edit.setText("VFV")
+    assert panel.summary.item(0, _summary_col(panel, "my_mix")).text() == before
+
+
+def test_add_selected_to_watchlist_uses_the_yahoo_symbol(panel):
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO")
+    panel.reload()
+    panel.table.selectRow(0)
+    panel.add_selected_to_watchlist()
+    assert "VFV.TO" in panel.db.watch_symbols()
+
+
+def test_add_selected_to_portfolio_adds_at_zero_shares(panel):
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO")
+    panel.reload()
+    panel.table.selectRow(0)
+    panel.add_selected_to_portfolio()
+    positions = panel.db.positions()
+    assert [p["symbol"] for p in positions] == ["VFV.TO"]
+    assert positions[0]["shares"] == 0      # the share count is yours to fill in
+
+
+def test_add_to_portfolio_does_not_duplicate_a_holding(panel):
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO")
+    panel.reload()
+    panel.table.selectRow(0)
+    panel.add_selected_to_portfolio()
+    panel.add_selected_to_portfolio()
+    assert len(panel.db.positions()) == 1
+    assert "already" in panel.status.text()
+
+
+def test_add_buttons_need_a_selection(panel):
+    _add(panel, "VFV")
+    panel.table.clearSelection()
+    panel.add_selected_to_watchlist()
+    assert panel.db.watch_symbols() == []
+    assert "Select" in panel.status.text()
+
+
+def test_export_writes_every_column_as_stored(panel, tmp_path, monkeypatch):
+    import csv
+    from tradelab.ui import app as appmod
+    panel.db.etf_upsert("VFV", name="Vanguard S&P 500", ret_1a=0.25, my_mix=0.2)
+    panel.reload()
+    out = tmp_path / "etf.csv"
+    monkeypatch.setattr(appmod.QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (str(out), "")))
+    panel.export_csv()
+    rows = list(csv.reader(out.read_text(encoding="utf-8-sig").splitlines()))
+    assert rows[0][0] == "Ticker"
+    body = dict(zip(rows[0], rows[1]))
+    assert body["Ticker"] == "VFV"
+    assert body["Ret 1Y"] == "0.25"      # the number, not "25.0%"
+
+
+def test_export_cancelled_writes_nothing(panel, tmp_path, monkeypatch):
+    from tradelab.ui import app as appmod
+    monkeypatch.setattr(appmod.QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: ("", "")))
+    panel.export_csv()      # must not raise
+    assert not list(tmp_path.glob("*.csv"))
+
+
+# -- overlap warning ---------------------------------------------------------
+
+def _canada(**extra):
+    return {"pct_can": 1.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 0.0,
+            "pct_gold": 0.0, "category": "Canadian equity", **extra}
+
+
+def test_overlap_warning_names_the_pair(panel):
+    panel.db.etf_upsert("VCN", **_canada(my_mix=0.2))
+    panel.db.etf_upsert("XIC", **_canada(my_mix=0.1))
+    panel.reload()
+    text = panel.overlap_label.text()
+    assert "VCN" in text and "XIC" in text
+
+
+def test_no_overlap_warning_for_different_exposures(panel):
+    panel.db.etf_upsert("VCN", **_canada(my_mix=0.5))
+    panel.db.etf_upsert("VAB", category="Bonds", my_mix=0.5, pct_can=0.0, pct_us=0.0,
+                        pct_intl=0.0, pct_bond=1.0, pct_gold=0.0)
+    panel.reload()
+    assert panel.overlap_label.text() == ""
+
+
+def test_overlap_warning_follows_the_selected_allocation(panel):
+    panel.db.etf_upsert("VCN", **_canada(my_mix=0.2, low_risk=0.0))
+    panel.db.etf_upsert("XIC", **_canada(my_mix=0.1, low_risk=0.0))
+    panel.reload()
+    assert panel.overlap_label.text()
+    low = [i for i, (_l, k) in enumerate(panel.COMPOSITIONS) if k == "low_risk"][0]
+    panel.composition_combo.setCurrentIndex(low)
+    assert panel.overlap_label.text() == ""
+
+
+# -- the analyses ------------------------------------------------------------
+
+def test_compare_needs_at_least_two_funds(panel):
+    _add(panel, "VFV")
+    panel.table.selectRow(0)
+    panel.compare_selected()
+    assert panel._analysis_worker is None
+    assert "at least two" in panel.status.text()
+
+
+def test_target_vs_held_says_when_there_are_no_positions(panel):
+    _add(panel, "VFV")
+    panel.compare_to_portfolio()
+    assert panel._analysis_worker is None
+    assert "Portfolio tab" in panel.status.text()
+
+
+def test_look_through_says_when_the_allocation_is_empty(panel):
+    _add(panel, "VFV")           # listed, but no weight typed
+    panel.show_look_through()
+    assert panel._analysis_worker is None
+    assert "empty" in panel.status.text()
+
+
+def test_the_analyses_read_the_selected_allocation(panel):
+    assert panel.current_weight_key() == "my_mix"       # defaults to your own
+    panel.composition_combo.setCurrentIndex(0)
+    assert panel.current_weight_key() == "low_risk"
+
+
 # -- language & reference notes ---------------------------------------------
 
 FRENCH_LETTERS = set("àâäçéèêëîïôöùûüÀÂÄÇÉÈÊËÎÏÔÖÙÛÜ")

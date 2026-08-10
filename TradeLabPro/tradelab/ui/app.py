@@ -452,14 +452,14 @@ class ScannerPanel(QWidget):
         self.add_watch.clicked.connect(self.add_selected_watch)
         self.add_port = QPushButton("Add selected to Portfolio")
         self.add_port.clicked.connect(self.add_selected_portfolio)
-        self.load_chart = QPushButton("Load selected chart")
-        self.load_chart.clicked.connect(self.load_selected_chart)
         export_btn = QPushButton("Export results CSV")
         export_btn.clicked.connect(self.export_results)
         self.heatmap_btn = QPushButton("🗺 Map results")
         self.heatmap_btn.setToolTip("Show the scan results as a heatmap (sized by cap, coloured by % change).")
         self.heatmap_btn.clicked.connect(self.show_results_in_heatmap)
-        row.addWidget(self.add_watch); row.addWidget(self.add_port); row.addWidget(self.load_chart)
+        # No "Load selected chart" button: double-clicking a row already charts
+        # it, and the right-click menu keeps the explicit version.
+        row.addWidget(self.add_watch); row.addWidget(self.add_port)
         row.addWidget(self.heatmap_btn); row.addWidget(export_btn)
         layout.addLayout(row)
 
@@ -1566,6 +1566,59 @@ class EtfMetricsWorker(QThread):
             pass
 
 
+class _EtfReportDialog(QDialog):
+    """A one-off table of results with a footnote — used for the analyses that
+    answer a question rather than edit the Screener (target vs held, what the
+    mix really holds). A dialog because none of them belong in the fund table:
+    their rows aren't funds."""
+
+    def __init__(self, parent, title, headers, rows, footnote=""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(760, 460)
+        layout = QVBoxLayout(self)
+        self.table = QTableWidget(len(rows), len(headers))
+        self.table.setHorizontalHeaderLabels(headers)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        for r, row in enumerate(rows):
+            for c, cell in enumerate(row):
+                text, colour, sort_value = (cell if isinstance(cell, tuple)
+                                            else (cell, None, None))
+                item = table_item(sort_value if sort_value is not None else text,
+                                  numeric=sort_value is not None, display=text)
+                if colour:
+                    item.setForeground(QColor(colour))
+                self.table.setItem(r, c, item)
+        self.table.setSortingEnabled(True)
+        self.table.resizeColumnsToContents()
+        layout.addWidget(self.table, 1)
+        if footnote:
+            note = QLabel(footnote)
+            note.setWordWrap(True)
+            note.setStyleSheet(f"color: {theme.MUTED}; font-size: 11px;")
+            layout.addWidget(note)
+        close = QPushButton("Close"); close.clicked.connect(self.accept)
+        layout.addWidget(close)
+
+
+class _EtfCompareDialog(QDialog):
+    """The selected funds on one chart, each restated to 100 at the first date
+    they all share."""
+
+    def __init__(self, parent, rebased, footnote=""):
+        super().__init__(parent)
+        self.setWindowTitle("Compare funds")
+        self.resize(900, 560)
+        layout = QVBoxLayout(self)
+        self.chart = RebasedChartWidget()
+        layout.addWidget(self.chart, 1)
+        self.chart.show_funds(rebased, title="Rebased to 100 at a common start",
+                              footnote=footnote)
+        close = QPushButton("Close"); close.clicked.connect(self.accept)
+        layout.addWidget(close)
+
+
 class EtfScreenerPanel(QWidget):
     """Compare funds and build a target allocation — a fund-comparison
     workbook, in the app and backed by SQLite instead of a spreadsheet.
@@ -1622,6 +1675,16 @@ class EtfScreenerPanel(QWidget):
     }
     NUMERIC_COLUMNS = PERCENT_COLUMNS | {"risk", "sharpe"}
 
+    # Measured figures worth colouring green/red. Weights and fees are not
+    # here: a 20% allocation is not "good", and every MER is a cost.
+    COLOURED_COLUMNS = {
+        "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
+        "sharpe",
+    }
+    # What the filter box searches.
+    FILTER_COLUMNS = ("ticker", "name", "category", "region", "notes",
+                      "suggested_account")
+
     # Which weight column each summary column reads.
     COMPOSITIONS = [("Low risk", "low_risk"), ("Mid risk", "mid_risk"),
                     ("High risk", "high_risk"), ("My mix", "my_mix")]
@@ -1648,8 +1711,11 @@ class EtfScreenerPanel(QWidget):
         self.db = db
         self.chart = chart
         self.cfg = cfg
+        self.on_watchlist_changed = None
+        self.on_portfolio_changed = None
         self.worker = None
         self._chart_worker = None
+        self._analysis_worker = None
         self._loading = False   # itemChanged fires while we repopulate; ignore it then
 
         layout = QVBoxLayout(self)
@@ -1677,10 +1743,53 @@ class EtfScreenerPanel(QWidget):
         self.refresh_btn.clicked.connect(self.refresh_metrics)
         self.stop_btn = QPushButton("Stop"); self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_refresh)
+        self.filter_edit = QLineEdit(); self.filter_edit.setPlaceholderText("Filter…")
+        self.filter_edit.setFixedWidth(160)
+        self.filter_edit.setClearButtonEnabled(True)
+        self.filter_edit.setToolTip("Show only funds whose ticker, name, category or "
+                                    "region contains this text.")
+        self.filter_edit.textChanged.connect(self.apply_filter)
         for widget in (self.ticker_edit, self.yahoo_edit, add_btn, remove_btn,
-                       self.refresh_btn, self.stop_btn):
+                       self.filter_edit, self.refresh_btn, self.stop_btn):
             controls.addWidget(widget)
         layout.addWidget(bar)
+
+        # Second row: things you do with a selection or with the whole
+        # allocation, kept apart from adding and refreshing rows.
+        actions_bar = QWidget()
+        policy = actions_bar.sizePolicy(); policy.setHeightForWidth(True)
+        actions_bar.setSizePolicy(policy)
+        actions = FlowLayout(actions_bar, hspacing=6, vspacing=4)
+        self.watch_btn = QPushButton("Add selected to Watchlist")
+        self.watch_btn.clicked.connect(self.add_selected_to_watchlist)
+        self.portfolio_btn = QPushButton("Add selected to Portfolio")
+        self.portfolio_btn.setToolTip("Adds the fund at 0 shares, ready for you to enter "
+                                      "what you hold on the Portfolio tab.")
+        self.portfolio_btn.clicked.connect(self.add_selected_to_portfolio)
+        self.compare_btn = QPushButton("Compare selected")
+        self.compare_btn.setToolTip("Plots the selected funds on one chart, each restated to "
+                                    "100 at the first date they all share.")
+        self.compare_btn.clicked.connect(self.compare_selected)
+        self.rebalance_btn = QPushButton("Target vs held")
+        self.rebalance_btn.setToolTip("Compares this allocation against the positions on your "
+                                      "Portfolio tab and reports the gap in dollars.")
+        self.rebalance_btn.clicked.connect(self.compare_to_portfolio)
+        self.lookthrough_btn = QPushButton("What this mix holds")
+        self.lookthrough_btn.setToolTip("Opens every fund in the allocation up to the companies "
+                                        "inside it, so the same name held twice shows once.")
+        self.lookthrough_btn.clicked.connect(self.show_look_through)
+        export_btn = QPushButton("Export CSV"); export_btn.clicked.connect(self.export_csv)
+        self.composition_combo = QComboBox()
+        for label, key in self.COMPOSITIONS:
+            self.composition_combo.addItem(label, key)
+        self.composition_combo.setCurrentIndex(len(self.COMPOSITIONS) - 1)   # My mix
+        self.composition_combo.setToolTip("Which allocation the analyses below act on.")
+        self.composition_combo.currentIndexChanged.connect(lambda _i: self._refresh_summary())
+        for widget in (self.watch_btn, self.portfolio_btn, self.compare_btn,
+                       QLabel("  Allocation:"), self.composition_combo,
+                       self.rebalance_btn, self.lookthrough_btn, export_btn):
+            actions.addWidget(widget)
+        layout.addWidget(actions_bar)
 
         self.progress = QProgressBar(); self.progress.setVisible(False)
         layout.addWidget(self.progress)
@@ -1717,6 +1826,10 @@ class EtfScreenerPanel(QWidget):
             "figure are left out rather than counted as zero. Analysis, not financial advice.")
         summary_note.setWordWrap(True)
         summary_layout.addWidget(summary_note)
+        self.overlap_label = QLabel("")
+        self.overlap_label.setWordWrap(True)
+        self.overlap_label.setStyleSheet(f"color: {theme.NEUTRAL};")
+        summary_layout.addWidget(self.overlap_label)
         layout.addWidget(summary_box)
 
         notes_box = QGroupBox("Notes")
@@ -1761,6 +1874,11 @@ class EtfScreenerPanel(QWidget):
         )
         if not editable:
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        # Colour the computed figures so a column reads at a glance instead of
+        # being thirty-one numbers to compare by eye. Only the measured ones:
+        # a weight you typed is not good or bad.
+        if key in self.COLOURED_COLUMNS and isinstance(value, (int, float)):
+            item.setForeground(QColor(theme.pnl_color(value)))
         return item
 
     def _format(self, key, value):
@@ -1859,6 +1977,103 @@ class EtfScreenerPanel(QWidget):
         self._loading = False
         self._refresh_summary()
 
+    # -- filtering and selection -------------------------------------------
+    def apply_filter(self, text=None):
+        """Hide rows that don't match the filter box. Hidden, not deleted: the
+        totals below still describe the whole allocation, because filtering the
+        view is not the same as changing what you hold."""
+        needle = (self.filter_edit.text() if text is None else text).strip().casefold()
+        columns = [i for i, (key, _l, _e) in enumerate(self.COLUMNS)
+                   if key in self.FILTER_COLUMNS]
+        shown = 0
+        for row in range(self.table.rowCount()):
+            if not needle:
+                match = True
+            else:
+                match = any(needle in (self.table.item(row, c).text().casefold()
+                                       if self.table.item(row, c) else "")
+                            for c in columns)
+            self.table.setRowHidden(row, not match)
+            frozen = getattr(self, "frozen", None)
+            if frozen is not None:
+                frozen.setRowHidden(row, not match)
+            shown += 1 if match else 0
+        if needle:
+            self.status.setText(f"{shown} of {self.table.rowCount()} funds match “{needle}”.")
+        return shown
+
+    def selected_tickers(self) -> list:
+        rows = sorted({i.row() for i in self.table.selectedIndexes()})
+        tickers = []
+        for row in rows:
+            item = self.table.item(row, 0)
+            if item and not self.table.isRowHidden(row):
+                tickers.append(item.text().strip().upper())
+        return tickers
+
+    def _symbols_for(self, tickers) -> list:
+        from tradelab.core.etf_metrics import fund_symbol
+        out = []
+        for ticker in tickers:
+            fund = self.db.etf_get(ticker)
+            if fund:
+                out.append(fund_symbol(fund))
+        return [s for s in out if s]
+
+    # -- watchlist / portfolio ---------------------------------------------
+    def add_selected_to_watchlist(self):
+        symbols = self._symbols_for(self.selected_tickers())
+        if not symbols:
+            self.status.setText("Select one or more funds first.")
+            return
+        for symbol in symbols:
+            self.db.add_watch_symbol(symbol)
+        if self.on_watchlist_changed:
+            self.on_watchlist_changed()
+        self.status.setText(f"Added to Watchlist: {', '.join(symbols)}.")
+
+    def add_selected_to_portfolio(self):
+        """Adds the fund at zero shares, the way the Scanner does. The share
+        count is yours to fill in on the Portfolio tab - this tab knows what
+        you want to hold, never what you actually bought."""
+        symbols = self._symbols_for(self.selected_tickers())
+        if not symbols:
+            self.status.setText("Select one or more funds first.")
+            return
+        held = {str(p.get("symbol", "")).upper() for p in self.db.positions()}
+        added = [s for s in symbols if s not in held]
+        for symbol in added:
+            self.db.add_position(symbol, 0, 0.0)
+        if added and self.on_portfolio_changed:
+            self.on_portfolio_changed()
+        skipped = len(symbols) - len(added)
+        message = f"Added to Portfolio at 0 shares: {', '.join(added)}." if added else ""
+        if skipped:
+            message += f" {skipped} already held." if message else f"{skipped} already in the Portfolio."
+        self.status.setText(message.strip())
+
+    # -- export -------------------------------------------------------------
+    def export_csv(self):
+        import csv
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export ETF Screener", "etf_screener.csv", "CSV files (*.csv)")
+        if not path:
+            return
+        funds = self.db.etf_list()
+        keys = [key for key, _label, _editable in self.COLUMNS]
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as handle:
+                writer = csv.writer(handle)
+                writer.writerow([label for _key, label, _editable in self.COLUMNS])
+                for fund in funds:
+                    writer.writerow([fund.get(key, "") for key in keys])
+        except OSError as exc:
+            self.status.setText(f"Could not write {path}: {exc}")
+            return
+        # Fractions, not display percents: a spreadsheet should get the number,
+        # not the formatting.
+        self.status.setText(f"Exported {len(funds)} funds to {path} (rates as fractions).")
+
     # -- charting ----------------------------------------------------------
     def _chart_row(self, row, column):
         """Double-clicking a ticker loads that fund on the main chart.
@@ -1890,10 +2105,164 @@ class EtfScreenerPanel(QWidget):
         except Exception as exc:
             self.status.setText(f"Could not chart {symbol}: {exc}")
 
+    # -- analyses on the whole allocation ----------------------------------
+    def current_weight_key(self) -> str:
+        return self.composition_combo.currentData() or "my_mix"
+
+    def _busy(self) -> bool:
+        worker = self._analysis_worker
+        return worker is not None and worker.isRunning()
+
+    def compare_selected(self):
+        """Plot the selected funds against each other, rebased to a common
+        start. Two or more, since one fund rebased to 100 compares nothing."""
+        symbols = self._symbols_for(self.selected_tickers())
+        if len(symbols) < 2:
+            self.status.setText("Select at least two funds to compare.")
+            return
+        if self._busy():
+            return
+        period = getattr(self.cfg, "period", None) or "5y"
+        self.status.setText(f"Loading {len(symbols)} funds…")
+        worker = _MarketRefreshWorker(sorted(set(symbols)), period=period)
+        worker.done.connect(self._on_compare_loaded)
+        self._analysis_worker = worker
+        worker.start()
+
+    def _on_compare_loaded(self, history):
+        from tradelab.core.etf_metrics import rebased_series
+        from tradelab.data.market_data import is_synthetic
+        history = {s: df for s, df in (history or {}).items()
+                   if df is not None and not is_synthetic(df)}
+        rebased = rebased_series(history)
+        if len(rebased) < 2:
+            self.status.setText("Not enough real price history to compare those funds.")
+            return
+        self.status.setText(f"Comparing {len(rebased)} funds.")
+        _EtfCompareDialog(
+            self, rebased,
+            footnote=("Each fund restated to 100 at the first date they all share, so the "
+                      "lines answer one question: which grew fastest over the same period. "
+                      "Adjusted closes — dividends reinvested. " + theme.NOT_ADVICE),
+        ).exec()
+
+    def compare_to_portfolio(self):
+        """This allocation against the positions recorded on the Portfolio tab."""
+        from tradelab.core.portfolio_analytics import currency_of, fx_pair_symbol
+        if self._busy():
+            return
+        positions = self.db.positions()
+        if not positions:
+            self.status.setText("No positions recorded yet — add holdings on the Portfolio tab first.")
+            return
+        self._target_currency = "CAD"
+        held = {str(p["symbol"]).upper() for p in positions}
+        self._fx_pairs = {c: fx_pair_symbol(c, self._target_currency)
+                          for c in {currency_of(s) for s in held} - {self._target_currency}}
+        symbols = sorted(held | set(self._fx_pairs.values()))
+        self.status.setText(f"Pricing {len(held)} holdings…")
+        worker = _MarketRefreshWorker(symbols, period="6mo")
+        worker.done.connect(self._on_rebalance_loaded)
+        self._analysis_worker = worker
+        worker.start()
+
+    def _on_rebalance_loaded(self, history):
+        from tradelab.core import portfolio_analytics as pa
+        from tradelab.core.etf_metrics import rebalance
+        from tradelab.data.market_data import is_synthetic
+        # Same rule as Analytics: never value real money on synthetic prices.
+        history = {s: df for s, df in (history or {}).items()
+                   if df is not None and not is_synthetic(df)}
+        fx = {c: history.get(sym) for c, sym in self._fx_pairs.items()}
+        rows, _total = pa.holdings(self.db.positions(), history,
+                                   target=self._target_currency, fx=fx)
+        weight_key = self.current_weight_key()
+        result = rebalance(self.db.etf_list(), rows, weight_key)
+        if not result["rows"]:
+            self.status.setText("Nothing to compare: that allocation is empty and none of "
+                                "your holdings are in the Screener.")
+            return
+
+        label = dict((k, l) for l, k in self.COMPOSITIONS).get(weight_key, weight_key)
+        table = []
+        for row in result["rows"]:
+            amount = row["amount"]
+            table.append([
+                row["ticker"],
+                (f"{row['target_pct'] * 100:.1f}%", None, row["target_pct"]),
+                (f"{row['actual_pct'] * 100:.1f}%", None, row["actual_pct"]),
+                (f"{row['drift_pct'] * 100:+.1f} pp", theme.pnl_color(-abs(row["drift_pct"])),
+                 row["drift_pct"]),
+                (f"${row['market_value']:,.0f}", None, row["market_value"]),
+                (("Buy " if amount > 0 else "Trim ") + f"${abs(amount):,.0f}",
+                 theme.UP if amount > 0 else theme.DOWN, amount),
+            ])
+        missing = result["unmatched"]
+        footnote = (
+            f"“{label}” against the positions on your Portfolio tab, valued in "
+            f"{self._target_currency} at the current rate. Percentages are of the "
+            f"**whole book** (${result['total']:,.0f}), not of the part this allocation "
+            f"describes — the allocation currently covers "
+            f"{result['covered'] * 100:.0f}% of it."
+        )
+        if missing:
+            footnote += (" Held but not in the Screener, so no target exists for them: "
+                         + ", ".join(missing) + ".")
+        footnote += (" Amounts are what it would take to close the gap today; they ignore "
+                     "commissions, tax on a sale, and whether the trade is worth making. "
+                     + theme.NOT_ADVICE)
+        self.status.setText(f"Compared {len(table)} funds against the book.")
+        _EtfReportDialog(self, f"Target vs held — {label}",
+                         ["Ticker", "Target", "Held", "Drift", "Value", "To close the gap"],
+                         table, footnote).exec()
+
+    def show_look_through(self):
+        """What the allocation actually owns once every fund is opened up."""
+        from tradelab.core.etf_metrics import fund_symbol
+        if self._busy():
+            return
+        weight_key = self.current_weight_key()
+        funds = [f for f in self.db.etf_list() if (f.get(weight_key) or 0) > 0]
+        if not funds:
+            self.status.setText("That allocation is empty — type some weights first.")
+            return
+        self._lt_rows = [{"symbol": fund_symbol(f), "market_value": float(f[weight_key]) * 100.0}
+                         for f in funds]
+        self.status.setText(f"Opening up {len(funds)} funds…")
+        worker = _FundCompositionWorker([r["symbol"] for r in self._lt_rows])
+        worker.done.connect(self._on_look_through_loaded)
+        self._analysis_worker = worker
+        worker.start()
+
+    def _on_look_through_loaded(self, compositions, _sectors, error):
+        from tradelab.core import portfolio_analytics as pa
+        if error:
+            self.status.setText(f"Could not open the funds up: {error}")
+            return
+        result = pa.look_through(self._lt_rows, compositions or {})
+        rows = result.get("rows") or []
+        if not rows:
+            self.status.setText("No published holdings for those funds — nothing to open up.")
+            return
+        table = [[r.get("symbol", ""),
+                  (f"{r.get('pct', 0):.1f}%", None, r.get("pct", 0)),
+                  ", ".join(r.get("via") or []) or "held directly"]
+                 for r in rows]
+        unallocated = result.get("unallocated") or 0
+        footnote = (
+            "Every company this allocation would own, counting what each fund holds. A "
+            "name that appears in three funds is one exposure here, not three. "
+            f"Sources publish only each fund's top holdings, so {unallocated:.0f}% of the "
+            "allocation sits below what they report and is left out rather than spread "
+            "across the names above — every percentage here is a floor. " + theme.NOT_ADVICE)
+        self.status.setText(f"{len(rows)} companies behind that allocation.")
+        _EtfReportDialog(self, "What this mix holds",
+                         ["Company", "% of the mix", "Held via"], table, footnote).exec()
+
     def shutdown(self):
         """Stop any in-flight refresh or chart fetch so closing the window
         doesn't leave a thread running against a deleted panel."""
-        for attr in ("worker", "_chart_worker"):
+        for attr in ("worker", "_chart_worker", "_analysis_worker"):
             worker = getattr(self, attr, None)
             if worker is not None and worker.isRunning():
                 if hasattr(worker, "request_stop"):
@@ -1922,6 +2291,26 @@ class EtfScreenerPanel(QWidget):
                 self.summary.setItem(r, c, table_item(
                     self._format_summary(column, kind, cell, summary["total"])))
         self.summary.resizeColumnsToContents()
+        self._refresh_overlaps(funds)
+
+    def _refresh_overlaps(self, funds):
+        """Name pairs in the selected allocation that buy the same thing twice.
+        Computed on every edit — it needs no network, and a warning you have to
+        ask for is a warning you don't see."""
+        from tradelab.core.etf_metrics import overlaps
+        label = dict((k, l) for l, k in self.COMPOSITIONS).get(
+            self.current_weight_key(), "")
+        found = overlaps(funds, self.current_weight_key())
+        if not found:
+            self.overlap_label.setText("")
+            return
+        pairs = "; ".join(f"{o['a']} + {o['b']} ({o['reason']}, "
+                          f"{o['combined_weight'] * 100:.0f}% together)" for o in found[:4])
+        more = f" and {len(found) - 4} more" if len(found) > 4 else ""
+        self.overlap_label.setText(
+            f"⚠ “{label}” holds the same exposure twice: {pairs}{more}. "
+            f"Two funds tracking one market is that market at twice the trading cost, "
+            f"not diversification — unless you hold them in different accounts on purpose.")
 
     def _format_summary(self, column, kind, cell, total):
         value, covered = cell["value"], cell["covered"]
@@ -8525,6 +8914,10 @@ class MainWindow(QMainWindow):
         self.scanner_panel = ScannerPanel(self.db, self.chart, self.watch_panel.refresh,
                                           self.portfolio_panel.refresh,
                                           on_show_heatmap=self._show_scan_in_heatmap)
+        # Wired after construction: the ETF Screener is built before the panels
+        # it refreshes exist.
+        self.etf_screener_panel.on_watchlist_changed = self.watch_panel.refresh
+        self.etf_screener_panel.on_portfolio_changed = self.portfolio_panel.refresh
         self.alerts_panel = AlertsPanel(symbol_provider=self.db.watch_symbols)
         self.heatmap_panel = HeatmapPanel(self.db, self.chart, self.cfg)
         self._heatmap_page = _scroll_tab(self.heatmap_panel)
