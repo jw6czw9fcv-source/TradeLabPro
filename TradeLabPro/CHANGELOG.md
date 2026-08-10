@@ -8,8 +8,11 @@
 - **One button for returns and risk.** *Rafraîchir rendements/risque* pulls eleven years of history per fund from Yahoo and recomputes 1M→10A (annualized past a year, dividends reinvested), annualized volatility, worst drawdown and Sharpe. It runs off the UI thread with a progress bar and a **Stop** button, spaced to stay under Yahoo's rate limit; a fund with no usable data is counted and skipped, not fatal.
 - **Four allocations, totalled side by side.** **Low risk**, **Mid risk**, **High risk** and **My mix** are weight columns in the table, summarised under it: regional split, weighted risk, weighted MER, weighted ten-year return, and whether the weights add to 100%. Three reference ladders and your own working mix stay in view at once.
 - **The CAD ↔ US equivalence notes** at the foot of the tab: which Canadian listing stands in for which US fund (XUU for VTI, QQC for QQQ, MNT for IAU…), which have no CAD twin at the same return, and why VGT and TEC are not the same trade. Reference text, not a recommendation.
+- **The Ticker column stays pinned** while the other thirty scroll right, so a Sharpe ratio can always be traced back to the fund it belongs to.
+- **Double-click a ticker to chart it** — the Yahoo symbol, since `VFV.TO` has prices and `VFV` does not. Fetched off the UI thread like every other click-to-chart in the app.
+- The toolbar **wraps onto a second row** as the panel narrows, instead of pushing Refresh and Stop off the edge when you widen the chart.
 - New `core/etf_metrics.py` (Qt-free, offline-testable): `trailing_return`, `risk_metrics`, `get_prices`, `compute_metrics`, `composition_summary`.
-- `tools/import_etf_screener.py` loads an existing `Portefeuille_FNB.xlsx` into the table once — idempotent, so re-running it doesn't duplicate anything. `tools/maj_rendements.py` ships alongside as the original standalone script.
+- `tools/import_etf_screener.py` loads an existing `Portefeuille_FNB.xlsx` into the table once — idempotent, so re-running it doesn't duplicate anything, and it **translates the workbook's French text** (category, region, account, per-fund notes) so an English table isn't filled with French cells. `tools/maj_rendements.py` ships alongside as the original standalone script.
 
 ### Notes — what this deliberately does not do
 - **A refresh never touches what you typed.** Returns and risk go to their own columns; category, weights, risk rating, notes and every composition are yours and are left alone. The two halves are separated in the database layer, not by convention.
@@ -18,7 +21,7 @@
 - **Nothing is recommended.** The risk labels are your own notes, not the app's opinion, and account placement is a general guide, not tax advice.
 
 ### Verified
-- Full pytest suite (981) passes, including annualization over three years, the un-annualized six-month window, Sharpe going negative against the risk-free rate, the drawdown after a 30% drop, short history writing only the columns it can support, metrics never reaching a user column, `None` never blanking a stored figure, percent-in/percent-out cell editing, non-editable computed columns, each allocation totalling from its own column, the coverage note, the schema-v4 rename preserving weights already typed, and the Excel importer's header mapping and blank-cell handling.
+- Full pytest suite (990) passes, including annualization over three years, the un-annualized six-month window, Sharpe going negative against the risk-free rate, the drawdown after a 30% drop, short history writing only the columns it can support, metrics never reaching a user column, `None` never blanking a stored figure, percent-in/percent-out cell editing, non-editable computed columns, each allocation totalling from its own column, the coverage note, the schema-v4 rename preserving weights already typed, the pinned column sharing one model and scrolling in step, double-click charting the Yahoo symbol and not firing on an editable cell, the wrapping toolbar, and the Excel importer's header mapping and blank-cell handling.
 
 ## 2.40.0 - Your workplace retirement plan, fund by fund
 

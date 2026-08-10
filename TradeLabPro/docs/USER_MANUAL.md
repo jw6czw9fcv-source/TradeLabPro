@@ -386,9 +386,17 @@ you typed and what was stored can never disagree. Clearing a number stores
 nothing rather than zero: a blank means "not known", and a zero would drag every
 total that touches it.
 
+The **Ticker column stays pinned** to the left edge: scroll thirty columns to
+the right and you can still see which fund the Sharpe ratio you're reading
+belongs to. **Double-click a ticker** to load that fund on the chart — it
+charts the *Yahoo* symbol, so `VFV.TO` rather than `VFV`, which is the one with
+prices.
+
 **Add and remove.** Type a ticker, optionally the symbol **Yahoo** knows it by
 (TSX listings end in `.TO`), and **Add**. Leave the Yahoo box empty and the
-ticker is used as-is. **Remove selected** deletes the highlighted rows.
+ticker is used as-is. **Remove selected** deletes the highlighted rows. The
+buttons wrap onto a second row when you widen the chart, rather than sliding
+off the edge.
 
 **Returns and risk, in one click.** **Refresh returns & risk** downloads eleven
 years of history for every fund and recomputes the return columns — annualized
@@ -422,7 +430,11 @@ rather than both — reference text, not a recommendation.
 <file.xlsx>` loads a `Portefeuille_FNB.xlsx`-shaped sheet into the tab in one
 pass (headers on row 7). It's idempotent — running it twice doesn't duplicate
 anything — but it is an *import*, not a sync: values in the file overwrite the
-matching cells in the app. Needs `pip install openpyxl`.
+matching cells in the app. A French workbook is **translated on the way in**
+(category, region, account and per-fund notes), so the table doesn't end up an
+English grid full of French cells; anything the translation table doesn't know
+is carried across word for word rather than guessed at. Needs
+`pip install openpyxl`.
 
 Risk labels and the suggested account are your own notes and a general guide,
 not the app's opinion and not tax advice.

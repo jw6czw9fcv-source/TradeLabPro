@@ -4,7 +4,8 @@ import traceback
 import time
 from pathlib import Path
 import pandas as pd
-from PySide6.QtCore import Qt, QThread, Signal, QSettings, QTimer, QUrl, QSize, QRect, QPoint
+from PySide6.QtCore import (Qt, QThread, Signal, QSettings, QTimer, QUrl, QSize, QRect,
+                            QPoint, QEvent)
 from PySide6.QtGui import QAction, QImage, QTextCursor, QColor, QIcon, QPainter, QFont, QPen, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -13,7 +14,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QTextEdit, QFileDialog, QProgressBar, QScrollArea, QHeaderView,
     QMenu, QToolButton, QSizePolicy, QDialog, QTextBrowser, QSystemTrayIcon, QStyle,
     QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsSimpleTextItem, QFrame,
-    QInputDialog, QSlider, QGraphicsItem, QLayout, QStackedWidget, QButtonGroup
+    QInputDialog, QSlider, QGraphicsItem, QLayout, QStackedWidget, QButtonGroup,
+    QTableView
 )
 
 from tradelab.core.config import (APP_NAME, APP_VERSION, ScannerConfig, DATA_DIR,
@@ -1437,6 +1439,82 @@ class WatchlistPanel(QWidget):
         sym = item.text(); self.chart.plot(sym, get_history(sym, self.cfg.period, self.cfg.interval), self.cfg)
 
 
+class _FrozenFirstColumn(QTableView):
+    """Keeps a wide table's first column visible while the rest scrolls right.
+
+    Qt has no "frozen column" flag. This is the documented approach: a second
+    view over the *same* model and selection model, showing only column 0,
+    parented to the host table and stacked above its viewport. Sharing the
+    model means sorting, edits and a full repopulate need no syncing at all -
+    only geometry, row heights and the two vertical scrollbars do.
+    """
+
+    def __init__(self, table: QTableWidget):
+        super().__init__(table)
+        self.table = table
+        self.setModel(table.model())
+        self.setSelectionModel(table.selectionModel())
+        self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setStyleSheet("QTableView { border: none; }")
+        self.verticalHeader().hide()
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.setAlternatingRowColors(table.alternatingRowColors())
+        for column in range(1, table.columnCount()):
+            self.setColumnHidden(column, True)
+
+        table.viewport().stackUnder(self)
+        # One wheel/scrollbar has to move both views, or the pinned column
+        # drifts out of step with the rows beside it.
+        self.verticalScrollBar().valueChanged.connect(table.verticalScrollBar().setValue)
+        table.verticalScrollBar().valueChanged.connect(self.verticalScrollBar().setValue)
+        table.horizontalHeader().sectionResized.connect(self._on_section_resized)
+        self.doubleClicked.connect(
+            lambda index: table.cellDoubleClicked.emit(index.row(), index.column()))
+        self.horizontalHeader().sectionClicked.connect(self._sort_host)
+        table.installEventFilter(self)
+        self.sync()
+        self.show()
+
+    def _on_section_resized(self, section, _old, new_width):
+        if section == 0:
+            self.setColumnWidth(0, new_width)
+            self.sync()
+
+    def _sort_host(self, _section):
+        """The pinned header covers the host's own, so clicking it has to sort
+        the host table rather than doing nothing."""
+        header = self.table.horizontalHeader()
+        ascending = not (header.sortIndicatorSection() == 0
+                         and header.sortIndicatorOrder() == Qt.AscendingOrder)
+        order = Qt.AscendingOrder if ascending else Qt.DescendingOrder
+        self.table.sortItems(0, order)
+        header.setSortIndicator(0, order)
+        self.sync()
+
+    def eventFilter(self, obj, event):
+        if obj is self.table and event.type() in (QEvent.Resize, QEvent.Show):
+            self.sync()
+        return super().eventFilter(obj, event)
+
+    def sync(self):
+        """Re-match the host's geometry and row heights. Cheap enough to call
+        after every repopulate; the row count here is a fund list, not a feed."""
+        table = self.table
+        width = table.columnWidth(0)
+        self.setColumnWidth(0, width)
+        for row in range(table.rowCount()):
+            self.setRowHeight(row, table.rowHeight(row))
+        frame = table.frameWidth()
+        left = frame + (table.verticalHeader().width()
+                        if table.verticalHeader().isVisible() else 0)
+        self.setGeometry(left, frame, width,
+                         table.viewport().height() + table.horizontalHeader().height())
+
+
 class EtfMetricsWorker(QThread):
     """Fetches 11 years of history and computes returns/risk for a batch of
     ETF Screener rows off the UI thread. One request per fund, deliberately
@@ -1565,20 +1643,29 @@ class EtfScreenerPanel(QWidget):
         "VGT ≈ TEC, but TEC is <i>global</i> tech (a different index) → not swapped."
     )
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, chart=None, cfg=None):
         super().__init__()
         self.db = db
+        self.chart = chart
+        self.cfg = cfg
         self.worker = None
+        self._chart_worker = None
         self._loading = False   # itemChanged fires while we repopulate; ignore it then
 
         layout = QVBoxLayout(self)
 
-        row = QHBoxLayout()
+        # A flow layout, not a fixed row: the panel shares its width with the
+        # chart workspace, and dragging the splitter right used to clip the
+        # Refresh and Stop buttons off the end of the row instead of wrapping
+        # them onto a second line.
+        bar = QWidget()
+        policy = bar.sizePolicy(); policy.setHeightForWidth(True); bar.setSizePolicy(policy)
+        controls = FlowLayout(bar, hspacing=6, vspacing=4)
         self.ticker_edit = QLineEdit(); self.ticker_edit.setPlaceholderText("Ticker (e.g. VFV)")
-        self.ticker_edit.setMaximumWidth(160)
+        self.ticker_edit.setFixedWidth(150)
         self.ticker_edit.returnPressed.connect(self.add_fund)
         self.yahoo_edit = QLineEdit(); self.yahoo_edit.setPlaceholderText("Yahoo symbol (e.g. VFV.TO)")
-        self.yahoo_edit.setMaximumWidth(220)
+        self.yahoo_edit.setFixedWidth(200)
         self.yahoo_edit.returnPressed.connect(self.add_fund)
         self.yahoo_edit.setToolTip("The symbol Yahoo Finance knows it by. TSX listings end in .TO. "
                                    "Leave empty to reuse the ticker.")
@@ -1590,11 +1677,10 @@ class EtfScreenerPanel(QWidget):
         self.refresh_btn.clicked.connect(self.refresh_metrics)
         self.stop_btn = QPushButton("Stop"); self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_refresh)
-        row.addWidget(self.ticker_edit); row.addWidget(self.yahoo_edit)
-        row.addWidget(add_btn); row.addWidget(remove_btn)
-        row.addStretch(1)
-        row.addWidget(self.refresh_btn); row.addWidget(self.stop_btn)
-        layout.addLayout(row)
+        for widget in (self.ticker_edit, self.yahoo_edit, add_btn, remove_btn,
+                       self.refresh_btn, self.stop_btn):
+            controls.addWidget(widget)
+        layout.addWidget(bar)
 
         self.progress = QProgressBar(); self.progress.setVisible(False)
         layout.addWidget(self.progress)
@@ -1606,9 +1692,14 @@ class EtfScreenerPanel(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setMinimumHeight(320)
         self.table.itemChanged.connect(self._on_item_changed)
+        self.table.cellDoubleClicked.connect(self._chart_row)
         layout.addWidget(self.table, 1)
 
-        self.status = QLabel("")
+        # Thirty columns scroll a long way right; the ticker column is pinned
+        # so you can still tell which fund a Sharpe ratio belongs to.
+        self.frozen = _FrozenFirstColumn(self.table)
+
+        self.status = QLabel("Double-click a ticker to chart it.")
         layout.addWidget(self.status)
 
         summary_box = QGroupBox("What each allocation holds")
@@ -1654,8 +1745,12 @@ class EtfScreenerPanel(QWidget):
                 self.table.setItem(r, c, self._make_item(key, fund.get(key), editable))
         self.table.setSortingEnabled(sorting)
         self.table.resizeColumnsToContents()
+        frozen = getattr(self, "frozen", None)
+        if frozen is not None:
+            frozen.sync()
         self._loading = False
-        self.status.setText(f"{len(funds)} funds. Click a cell to edit it.")
+        self.status.setText(
+            f"{len(funds)} funds. Click a cell to edit it, double-click a ticker to chart it.")
         self._refresh_summary(funds)
 
     def _make_item(self, key, value, editable):
@@ -1763,6 +1858,48 @@ class EtfScreenerPanel(QWidget):
             item.sort_value = value if key in self.NUMERIC_COLUMNS else None
         self._loading = False
         self._refresh_summary()
+
+    # -- charting ----------------------------------------------------------
+    def _chart_row(self, row, column):
+        """Double-clicking a ticker loads that fund on the main chart.
+
+        Only the Ticker column: every other column is either editable (where a
+        double-click means "edit this cell") or a computed figure. The Yahoo
+        symbol is what gets charted - VFV.TO has prices, VFV alone does not.
+        """
+        if column != 0 or self.chart is None or self.cfg is None or row < 0:
+            return
+        item = self.table.item(row, 0)
+        ticker = item.text().strip().upper() if item else ""
+        if not ticker:
+            return
+        fund = self.db.etf_get(ticker) or {}
+        symbol = (fund.get("yahoo") or ticker).strip()
+        self.status.setText(f"Charting {symbol}…")
+        self._chart_worker = _HistoryWorker(symbol, self.cfg.period, self.cfg.interval)
+        self._chart_worker.done.connect(self._on_chart_loaded)
+        self._chart_worker.start()
+
+    def _on_chart_loaded(self, symbol, df, err):
+        if err or df is None or getattr(df, "empty", False):
+            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            return
+        try:
+            self.chart.plot(symbol, df, self.cfg)
+            self.status.setText(f"Charted {symbol}.")
+        except Exception as exc:
+            self.status.setText(f"Could not chart {symbol}: {exc}")
+
+    def shutdown(self):
+        """Stop any in-flight refresh or chart fetch so closing the window
+        doesn't leave a thread running against a deleted panel."""
+        for attr in ("worker", "_chart_worker"):
+            worker = getattr(self, attr, None)
+            if worker is not None and worker.isRunning():
+                if hasattr(worker, "request_stop"):
+                    worker.request_stop()
+                worker.quit()
+                worker.wait(2000)
 
     # -- composition summary ----------------------------------------------
     def _refresh_summary(self, funds=None):
@@ -8380,7 +8517,7 @@ class MainWindow(QMainWindow):
         # Build every panel first, then add the tabs in the order a trader
         # actually works through them (see below).
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
-        self.etf_screener_panel = EtfScreenerPanel(self.db)
+        self.etf_screener_panel = EtfScreenerPanel(self.db, self.chart, self.cfg)
         self.portfolio_panel = PortfolioPanel(self.db, self.chart, self.cfg)
         self.analytics_panel = PortfolioAnalyticsPanel(self.db, self.chart, self.cfg)
         self.dividends_panel = DividendsPanel(self.db, self.chart, self.cfg)
@@ -8703,6 +8840,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.portfolio_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.etf_screener_panel.shutdown()
         except Exception:
             pass
         try:

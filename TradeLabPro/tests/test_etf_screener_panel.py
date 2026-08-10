@@ -272,6 +272,86 @@ def test_the_cad_us_equivalents_note_is_shown(panel):
     assert any("TEC" in t for t in rendered)       # and the VGT caveat
 
 
+# -- frozen ticker column, charting, and the wrapping toolbar ---------------
+
+def test_the_ticker_column_is_pinned_over_the_table(panel):
+    panel.ticker_edit.setText("VFV"); panel.add_fund()
+    frozen = panel.frozen
+    assert frozen.model() is panel.table.model()          # one model, no syncing
+    assert not frozen.isColumnHidden(0)
+    assert all(frozen.isColumnHidden(c) for c in range(1, panel.table.columnCount()))
+    assert frozen.width() == panel.table.columnWidth(0)
+
+
+def test_the_pinned_column_scrolls_with_the_table(panel):
+    """Offscreen the views are too short to actually scroll, so give both
+    scrollbars a range and check the two stay in step."""
+    for ticker in ("VFV", "XUU", "VAB", "ZLB", "VGT"):
+        panel.ticker_edit.setText(ticker); panel.add_fund()
+    table_bar = panel.table.verticalScrollBar()
+    frozen_bar = panel.frozen.verticalScrollBar()
+    table_bar.setRange(0, 10); frozen_bar.setRange(0, 10)
+
+    table_bar.setValue(3)
+    assert frozen_bar.value() == 3          # rows and pinned column agree
+    frozen_bar.setValue(1)
+    assert table_bar.value() == 1           # and the other way round
+
+
+def test_double_clicking_a_ticker_charts_its_yahoo_symbol(panel, monkeypatch):
+    from tradelab.ui import app as appmod
+    started = {}
+
+    class _FakeWorker:
+        def __init__(self, symbol, period, interval):
+            started["symbol"] = symbol
+        done = None
+        def __getattr__(self, name):           # .done.connect(...) / .start()
+            return lambda *a, **k: None
+
+    monkeypatch.setattr(appmod, "_HistoryWorker", _FakeWorker)
+    panel.chart = object()
+    panel.cfg = appmod.ScannerConfig()
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO")
+    panel.reload()
+    panel.table.cellDoubleClicked.emit(0, 0)
+    # VFV alone has no prices on Yahoo; VFV.TO does.
+    assert started["symbol"] == "VFV.TO"
+
+
+def test_double_clicking_an_editable_cell_does_not_chart(panel, monkeypatch):
+    from tradelab.ui import app as appmod
+    called = []
+    monkeypatch.setattr(appmod, "_HistoryWorker",
+                        lambda *a, **k: called.append(a) or pytest.fail("charted"))
+    panel.chart = object()
+    panel.cfg = appmod.ScannerConfig()
+    panel.ticker_edit.setText("VFV"); panel.add_fund()
+    notes_col = _col(panel, "notes")
+    panel.table.cellDoubleClicked.emit(0, notes_col)
+    assert not called
+
+
+def test_charting_is_inert_without_a_chart_workspace(panel):
+    panel.ticker_edit.setText("VFV"); panel.add_fund()
+    panel.table.cellDoubleClicked.emit(0, 0)      # chart is None in these tests
+    assert panel._chart_worker is None
+
+
+def test_the_toolbar_wraps_instead_of_clipping_when_narrow(panel):
+    """Dragging the chart splitter right used to cut Refresh and Stop off the
+    end of a fixed row."""
+    bar = panel.refresh_btn.parentWidget()
+    wide = bar.layout().heightForWidth(1200)
+    narrow = bar.layout().heightForWidth(320)
+    assert narrow > wide          # it grew a row rather than losing a button
+    assert panel.stop_btn.parentWidget() is bar
+
+
+def test_shutdown_is_safe_with_nothing_running(panel):
+    panel.shutdown()              # must not raise
+
+
 def test_worker_carries_the_yahoo_symbol_not_the_ticker(panel):
     from tradelab.ui.app import EtfMetricsWorker
     panel.db.etf_upsert("VFV", yahoo="VFV.TO")

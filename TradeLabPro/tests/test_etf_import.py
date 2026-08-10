@@ -60,13 +60,31 @@ def test_reads_one_dict_per_fund(sheet):
 def test_maps_headers_onto_database_columns(sheet):
     vfv = read_rows(sheet)[0]
     assert vfv["name"] == "Vanguard S&P 500"
-    assert vfv["region"] == "États-Unis"
     assert vfv["pct_us"] == 1
     assert vfv["mer"] == pytest.approx(0.0009)
     assert vfv["ret_1a"] == pytest.approx(0.25)
     assert vfv["my_mix"] == pytest.approx(0.2)
-    assert vfv["suggested_account"] == "CELI"
     assert vfv["yahoo"] == "VFV.TO"
+
+
+def test_french_workbook_text_is_imported_in_english(sheet):
+    """The tab is English; the workbook is French. Translating on the way in
+    beats an English table full of French cells."""
+    vfv, vab = read_rows(sheet)
+    assert vfv["region"] == "United States"
+    assert vfv["category"] == "S&P 500"          # already language-neutral
+    assert vfv["suggested_account"] == "TFSA"
+    assert vfv["notes"] == "US core. Unhedged (currency)."
+    assert vab["region"] == "Bonds"
+    assert vab["suggested_account"] == "RRSP"
+
+
+def test_unknown_text_is_left_alone_rather_than_guessed(sheet):
+    sheet.cell(HEADER_ROW + 1, 3, "Une catégorie inventée")
+    sheet.cell(HEADER_ROW + 1, 1, "ZZZZ")        # no note translation for it
+    fund = read_rows(sheet)[0]
+    assert fund["category"] == "Une catégorie inventée"
+    assert fund["notes"] == "Cœur US."           # left verbatim, not blanked
 
 
 def test_blank_cells_are_omitted_not_zeroed(sheet):

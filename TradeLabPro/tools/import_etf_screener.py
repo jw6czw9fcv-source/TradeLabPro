@@ -71,6 +71,87 @@ COLUMN_MAP = {
 TEXT_COLUMNS = {"name", "category", "exchange", "currency", "region",
                 "notes", "suggested_account", "yahoo"}
 
+# L'onglet ETF Screener est en anglais comme le reste de l'app ; le classeur,
+# lui, est en français. On traduit à l'import plutôt que de laisser un tableau
+# anglais rempli de texte français. Une valeur absente de la table passe telle
+# quelle (c'est du texte libre : tu peux écrire ce que tu veux dans Notes).
+TRANSLATIONS = {
+    # Catégories
+    "Actions Canada": "Canadian equity",
+    "Croissance US": "US growth",
+    "Dividendes Canada": "Canadian dividends",
+    "Dividendes US": "US dividends",
+    "Émergents": "Emerging markets",
+    "Faible vol. Canada": "Canada low volatility",
+    "Faible vol. US": "US low volatility",
+    "Intl développé": "Developed intl",
+    "Marché total US": "US total market",
+    "Momentum US": "US momentum",
+    "Mondial ex-Can": "Global ex-Canada",
+    "Qualité US": "US quality",
+    "Semis US": "US semiconductors",
+    "Techno US": "US technology",
+    "Tout-en-un": "All-in-one",
+    "Valeur mondiale": "Global value",
+    # Régions
+    "États-Unis": "United States",
+    "Mondial": "Global",
+    "Obligations": "Bonds",
+    "Or": "Gold",
+    "Thématique": "Thematic",
+    # Comptes (noms anglais officiels des régimes)
+    "CELI": "TFSA",
+    "REER": "RRSP",
+    "CELI ou REER": "TFSA or RRSP",
+}
+
+# Les notes sont des phrases, pas des étiquettes : traduites par ticker.
+NOTE_TRANSLATIONS = {
+    "DGRO": "US dividend growers. Moderate yield.",
+    "DRAM": "SPECULATIVE: memory/semis. Very volatile.",
+    "GGOV": "Global government bonds. Created 2025.",
+    "MNT": "Gold bullion in CAD (Royal Canadian Mint), unhedged. = IAU.",
+    "QQC": "NASDAQ-100 in CAD, unhedged. = QQQM/QQQ.",
+    "QUAL": "Quality factor (strong balance sheets).",
+    "SCHD": "US quality dividends. Yield ~3.3%.",
+    "SCHG": "US growth, low fees.",
+    "SMH": "Semiconductors (~35%/yr over 10 years). Extremely volatile.",
+    "SPMO": "Momentum. 39%/yr over 3 years. Can turn fast.",
+    "VAB": "Canadian bonds (aggregate). Shock absorber.",
+    "VBAL": "One ticket, 60/40.",
+    "VCN": "Total Canadian market.",
+    "VCNS": "One ticket, 40/60. Conservative.",
+    "VDY": "High-dividend Canada (banks/energy).",
+    "VEE": "Emerging markets (China, India, Taiwan...).",
+    "VEQT": "One ticket, 100% world equity.",
+    "VFV": "US core. Unhedged (currency).",
+    "VGRO": "One ticket, 80/20.",
+    "VGT": "Best 10-year (25%). Very concentrated.",
+    "VIU": "Developed intl (Japan, Europe...).",
+    "VUG": "Broad US growth. Volatile.",
+    "VVL": "Value factor, global. Counterweight to growth.",
+    "XAW": "Everything except Canada, one ticket.",
+    "XCNS": "iShares equivalent of VCNS.",
+    "XDIV": "Canadian quality dividends. Defensive, income.",
+    "XEF": "Like VIU. More tax-efficient (taxable account).",
+    "XIC": "Almost identical to VCN.",
+    "XUU": "US total market in CAD, holds US stocks directly (tax-efficient). = VTI.",
+    "ZLB": "Canada low volatility. Defensive.",
+    "ZLU": "US low volatility. Defensive.",
+}
+
+
+def translate(ticker: str, fields: dict) -> dict:
+    """Traduit les colonnes de texte d'un fonds. Ce qui n'est pas dans les
+    tables reste inchangé — on ne devine pas."""
+    for column in ("category", "region", "suggested_account"):
+        value = fields.get(column)
+        if value in TRANSLATIONS:
+            fields[column] = TRANSLATIONS[value]
+    if ticker in NOTE_TRANSLATIONS:
+        fields["notes"] = NOTE_TRANSLATIONS[ticker]
+    return fields
+
 
 def read_header(ws) -> dict:
     """Position de chaque en-tête connu, par son libellé exact."""
@@ -105,6 +186,7 @@ def read_rows(ws) -> list[dict]:
             fields[db_col] = value
         ticker = str(fields.pop("ticker", "")).strip().upper()
         if ticker:
+            fields = translate(ticker, fields)
             fields["ticker"] = ticker
             funds.append(fields)
         r += 1
