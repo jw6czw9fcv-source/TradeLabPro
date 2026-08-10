@@ -1,6 +1,10 @@
 """Headless smoke tests for the Help menu (User Manual viewer + Version dialog)."""
 import os
+from pathlib import Path
+
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
 
 pytest.importorskip("PySide6")
 pytest.importorskip("pyqtgraph")
@@ -241,3 +245,43 @@ def test_version_action_shows_about_with_version(qapp, monkeypatch):
     win.show_version()
     assert "About" in shown["title"]
     assert APP_VERSION in shown["text"]
+
+
+def test_help_menu_has_a_revision_history_entry(qapp):
+    win = _main_window(qapp)
+    labels = [a.text() for a in win.help_menu.actions() if a.text()]
+    assert "Revision history" in labels
+
+
+def test_revision_history_shows_the_release_index_and_the_changelog(qapp, monkeypatch):
+    from tradelab.ui import app as appmod
+    from tradelab.core.config import APP_VERSION
+    opened = {}
+
+    def fake_exec(self):
+        tabs = self.findChild(appmod.QTabWidget)
+        opened["titles"] = [tabs.tabText(i) for i in range(tabs.count())]
+        opened["text"] = "\n".join(
+            tabs.widget(i).toPlainText() for i in range(tabs.count()))
+        opened["window"] = self.windowTitle()
+        opened["labels"] = [w.text() for w in self.findChildren(appmod.QLabel)]
+        return 0
+
+    monkeypatch.setattr(appmod.QDialog, "exec", fake_exec)
+    win = _main_window(qapp)
+    win.show_revision_history()
+
+    assert opened["titles"] == ["Releases", "Full changelog"]
+    assert "Revision history" in opened["window"]
+    # The index really loaded, rather than the "not found" fallback.
+    assert "2.41.0" in opened["text"]
+    assert "no release index" not in opened["text"].lower()
+    assert any(APP_VERSION in label for label in opened["labels"])
+
+
+def test_packaged_build_ships_what_the_history_viewer_reads():
+    """Help -> Revision history reads these at runtime, so a build that
+    doesn't bundle them shows an empty viewer on a machine with no source."""
+    spec = (ROOT / "TradeLabPro.spec").read_text(encoding="utf-8")
+    assert '"docs/VERSIONS.md"' in spec
+    assert '"CHANGELOG.md"' in spec

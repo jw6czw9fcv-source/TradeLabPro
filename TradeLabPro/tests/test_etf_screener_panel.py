@@ -24,6 +24,37 @@ def panel(qapp, tmp_path):
     return EtfScreenerPanel(Database(path=tmp_path / "etf_test.db"))
 
 
+@pytest.fixture
+def no_network(monkeypatch):
+    """Stop the analysis buttons from starting a real Yahoo worker.
+
+    The suite's rule is no live calls. `show_look_through()` is tested for the
+    state it sets up, then its handler is driven by hand with data the test
+    supplies — but the real worker would otherwise be off fetching while that
+    happens, which is both a live call and a thread outliving the test."""
+    from tradelab.ui import app as appmod
+    started = []
+
+    class _NoWorker:
+        def __init__(self, *args, **kwargs):
+            started.append((args, kwargs))
+            self.done = self
+            self.progress = self
+
+        def connect(self, *_a, **_k):
+            pass
+
+        def start(self):
+            pass
+
+        def isRunning(self):
+            return False
+
+    for name in ("_FundCompositionWorker", "_MarketRefreshWorker"):
+        monkeypatch.setattr(appmod, name, _NoWorker)
+    return started
+
+
 def _col(panel, key):
     return [i for i, c in enumerate(panel.COLUMNS) if c[0] == key][0]
 
@@ -400,6 +431,132 @@ def test_look_through_says_when_the_allocation_is_empty(panel):
     panel.show_look_through()
     assert panel._analysis_worker is None
     assert "empty" in panel.status.text()
+
+
+def test_look_through_reads_the_exposures_key(panel, monkeypatch, no_network):
+    """Regression: the panel read a `rows` key look_through has never
+    returned, so the report was always empty."""
+    shown = {}
+    from tradelab.ui import app as appmod
+    monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
+                        lambda self, parent, title, headers, rows, footnote="":
+                            shown.update(rows=rows, footnote=footnote) or None)
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+
+    panel.db.etf_upsert("XIC", yahoo="XIC.TO", my_mix=1.0)
+    panel.reload()
+    panel.show_look_through()      # sets _lt_rows without starting the worker
+    panel._on_look_through_loaded(
+        {"XIC.TO": {"top_holdings": {"RY.TO": 0.6, "TD.TO": 0.2}}}, {}, "")
+
+    companies = [row[0] for row in shown["rows"]]
+    assert "RY.TO" in companies and "TD.TO" in companies
+    # 20% of the fund is below what the source publishes; that is stated, not spread.
+    assert "20%" in shown["footnote"]
+
+
+def test_look_through_says_why_when_no_fund_publishes_holdings(panel, monkeypatch, no_network):
+    from tradelab.ui import app as appmod
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+    panel.db.etf_upsert("VAB", yahoo="VAB.TO", my_mix=1.0)
+    panel.reload()
+    panel.show_look_through()
+    panel._on_look_through_loaded({"VAB.TO": {}}, {}, "")
+    assert "No holdings published" in panel.status.text()
+    assert "VAB.TO" in panel.status.text()
+
+
+def test_look_through_reports_a_fetch_error(panel, no_network):
+    panel.db.etf_upsert("XIC", yahoo="XIC.TO", my_mix=1.0)
+    panel.reload()
+    panel.show_look_through()
+    panel._on_look_through_loaded(None, None, "network down")
+    assert "network down" in panel.status.text()
+
+
+# -- the choice filter -------------------------------------------------------
+
+def test_choice_filter_lists_what_the_table_contains(panel):
+    panel.db.etf_upsert("VFV", category="S&P 500", region="United States")
+    panel.db.etf_upsert("VAB", category="Bonds", region="Bonds")
+    panel.reload()
+    labels = [panel.filter_choice.itemText(i) for i in range(panel.filter_choice.count())]
+    assert labels[0] == "All funds"
+    assert "Category: Bonds" in labels
+    assert "Region: United States" in labels
+    assert "Category: " not in labels        # blanks are not offered
+
+
+def test_choice_filter_narrows_to_that_value(panel):
+    panel.db.etf_upsert("VFV", category="S&P 500")
+    panel.db.etf_upsert("VAB", category="Bonds")
+    panel.reload()
+    panel.filter_choice.setCurrentIndex(
+        panel.filter_choice.findText("Category: Bonds"))
+    visible = [_cell(panel, r, "ticker").text() for r in range(panel.table.rowCount())
+               if not panel.table.isRowHidden(r)]
+    assert visible == ["VAB"]
+
+
+def test_choice_and_typed_filter_apply_together(panel):
+    panel.db.etf_upsert("VAB", category="Bonds", name="Vanguard aggregate")
+    panel.db.etf_upsert("GGOV", category="Bonds", name="Global government")
+    panel.reload()
+    panel.filter_choice.setCurrentIndex(
+        panel.filter_choice.findText("Category: Bonds"))
+    panel.filter_edit.setText("global")
+    visible = [_cell(panel, r, "ticker").text() for r in range(panel.table.rowCount())
+               if not panel.table.isRowHidden(r)]
+    assert visible == ["GGOV"]
+
+
+def test_choice_filter_survives_a_reload(panel):
+    panel.db.etf_upsert("VFV", category="S&P 500")
+    panel.db.etf_upsert("VAB", category="Bonds")
+    panel.reload()
+    panel.filter_choice.setCurrentIndex(
+        panel.filter_choice.findText("Category: Bonds"))
+    panel.reload()          # e.g. after a metrics refresh
+    assert panel.filter_choice.currentText() == "Category: Bonds"
+    visible = [r for r in range(panel.table.rowCount()) if not panel.table.isRowHidden(r)]
+    assert len(visible) == 1
+
+
+def test_exposure_filter_finds_a_fund_its_label_would_hide(panel):
+    """XAW is labelled Global and is 60% US. Filtering on the region label
+    alone would miss it, which is the point of the exposure entries."""
+    panel.db.etf_upsert("XAW", region="Global", pct_us=0.6, pct_intl=0.4)
+    panel.db.etf_upsert("VAB", region="Bonds", pct_us=0.0, pct_bond=1.0)
+    panel.reload()
+    panel.filter_choice.setCurrentIndex(
+        panel.filter_choice.findText("Holds United States"))
+    visible = [_cell(panel, r, "ticker").text() for r in range(panel.table.rowCount())
+               if not panel.table.isRowHidden(r)]
+    assert visible == ["XAW"]
+
+
+def test_exposure_filter_excludes_a_zero_share(panel):
+    panel.db.etf_upsert("VAB", pct_gold=0.0, pct_bond=1.0)
+    panel.reload()
+    # Nothing holds gold, so the entry isn't even offered.
+    assert panel.filter_choice.findText("Holds Gold / alternatives") == -1
+    panel.db.etf_upsert("MNT", pct_gold=1.0)
+    panel.reload()
+    panel.filter_choice.setCurrentIndex(
+        panel.filter_choice.findText("Holds Gold / alternatives"))
+    visible = [_cell(panel, r, "ticker").text() for r in range(panel.table.rowCount())
+               if not panel.table.isRowHidden(r)]
+    assert visible == ["MNT"]
+
+
+def test_all_funds_clears_the_choice(panel):
+    panel.db.etf_upsert("VFV", category="S&P 500")
+    panel.db.etf_upsert("VAB", category="Bonds")
+    panel.reload()
+    panel.filter_choice.setCurrentIndex(
+        panel.filter_choice.findText("Category: Bonds"))
+    panel.filter_choice.setCurrentIndex(0)
+    assert all(not panel.table.isRowHidden(r) for r in range(2))
 
 
 def test_the_analyses_read_the_selected_allocation(panel):

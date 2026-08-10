@@ -1749,8 +1749,16 @@ class EtfScreenerPanel(QWidget):
         self.filter_edit.setToolTip("Show only funds whose ticker, name, category or "
                                     "region contains this text.")
         self.filter_edit.textChanged.connect(self.apply_filter)
+        # The typed filter answers "where is X"; this one answers "show me the
+        # bond funds" without having to remember how they were spelled.
+        self.filter_choice = QComboBox()
+        self.filter_choice.setMinimumWidth(170)
+        self.filter_choice.setToolTip("Narrow to one category, region, account or currency. "
+                                      "Built from what the table actually contains.")
+        self.filter_choice.currentIndexChanged.connect(lambda _i: self.apply_filter())
         for widget in (self.ticker_edit, self.yahoo_edit, add_btn, remove_btn,
-                       self.filter_edit, self.refresh_btn, self.stop_btn):
+                       self.filter_choice, self.filter_edit,
+                       self.refresh_btn, self.stop_btn):
             controls.addWidget(widget)
         layout.addWidget(bar)
 
@@ -1861,10 +1869,12 @@ class EtfScreenerPanel(QWidget):
         frozen = getattr(self, "frozen", None)
         if frozen is not None:
             frozen.sync()
+        self._rebuild_filter_choices(funds)
         self._loading = False
         self.status.setText(
             f"{len(funds)} funds. Click a cell to edit it, double-click a ticker to chart it.")
         self._refresh_summary(funds)
+        self.apply_filter()   # a reload must not un-hide rows the filter excluded
 
     def _make_item(self, key, value, editable):
         item = table_item(
@@ -1978,28 +1988,81 @@ class EtfScreenerPanel(QWidget):
         self._refresh_summary()
 
     # -- filtering and selection -------------------------------------------
+    # Which columns the dropdown offers a value list for, and what to call them.
+    CHOICE_COLUMNS = [("category", "Category"), ("region", "Region"),
+                      ("suggested_account", "Account"), ("currency", "Currency")]
+
+    # Region is a label; this is what the fund actually contains. XAW is
+    # labelled "Global" and is 60% US — filtering on the label alone would miss
+    # it, and "show me everything with US in it" is the more useful question.
+    EXPOSURE_CHOICES = [("pct_can", "Canada"), ("pct_us", "United States"),
+                        ("pct_intl", "International"), ("pct_bond", "Bonds"),
+                        ("pct_gold", "Gold / alternatives")]
+
+    def _rebuild_filter_choices(self, funds):
+        """Repopulate the dropdown from what the table actually contains — a
+        fixed list would offer categories you don't hold and miss the ones you
+        invented. Keeps the current selection if it still exists."""
+        combo = self.filter_choice
+        previous = combo.currentData()
+        blocked = combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("All funds", None)
+        for key, label in self.CHOICE_COLUMNS:
+            values = sorted({str(f.get(key) or "").strip() for f in funds} - {""})
+            for value in values:
+                # A string, not a tuple: Qt compares item data as QVariant, and
+                # findData() on a tuple silently fails to match.
+                combo.addItem(f"{label}: {value}", f"{key}\x1f{value}")
+        for key, label in self.EXPOSURE_CHOICES:
+            if any((f.get(key) or 0) > 0 for f in funds):
+                combo.addItem(f"Holds {label}", f"{key}\x1f>0")
+        if previous is not None:
+            index = combo.findData(previous)
+            combo.setCurrentIndex(index if index >= 0 else 0)
+        combo.blockSignals(blocked)
+
     def apply_filter(self, text=None):
-        """Hide rows that don't match the filter box. Hidden, not deleted: the
-        totals below still describe the whole allocation, because filtering the
-        view is not the same as changing what you hold."""
+        """Hide rows matching neither the typed filter nor the chosen value.
+        Hidden, not deleted: the totals below still describe the whole
+        allocation, because filtering the view is not the same as changing what
+        you hold."""
         needle = (self.filter_edit.text() if text is None else text).strip().casefold()
+        choice = self.filter_choice.currentData()
         columns = [i for i, (key, _l, _e) in enumerate(self.COLUMNS)
                    if key in self.FILTER_COLUMNS]
+        choice_column, choice_value = None, None
+        if choice:
+            key, _, choice_value = str(choice).partition("\x1f")
+            choice_column = [i for i, (k, _l, _e) in enumerate(self.COLUMNS) if k == key][0]
+
         shown = 0
         for row in range(self.table.rowCount()):
-            if not needle:
-                match = True
-            else:
+            match = True
+            if needle:
                 match = any(needle in (self.table.item(row, c).text().casefold()
                                        if self.table.item(row, c) else "")
                             for c in columns)
+            if match and choice_column is not None:
+                cell = self.table.item(row, choice_column)
+                if choice_value == ">0":
+                    # An exposure filter: any share of it counts, not a label.
+                    value = getattr(cell, "sort_value", None) if cell else None
+                    match = value is not None and float(value) > 0
+                else:
+                    match = bool(cell) and cell.text().strip() == choice_value
             self.table.setRowHidden(row, not match)
             frozen = getattr(self, "frozen", None)
             if frozen is not None:
                 frozen.setRowHidden(row, not match)
             shown += 1 if match else 0
-        if needle:
-            self.status.setText(f"{shown} of {self.table.rowCount()} funds match “{needle}”.")
+
+        if needle or choice:
+            described = " and ".join(
+                part for part in (f"“{needle}”" if needle else "",
+                                  self.filter_choice.currentText() if choice else "") if part)
+            self.status.setText(
+                f"{shown} of {self.table.rowCount()} funds match {described}.")
         return shown
 
     def selected_tickers(self) -> list:
@@ -2240,22 +2303,41 @@ class EtfScreenerPanel(QWidget):
             self.status.setText(f"Could not open the funds up: {error}")
             return
         result = pa.look_through(self._lt_rows, compositions or {})
-        rows = result.get("rows") or []
-        if not rows:
-            self.status.setText("No published holdings for those funds — nothing to open up.")
+        exposures = result.get("exposures") or []
+        opened = result.get("funds_opened") or []
+        # Computed here rather than read from look_through: a source that
+        # answers with an empty record is as much "nothing published" as one
+        # that doesn't answer at all, and only the first case reaches us.
+        no_data = sorted(row["symbol"] for row in self._lt_rows
+                         if not ((compositions or {}).get(row["symbol"]) or {}).get("top_holdings"))
+        if not opened:
+            # Every fund fell through to counting as itself: the table would
+            # just list the funds back at you. Say why instead.
+            self.status.setText(
+                "No holdings published for " + ", ".join(no_data or ["those funds"])
+                + " — Yahoo lists what's inside a fund for some listings and not others, "
+                  "and there is nothing to open up without it.")
             return
+
         table = [[r.get("symbol", ""),
-                  (f"{r.get('pct', 0):.1f}%", None, r.get("pct", 0)),
+                  (f"{r.get('weight_pct') or 0:.1f}%", None, r.get("weight_pct") or 0),
                   ", ".join(r.get("via") or []) or "held directly"]
-                 for r in rows]
-        unallocated = result.get("unallocated") or 0
+                 for r in exposures]
+        total = result.get("total") or 0
+        rest = sum(u.get("value") or 0 for u in (result.get("unallocated") or []))
+        rest_pct = (rest / total * 100.0) if total else 0.0
         footnote = (
-            "Every company this allocation would own, counting what each fund holds. A "
-            "name that appears in three funds is one exposure here, not three. "
-            f"Sources publish only each fund's top holdings, so {unallocated:.0f}% of the "
-            "allocation sits below what they report and is left out rather than spread "
-            "across the names above — every percentage here is a floor. " + theme.NOT_ADVICE)
-        self.status.setText(f"{len(rows)} companies behind that allocation.")
+            f"Every company this allocation would own, counting what each of the "
+            f"{len(opened)} funds holds. A name appearing in three funds is one exposure "
+            f"here, not three. Sources publish only each fund's largest holdings, so "
+            f"{rest_pct:.0f}% of the allocation sits below what they report and is left "
+            f"out rather than spread across the names above — every percentage here is a "
+            f"floor, never an overstatement.")
+        if no_data:
+            footnote += (" No holdings published for " + ", ".join(no_data)
+                         + "; those count as themselves rather than being opened up.")
+        footnote += " " + theme.NOT_ADVICE
+        self.status.setText(f"{len(exposures)} companies behind that allocation.")
         _EtfReportDialog(self, "What this mix holds",
                          ["Company", "% of the mix", "Held via"], table, footnote).exec()
 
@@ -9004,11 +9086,52 @@ class MainWindow(QMainWindow):
         self.manual_action.triggered.connect(self.show_user_manual)
         self.help_menu.addAction(self.manual_action)
 
+        self.history_action = QAction("Revision history", self)
+        self.history_action.setToolTip("Every release: version, date, and what it was about.")
+        self.history_action.triggered.connect(self.show_revision_history)
+        self.help_menu.addAction(self.history_action)
+
         self.help_menu.addSeparator()
 
         self.version_action = QAction("Version", self)
         self.version_action.triggered.connect(self.show_version)
         self.help_menu.addAction(self.version_action)
+
+    def show_revision_history(self):
+        """docs/VERSIONS.md in the same viewer as the manual: every release,
+        newest first, with the full entry for each in the changelog beside it.
+
+        Both files ship with the app, so this works with no network and
+        without leaving the window. The index is generated from CHANGELOG.md
+        and the git tags, so it cannot fall behind what actually shipped."""
+        versions_path = ROOT_DIR / "docs" / "VERSIONS.md"
+        changelog_path = ROOT_DIR / "CHANGELOG.md"
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"{APP_NAME} - Revision history")
+        dlg.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint
+                           | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        dlg.resize(900, 720)
+        layout = QVBoxLayout(dlg)
+
+        tabs = QTabWidget()
+        for title, path, missing in (
+            ("Releases", versions_path,
+             "No release index found. Build it with:\n\n"
+             "    python tools/build_version_index.py"),
+            ("Full changelog", changelog_path, "No changelog found."),
+        ):
+            viewer = ManualBrowser(path.parent)
+            try:
+                viewer.load_markdown(path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                viewer.setPlainText(f"{missing}\n\n({path})\n{exc}")
+            tabs.addTab(viewer, title)
+        layout.addWidget(tabs)
+
+        note = QLabel(f"Running {APP_VERSION}.")
+        note.setStyleSheet(f"color: {theme.MUTED}; font-size: 11px;")
+        layout.addWidget(note)
+        dlg.exec()
 
     def show_user_manual(self):
         """Open the bundled docs/USER_MANUAL.md in a scrollable in-app viewer

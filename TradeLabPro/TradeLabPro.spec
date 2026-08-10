@@ -18,6 +18,9 @@ datas = [
     # with the executable — along with the screenshots it references.
     ("docs/USER_MANUAL.md", "docs"),
     ("docs/images", "docs/images"),
+    # Help -> Revision history reads both of these at runtime.
+    ("docs/VERSIONS.md", "docs"),
+    ("CHANGELOG.md", "."),
     # Shipped sample plugins, so the Plugins tab isn't empty on a fresh machine.
     ("plugins", "plugins"),
     # The window/taskbar icon is loaded at runtime, so it has to ship too - the
