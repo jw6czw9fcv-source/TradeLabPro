@@ -1489,62 +1489,81 @@ class EtfMetricsWorker(QThread):
 
 
 class EtfScreenerPanel(QWidget):
-    """Compare funds and build a target allocation — the Portefeuille_FNB.xlsx
+    """Compare funds and build a target allocation — a fund-comparison
     workbook, in the app and backed by SQLite instead of a spreadsheet.
 
     Two halves that never overwrite each other: what you type (category,
-    regional weights, risk, notes, the three model compositions) and what
-    Yahoo computes on refresh (returns, volatility, drawdown, Sharpe, via
-    core/etf_metrics.py — the same maths the maj_rendements.py script ran).
-    Percentages are stored as fractions and shown as percents, so 0.25 in the
-    database reads "25.0%" here and edits back the way you'd type it.
+    regional weights, risk, notes, the model allocations) and what Yahoo
+    computes on refresh (returns, volatility, drawdown, Sharpe, via
+    core/etf_metrics.py). Percentages are stored as fractions and shown as
+    percents, so 0.25 in the database reads "25.0%" here and edits back the
+    way you'd type it.
     """
 
     # (column key, header, editable)
     COLUMNS = [
         ("ticker", "Ticker", False),
-        ("name", "Nom", True),
-        ("category", "Catégorie", True),
-        ("region", "Région", True),
-        ("exchange", "Bourse", True),
-        ("currency", "Devise", True),
+        ("name", "Name", True),
+        ("category", "Category", True),
+        ("region", "Region", True),
+        ("exchange", "Exchange", True),
+        ("currency", "Currency", True),
         ("pct_can", "% Can", True),
         ("pct_us", "% US", True),
         ("pct_intl", "% Intl", True),
-        ("pct_bond", "% Obl.", True),
-        ("pct_gold", "% Or/Alt", True),
-        ("risk", "Risque", True),
+        ("pct_bond", "% Bonds", True),
+        ("pct_gold", "% Gold/Alt", True),
+        ("risk", "Risk", True),
         ("mer", "MER", True),
-        ("ret_1m", "Rend 1M", False),
-        ("ret_3m", "Rend 3M", False),
-        ("ret_6m", "Rend 6M", False),
-        ("ret_1a", "Rend 1A", False),
-        ("ret_3a", "Rend 3A", False),
-        ("ret_5a", "Rend 5A", False),
-        ("ret_10a", "Rend 10A", False),
-        ("volatility", "Volatilité", False),
-        ("max_drawdown", "Pire baisse", False),
+        ("ret_1m", "Ret 1M", False),
+        ("ret_3m", "Ret 3M", False),
+        ("ret_6m", "Ret 6M", False),
+        ("ret_1a", "Ret 1Y", False),
+        ("ret_3a", "Ret 3Y", False),
+        ("ret_5a", "Ret 5Y", False),
+        ("ret_10a", "Ret 10Y", False),
+        ("volatility", "Volatility", False),
+        ("max_drawdown", "Worst drop", False),
         ("sharpe", "Sharpe", False),
-        ("reco_star", "Reco ★", True),
-        ("spec_star", "Spéculatif ★", True),
-        ("ma_compo", "Ma compo ✏️", True),
-        ("suggested_account", "Compte suggéré", True),
+        ("low_risk", "Low risk", True),
+        ("mid_risk", "Mid risk", True),
+        ("high_risk", "High risk", True),
+        ("my_mix", "My mix ✏️", True),
+        ("suggested_account", "Account", True),
         ("notes", "Notes", True),
         ("yahoo", "Yahoo", True),
-        ("updated_at", "MàJ", False),
+        ("updated_at", "Updated", False),
     ]
 
     # Stored as a fraction, typed and shown as a percent.
     PERCENT_COLUMNS = {
         "pct_can", "pct_us", "pct_intl", "pct_bond", "pct_gold", "mer",
         "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
-        "volatility", "max_drawdown", "reco_star", "spec_star", "ma_compo",
+        "volatility", "max_drawdown", "low_risk", "mid_risk", "high_risk",
+        "my_mix",
     }
     NUMERIC_COLUMNS = PERCENT_COLUMNS | {"risk", "sharpe"}
 
-    # Which weight column the composition summary reads.
-    COMPOSITIONS = [("Ma compo", "ma_compo"), ("Reco ★", "reco_star"),
-                    ("Spéculatif ★", "spec_star")]
+    # Which weight column each summary column reads.
+    COMPOSITIONS = [("Low risk", "low_risk"), ("Mid risk", "mid_risk"),
+                    ("High risk", "high_risk"), ("My mix", "my_mix")]
+
+    # Carried over from the workbook this tab replaces: which US listings a
+    # CAD-listed fund stands in for, and which have no CAD twin. Reference
+    # text, not a recommendation - it is why the list holds one of each pair.
+    EQUIVALENTS = (
+        "<b>CAD ↔ US equivalents</b> (swapped in because it is the same index, "
+        "so the same return):<br>"
+        "&nbsp;&nbsp;• <b>XUU</b> (CAD) = VTI — US total market&nbsp;&nbsp; "
+        "• <b>QQC</b> (CAD) = QQQM / QQQ — NASDAQ-100 (unhedged)&nbsp;&nbsp; "
+        "• <b>MNT</b> (CAD) = IAU — gold bullion<br>"
+        "&nbsp;&nbsp;• <b>VFV</b> (already CAD) = VOO / IVV — S&amp;P 500 &nbsp;·&nbsp; "
+        "Other CAD S&amp;P 500 listings: XUS, ZSP &nbsp;·&nbsp; "
+        "VUN = VTI (holds VTI, an alternative to XUU)<br>"
+        "<b>No CAD equivalent at the same return</b> (these stay in USD): "
+        "VUG, SCHG, SPMO, SMH, DGRO, SCHD, QUAL, DRAM. "
+        "VGT ≈ TEC, but TEC is <i>global</i> tech (a different index) → not swapped."
+    )
 
     def __init__(self, db: Database):
         super().__init__()
@@ -1555,21 +1574,21 @@ class EtfScreenerPanel(QWidget):
         layout = QVBoxLayout(self)
 
         row = QHBoxLayout()
-        self.ticker_edit = QLineEdit(); self.ticker_edit.setPlaceholderText("Ticker (ex. VFV)")
+        self.ticker_edit = QLineEdit(); self.ticker_edit.setPlaceholderText("Ticker (e.g. VFV)")
         self.ticker_edit.setMaximumWidth(160)
         self.ticker_edit.returnPressed.connect(self.add_fund)
-        self.yahoo_edit = QLineEdit(); self.yahoo_edit.setPlaceholderText("Symbole Yahoo (ex. VFV.TO)")
+        self.yahoo_edit = QLineEdit(); self.yahoo_edit.setPlaceholderText("Yahoo symbol (e.g. VFV.TO)")
         self.yahoo_edit.setMaximumWidth(220)
         self.yahoo_edit.returnPressed.connect(self.add_fund)
-        self.yahoo_edit.setToolTip("Le symbole que Yahoo Finance connaît. TSX = suffixe .TO. "
-                                   "Vide = on réutilise le ticker.")
-        add_btn = QPushButton("Ajouter"); add_btn.clicked.connect(self.add_fund)
-        remove_btn = QPushButton("Retirer la sélection"); remove_btn.clicked.connect(self.remove_selected)
-        self.refresh_btn = QPushButton("Rafraîchir rendements/risque")
-        self.refresh_btn.setToolTip("Télécharge 11 ans d'historique par fonds (Yahoo Finance) et recalcule "
-                                    "les rendements et le risque. N'écrase jamais ce que tu as saisi.")
+        self.yahoo_edit.setToolTip("The symbol Yahoo Finance knows it by. TSX listings end in .TO. "
+                                   "Leave empty to reuse the ticker.")
+        add_btn = QPushButton("Add"); add_btn.clicked.connect(self.add_fund)
+        remove_btn = QPushButton("Remove selected"); remove_btn.clicked.connect(self.remove_selected)
+        self.refresh_btn = QPushButton("Refresh returns & risk")
+        self.refresh_btn.setToolTip("Downloads 11 years of history per fund (Yahoo Finance) and recomputes "
+                                    "returns and risk. Never overwrites anything you typed.")
         self.refresh_btn.clicked.connect(self.refresh_metrics)
-        self.stop_btn = QPushButton("Arrêter"); self.stop_btn.setEnabled(False)
+        self.stop_btn = QPushButton("Stop"); self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_refresh)
         row.addWidget(self.ticker_edit); row.addWidget(self.yahoo_edit)
         row.addWidget(add_btn); row.addWidget(remove_btn)
@@ -1592,7 +1611,7 @@ class EtfScreenerPanel(QWidget):
         self.status = QLabel("")
         layout.addWidget(self.status)
 
-        summary_box = QGroupBox("Résultats de la composition")
+        summary_box = QGroupBox("What each allocation holds")
         summary_layout = QVBoxLayout(summary_box)
         self.summary = QTableWidget(0, 1 + len(self.COMPOSITIONS))
         self.summary.setHorizontalHeaderLabels([""] + [label for label, _ in self.COMPOSITIONS])
@@ -1601,11 +1620,21 @@ class EtfScreenerPanel(QWidget):
         self.summary.verticalHeader().setVisible(False)
         self.summary.setMaximumHeight(300)
         summary_layout.addWidget(self.summary)
-        summary_layout.addWidget(QLabel(
-            "Les pourcentages se saisissent tels quels (20 = 20 %). Une figure suivie de "
-            "« sur X % » ne couvre que cette part de l'allocation — les fonds sans la donnée "
-            "en sont exclus plutôt que comptés à zéro. Analyse, pas un conseil financier."))
+        summary_note = QLabel(
+            "Type percentages the way you say them (20 = 20%). A figure followed by "
+            "\"of X% of the allocation\" stands on that much of it — funds missing the "
+            "figure are left out rather than counted as zero. Analysis, not financial advice.")
+        summary_note.setWordWrap(True)
+        summary_layout.addWidget(summary_note)
         layout.addWidget(summary_box)
+
+        notes_box = QGroupBox("Notes")
+        notes_layout = QVBoxLayout(notes_box)
+        equivalents = QLabel(self.EQUIVALENTS)
+        equivalents.setWordWrap(True)
+        equivalents.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        notes_layout.addWidget(equivalents)
+        layout.addWidget(notes_box)
 
         self.reload()
 
@@ -1626,7 +1655,7 @@ class EtfScreenerPanel(QWidget):
         self.table.setSortingEnabled(sorting)
         self.table.resizeColumnsToContents()
         self._loading = False
-        self.status.setText(f"{len(funds)} fonds. Clique une cellule pour la modifier.")
+        self.status.setText(f"{len(funds)} funds. Click a cell to edit it.")
         self._refresh_summary(funds)
 
     def _make_item(self, key, value, editable):
@@ -1692,7 +1721,7 @@ class EtfScreenerPanel(QWidget):
     def add_fund(self):
         ticker = self.ticker_edit.text().strip().upper()
         if not ticker:
-            self.status.setText("Entre un ticker à ajouter.")
+            self.status.setText("Enter a ticker to add.")
             return
         yahoo = self.yahoo_edit.text().strip() or ticker
         existed = self.db.etf_get(ticker) is not None
@@ -1700,18 +1729,18 @@ class EtfScreenerPanel(QWidget):
         self.ticker_edit.clear(); self.yahoo_edit.clear()
         self.reload()
         if existed:
-            self.status.setText(f"{ticker} était déjà là — symbole Yahoo mis à jour ({yahoo}).")
+            self.status.setText(f"{ticker} was already listed — Yahoo symbol updated to {yahoo}.")
 
     def remove_selected(self):
         rows = {i.row() for i in self.table.selectedIndexes()}
         tickers = [self.table.item(r, 0).text() for r in rows if self.table.item(r, 0)]
         if not tickers:
-            self.status.setText("Sélectionne d'abord une ou plusieurs lignes.")
+            self.status.setText("Select one or more rows first.")
             return
         for ticker in tickers:
             self.db.etf_delete(ticker)
         self.reload()
-        self.status.setText(f"Retiré : {', '.join(sorted(tickers))}.")
+        self.status.setText(f"Removed: {', '.join(sorted(tickers))}.")
 
     def _on_item_changed(self, item):
         if self._loading:
@@ -1744,10 +1773,10 @@ class EtfScreenerPanel(QWidget):
         summaries = [composition_summary(funds, key) for _label, key in self.COMPOSITIONS]
 
         self.summary.setRowCount(1 + len(COMPOSITION_ROWS))
-        self.summary.setItem(0, 0, table_item("Total alloué (doit = 100 %)"))
+        self.summary.setItem(0, 0, table_item("Total allocated (must be 100%)"))
         for c, summary in enumerate(summaries, start=1):
             total = summary["total"]
-            mark = "OK ✓" if abs(total - 1.0) < 0.005 else "à ajuster"
+            mark = "OK ✓" if abs(total - 1.0) < 0.005 else "adjust"
             self.summary.setItem(0, c, table_item(f"{total * 100:.1f}%  {mark}"))
         for r, (label, column, kind) in enumerate(COMPOSITION_ROWS, start=1):
             self.summary.setItem(r, 0, table_item(label))
@@ -1769,7 +1798,7 @@ class EtfScreenerPanel(QWidget):
         if covered <= 0:
             return "—"
         if covered < total - 0.005:
-            text += f"  (sur {covered / total * 100:.0f} % de l'allocation)"
+            text += f"  (of {covered / total * 100:.0f}% of the allocation)"
         return text
 
     # -- refresh (Yahoo Finance) -------------------------------------------
@@ -1778,14 +1807,14 @@ class EtfScreenerPanel(QWidget):
             return
         rows = [(f["ticker"], f["yahoo"] or f["ticker"]) for f in self.db.etf_list()]
         if not rows:
-            self.status.setText("Aucun fonds à rafraîchir. Ajoute d'abord des tickers.")
+            self.status.setText("No funds to refresh. Add some tickers first.")
             return
         self.progress.setVisible(True)
         self.progress.setRange(0, len(rows))
         self.progress.setValue(0)
         self.refresh_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        self.status.setText(f"Rafraîchissement de {len(rows)} fonds via Yahoo Finance…")
+        self.status.setText(f"Refreshing {len(rows)} funds from Yahoo Finance…")
         self.worker = EtfMetricsWorker(rows)
         self.worker.progress.connect(self._on_progress)
         self.worker.row_done.connect(self._on_row_done)
@@ -1795,7 +1824,7 @@ class EtfScreenerPanel(QWidget):
     def stop_refresh(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.request_stop()
-            self.status.setText("Arrêt demandé — fin du fonds en cours…")
+            self.status.setText("Stopping — finishing the fund in flight…")
 
     def _on_progress(self, done, total, ticker):
         self.progress.setValue(done)
@@ -1810,10 +1839,10 @@ class EtfScreenerPanel(QWidget):
         self.refresh_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.reload()
-        head = "Arrêté" if stopped else "Terminé"
+        head = "Stopped" if stopped else "Done"
         self.status.setText(
-            f"{head} : {updated} fonds mis à jour, {skipped} sans données utilisables "
-            f"(historique trop court ou symbole Yahoo inconnu).")
+            f"{head}: {updated} funds updated, {skipped} with no usable data "
+            f"(history too short, or Yahoo does not know the symbol).")
 
 
 class _IbkrPositionsWorker(QThread):
@@ -8394,8 +8423,8 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._heatmap_page, "Heatmap")                    # where's the strength?
         tabs.addTab(_scroll_tab(self.news_panel), "News")             # any catalysts?
         tabs.addTab(_scroll_tab(self.scanner_panel), "Scanner")       # find setups
-        tabs.addTab(_scroll_tab(self.watch_panel), "Watchlists")      # shortlist
         tabs.addTab(_scroll_tab(self.etf_screener_panel), "ETF Screener")  # compare funds, build an allocation
+        tabs.addTab(_scroll_tab(self.watch_panel), "Watchlists")      # shortlist
         tabs.addTab(_scroll_tab(self.alerts_panel), "Alerts")         # get notified
         tabs.addTab(_scroll_tab(self.ai_panel), "AI Assist")          # analyse a setup
         tabs.addTab(_scroll_tab(self.risk_panel), "Risk")             # size the trade

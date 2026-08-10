@@ -113,10 +113,21 @@ CREATE TABLE IF NOT EXISTS etf_screener (
 );
 """
 
-MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3]
+# v4: the model portfolios named by what they are rather than by what the
+# workbook called them - a low / mid / high risk ladder plus your own mix.
+# Renamed rather than re-created so the weights already typed survive: the
+# columns carry real allocations.
+SCHEMA_V4 = """
+ALTER TABLE etf_screener RENAME COLUMN reco_star TO mid_risk;
+ALTER TABLE etf_screener RENAME COLUMN spec_star TO high_risk;
+ALTER TABLE etf_screener RENAME COLUMN ma_compo TO my_mix;
+ALTER TABLE etf_screener ADD COLUMN low_risk REAL;
+"""
+
+MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
-SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3
+SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4
 
 
 class Database:
@@ -260,8 +271,9 @@ class Database:
         "ticker", "name", "category", "exchange", "currency", "region",
         "pct_can", "pct_us", "pct_intl", "pct_bond", "pct_gold", "risk", "mer",
         "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
-        "volatility", "max_drawdown", "sharpe", "reco_star", "spec_star",
-        "ma_compo", "notes", "suggested_account", "yahoo", "updated_at",
+        "volatility", "max_drawdown", "sharpe", "low_risk", "mid_risk",
+        "high_risk", "my_mix", "notes", "suggested_account", "yahoo",
+        "updated_at",
     ]
 
     # Everything etf_metrics computes. Kept apart from the rest so a refresh

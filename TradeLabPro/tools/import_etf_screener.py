@@ -57,9 +57,12 @@ COLUMN_MAP = {
     "Volatilité (ann.)": "volatility",
     "Pire baisse": "max_drawdown",
     "Sharpe": "sharpe",
-    "Reco ★": "reco_star",
-    "Spéculatif ★": "spec_star",
-    "Ma compo ✏️": "ma_compo",
+    # Le classeur nommait ses compositions Reco / Spéculatif ; l'onglet les
+    # nomme par leur niveau de risque. Rien de « Low risk » dans le classeur :
+    # cette colonne se remplit dans l'app.
+    "Reco ★": "mid_risk",
+    "Spéculatif ★": "high_risk",
+    "Ma compo ✏️": "my_mix",
     "Notes": "notes",
     "Compte suggéré (REER/CELI)": "suggested_account",
     "Yahoo": "yahoo",

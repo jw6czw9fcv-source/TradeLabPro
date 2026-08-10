@@ -40,13 +40,13 @@ PERIODS: dict[str, tuple[int, int | None]] = {
 # "pct" for a share of the book, "num" for a plain weighted average.
 COMPOSITION_ROWS = [
     ("% Canada", "pct_can", "pct"),
-    ("% États-Unis", "pct_us", "pct"),
+    ("% United States", "pct_us", "pct"),
     ("% International", "pct_intl", "pct"),
-    ("% Obligations", "pct_bond", "pct"),
-    ("% Or / Alternatifs", "pct_gold", "pct"),
-    ("Risque moyen (1→5)", "risk", "num"),
-    ("Frais (MER) pondérés", "mer", "pct"),
-    ("Rendement 10 ans (pondéré)", "ret_10a", "pct"),
+    ("% Bonds", "pct_bond", "pct"),
+    ("% Gold / alternatives", "pct_gold", "pct"),
+    ("Average risk (1→5)", "risk", "num"),
+    ("Weighted MER", "mer", "pct"),
+    ("Weighted 10-year return", "ret_10a", "pct"),
 ]
 
 
@@ -154,7 +154,7 @@ def _weight(fund: dict, weight_key: str) -> float:
         return 0.0
 
 
-def composition_summary(funds: list[dict], weight_key: str = "ma_compo") -> dict:
+def composition_summary(funds: list[dict], weight_key: str = "my_mix") -> dict:
     """What a set of weights adds up to — the workbook's "RÉSULTATS DE LA
     COMPOSITION" block, computed instead of held in spreadsheet formulas.
 

@@ -107,10 +107,10 @@ def _book():
     return [
         {"ticker": "VFV", "pct_can": 0.0, "pct_us": 1.0, "pct_intl": 0.0,
          "pct_bond": 0.0, "pct_gold": 0.0, "risk": 4, "mer": 0.0009,
-         "ret_10a": 0.16, "ma_compo": 0.5, "reco_star": 0.2},
+         "ret_10a": 0.16, "my_mix": 0.5, "mid_risk": 0.2},
         {"ticker": "VAB", "pct_can": 0.0, "pct_us": 0.0, "pct_intl": 0.0,
          "pct_bond": 1.0, "pct_gold": 0.0, "risk": 1, "mer": 0.0009,
-         "ret_10a": 0.02, "ma_compo": 0.5, "reco_star": 0.8},
+         "ret_10a": 0.02, "my_mix": 0.5, "mid_risk": 0.8},
     ]
 
 
@@ -126,13 +126,13 @@ def test_composition_weights_the_regional_split():
 
 
 def test_composition_reads_the_weight_column_it_is_given():
-    rows = composition_summary(_book(), "reco_star")["rows"]
+    rows = composition_summary(_book(), "mid_risk")["rows"]
     assert rows["pct_us"]["value"] == pytest.approx(0.2)
     assert rows["risk"]["value"] == pytest.approx(0.2 * 4 + 0.8 * 1)
 
 
 def test_composition_ignores_funds_with_no_weight():
-    book = _book() + [{"ticker": "SMH", "pct_us": 1.0, "risk": 5}]  # no ma_compo
+    book = _book() + [{"ticker": "SMH", "pct_us": 1.0, "risk": 5}]  # no my_mix
     assert composition_summary(book)["total"] == pytest.approx(1.0)
     assert composition_summary(book)["rows"]["pct_us"]["value"] == pytest.approx(0.5)
 

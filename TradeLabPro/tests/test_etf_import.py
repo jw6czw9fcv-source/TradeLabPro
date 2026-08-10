@@ -64,7 +64,7 @@ def test_maps_headers_onto_database_columns(sheet):
     assert vfv["pct_us"] == 1
     assert vfv["mer"] == pytest.approx(0.0009)
     assert vfv["ret_1a"] == pytest.approx(0.25)
-    assert vfv["ma_compo"] == pytest.approx(0.2)
+    assert vfv["my_mix"] == pytest.approx(0.2)
     assert vfv["suggested_account"] == "CELI"
     assert vfv["yahoo"] == "VFV.TO"
 
@@ -102,7 +102,7 @@ def test_import_is_idempotent(sheet, tmp_db_path):
         for fund in read_rows(sheet):
             db.etf_upsert(fund.pop("ticker"), **fund)
     assert [f["ticker"] for f in db.etf_list()] == ["VAB", "VFV"]
-    assert db.etf_get("VFV")["ma_compo"] == pytest.approx(0.2)
+    assert db.etf_get("VFV")["my_mix"] == pytest.approx(0.2)
 
 
 @pytest.mark.skipif(not DEFAULT_WORKBOOK.exists(),
