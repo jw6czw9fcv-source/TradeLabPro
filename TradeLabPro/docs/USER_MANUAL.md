@@ -421,6 +421,39 @@ of your allocation, it says so — `(of 50% of the allocation)` — because coun
 the funds that lack the figure as zero would report your mix as worse than it
 is.
 
+**Three questions the tab can answer about an allocation.** Pick which one in
+the **Allocation** dropdown, then:
+
+- **Target vs held** prices the positions on your **Portfolio** tab and lays
+  them beside the target: how far each fund has drifted, and the dollars it
+  would take to close the gap. The percentages are of the **whole book**, and
+  anything you hold that has no target is named — a plan measured only against
+  the funds it happens to mention would report a book as on-plan while half of
+  it sat somewhere the plan never mentioned. The dollar figure is arithmetic on
+  your own target; it knows nothing about commissions, the tax on a sale, or
+  whether the trade is worth making.
+- **What this mix holds** opens every fund up to the companies inside it. A
+  bank held inside three index funds is one exposure, not three. Sources
+  publish only each fund's largest holdings, so the rest is reported as
+  unallocated rather than spread across the names on screen — every percentage
+  is a floor.
+- **Compare selected** plots the funds you've highlighted on one chart, each
+  restated to 100 at the first date they *all* share, so the lines answer one
+  question: which grew fastest over the same period.
+
+**An overlap warning appears on its own**, under the totals, when two funds in
+the allocation buy the same market and both carry weight (VCN and XIC, VIU and
+XEF). That is one market at twice the trading cost rather than
+diversification — unless you're holding them in different accounts on purpose.
+
+**Add selected to Watchlist / Portfolio** work like the Scanner's. A fund added
+to the Portfolio arrives at **0 shares**: this tab knows what you want to hold,
+never what you actually bought. **Export CSV** writes every column in stored
+units (a rate is `0.25`, not `25.0%`) so a spreadsheet gets the number rather
+than the formatting. The **Filter** box narrows the table by ticker, name,
+category, region or notes — it hides rows without changing the totals, since
+what you can see and what you hold are different things.
+
 **The notes at the bottom** record which CAD listings stand in for which US
 funds (XUU for VTI, QQC for QQQ, MNT for IAU, and so on) and which have no CAD
 twin at the same return. That is the reasoning behind holding one of a pair
@@ -1083,6 +1116,14 @@ feed — can be added later without changing any other tab.)
   window layout — in the Windows registry under `TradeLabPro`, not in a file.
 
 The database uses versioned migrations, so it upgrades cleanly across releases.
+
+**Which version am I running, and what changed?** **Help → Version** reports the
+running build. [`docs/VERSIONS.md`](VERSIONS.md) is the index of every release —
+version, date, and the one line it was about, newest first — and
+[`CHANGELOG.md`](../CHANGELOG.md) has the full entry for each, including what
+that release deliberately does *not* do. The index is generated
+(`python tools/build_version_index.py`) from the changelog and the git tags, so
+it cannot quietly fall behind.
 
 ---
 
