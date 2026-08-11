@@ -6,7 +6,8 @@ import pytest
 
 from tradelab.core.etf_metrics import (
     COMPOSITION_ROWS, PERIODS, composition_summary, compute_metrics,
-    fund_symbol, overlaps, rebalance, risk_metrics, trailing_return,
+    expand_compositions, fund_symbol, is_low_volatility, overlaps,
+    pass_through_symbols, rebalance, risk_metrics, trailing_return,
 )
 
 
@@ -289,6 +290,100 @@ def test_overlap_reads_the_weight_column_it_is_given():
         fund["low_risk"] = 0.0
     assert overlaps(funds, "low_risk") == []
     assert overlaps(funds, "my_mix")
+
+
+# -- opening a fund that holds another fund ---------------------------------
+
+def _wrapper():
+    """VFV.TO publishes one holding: VOO.TO at 100%. VOO.TO publishes its own
+    top names, covering 60% of itself."""
+    return {
+        "VFV.TO": {"top_holdings": {"VOO.TO": 1.0}},
+        "VOO.TO": {"top_holdings": {"AAPL": 0.4, "MSFT": 0.2}},
+    }
+
+
+def test_pass_through_finds_the_fund_worth_opening():
+    assert pass_through_symbols({"VFV.TO": {"top_holdings": {"VOO.TO": 1.0}}}) == ["VOO.TO"]
+
+
+def test_pass_through_ignores_ordinary_holdings():
+    # A fund's ten top names at ~8% each are companies, not wrappers; opening
+    # each of them would be hundreds of requests for nothing.
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 0.08, "TD.TO": 0.06}}}
+    assert pass_through_symbols(comps) == []
+
+
+def test_pass_through_ignores_a_merely_concentrated_fund():
+    """60% in one name is a concentrated fund, not a wrapper around it."""
+    comps = {"SMH": {"top_holdings": {"NVDA": 0.6, "TSM": 0.1}}}
+    assert pass_through_symbols(comps) == []
+
+
+def test_pass_through_skips_what_we_already_have():
+    assert pass_through_symbols(_wrapper()) == []
+
+
+def test_expand_replaces_a_wrapper_with_what_it_really_holds():
+    holdings = expand_compositions(_wrapper())["VFV.TO"]["top_holdings"]
+    assert holdings["AAPL"] == pytest.approx(0.4)
+    assert holdings["MSFT"] == pytest.approx(0.2)
+
+
+def test_expand_keeps_the_nested_unpublished_part_as_the_fund():
+    """VOO.TO publishes 60% of itself; the other 40% must stay attributed to
+    VOO.TO rather than being spread over AAPL and MSFT."""
+    holdings = expand_compositions(_wrapper())["VFV.TO"]["top_holdings"]
+    assert holdings["VOO.TO"] == pytest.approx(0.4)
+    assert sum(holdings.values()) == pytest.approx(1.0)
+
+
+def test_expand_leaves_ordinary_funds_untouched():
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 0.08, "TD.TO": 0.06}}}
+    assert expand_compositions(comps) == comps
+
+
+def test_expand_keeps_the_other_keys_of_a_composition():
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 0.08}, "sectors": {"financial": 0.3}}}
+    assert expand_compositions(comps)["XIC.TO"]["sectors"] == {"financial": 0.3}
+
+
+def test_expand_survives_a_fund_listing_itself():
+    comps = {"AAA": {"top_holdings": {"AAA": 1.0}}}
+    assert expand_compositions(comps)["AAA"]["top_holdings"] == {"AAA": 1.0}
+
+
+def test_expand_of_nothing_is_nothing():
+    assert expand_compositions({}) == {}
+    assert expand_compositions(None) == {}
+
+
+# -- the low-volatility flag -------------------------------------------------
+
+def test_low_volatility_flag_is_true_below_the_threshold():
+    assert is_low_volatility({"volatility": 0.09}, 0.12) is True
+
+
+def test_low_volatility_flag_is_false_above_the_threshold():
+    assert is_low_volatility({"volatility": 0.30}, 0.12) is False
+
+
+def test_low_volatility_flag_includes_the_threshold_itself():
+    assert is_low_volatility({"volatility": 0.12}, 0.12) is True
+
+
+def test_unmeasured_volatility_is_unknown_not_false():
+    """A fund never refreshed has no volatility. Reporting it as failing the
+    test would be an answer the data cannot support."""
+    assert is_low_volatility({"volatility": None}, 0.12) is None
+    assert is_low_volatility({}, 0.12) is None
+    assert is_low_volatility({"volatility": ""}, 0.12) is None
+
+
+def test_low_volatility_flag_follows_the_threshold_it_is_given():
+    fund = {"volatility": 0.15}
+    assert is_low_volatility(fund, 0.12) is False
+    assert is_low_volatility(fund, 0.20) is True
 
 
 def test_fund_symbol_prefers_the_yahoo_listing():

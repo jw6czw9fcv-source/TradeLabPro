@@ -1656,6 +1656,9 @@ class EtfScreenerPanel(QWidget):
         ("volatility", "Volatility", False),
         ("max_drawdown", "Worst drop", False),
         ("sharpe", "Sharpe", False),
+        # Computed, not stored: one threshold you set, applied to the
+        # volatility already measured. See LOW_VOL_* below.
+        ("low_vol", "Low vol", False),
         ("low_risk", "Low risk", True),
         ("mid_risk", "Mid risk", True),
         ("high_risk", "High risk", True),
@@ -1684,6 +1687,15 @@ class EtfScreenerPanel(QWidget):
     # What the filter box searches.
     FILTER_COLUMNS = ("ticker", "name", "category", "region", "notes",
                       "suggested_account")
+
+    # The "Low vol" column is a test, not a rating: one threshold you choose,
+    # applied to the volatility the refresh measured. It is deliberately not a
+    # weight - it says which funds pass, never how much to put in them. A fund
+    # never refreshed reads "—" (not measured), which is not the same as
+    # failing the test.
+    LOW_VOL_SETTING = "etf_screener/low_vol_threshold"
+    LOW_VOL_PASS = "✓"
+    LOW_VOL_UNKNOWN = "—"
 
     # Which weight column each summary column reads.
     COMPOSITIONS = [("Low risk", "low_risk"), ("Mid risk", "mid_risk"),
@@ -1787,6 +1799,23 @@ class EtfScreenerPanel(QWidget):
                                         "inside it, so the same name held twice shows once.")
         self.lookthrough_btn.clicked.connect(self.show_look_through)
         export_btn = QPushButton("Export CSV"); export_btn.clicked.connect(self.export_csv)
+        from tradelab.core.etf_metrics import LOW_VOL_THRESHOLD
+        self.low_vol_spin = QDoubleSpinBox()
+        self.low_vol_spin.setRange(0.0, 100.0)
+        self.low_vol_spin.setDecimals(1)
+        self.low_vol_spin.setSingleStep(0.5)
+        self.low_vol_spin.setSuffix(" %")
+        saved = self._settings().value(self.LOW_VOL_SETTING)
+        try:
+            self.low_vol_spin.setValue(float(saved) if saved is not None
+                                       else LOW_VOL_THRESHOLD * 100.0)
+        except (TypeError, ValueError):
+            self.low_vol_spin.setValue(LOW_VOL_THRESHOLD * 100.0)
+        self.low_vol_spin.setToolTip(
+            "Flags every fund whose measured annualized volatility is at or below this. "
+            "Your threshold, applied mechanically — it marks which funds pass, it never "
+            "says how much to hold.")
+        self.low_vol_spin.valueChanged.connect(self._on_low_vol_threshold_changed)
         self.composition_combo = QComboBox()
         for label, key in self.COMPOSITIONS:
             self.composition_combo.addItem(label, key)
@@ -1794,6 +1823,7 @@ class EtfScreenerPanel(QWidget):
         self.composition_combo.setToolTip("Which allocation the analyses below act on.")
         self.composition_combo.currentIndexChanged.connect(lambda _i: self._refresh_summary())
         for widget in (self.watch_btn, self.portfolio_btn, self.compare_btn,
+                       QLabel("  Low vol ≤"), self.low_vol_spin,
                        QLabel("  Allocation:"), self.composition_combo,
                        self.rebalance_btn, self.lookthrough_btn, export_btn):
             actions.addWidget(widget)
@@ -1851,11 +1881,37 @@ class EtfScreenerPanel(QWidget):
         self.reload()
 
     # -- data -------------------------------------------------------------
+    # -- the low-volatility test -------------------------------------------
+    @staticmethod
+    def _settings():
+        """The app's own settings store. A bare QSettings() has no
+        organization, writes somewhere else, and reads back nothing — which is
+        how the threshold silently failed to persist the first time."""
+        return QSettings("TradeLabPro", "TradeLabPro")
+
+    def low_vol_threshold(self) -> float:
+        """The threshold as a fraction, matching how volatility is stored."""
+        return float(self.low_vol_spin.value()) / 100.0
+
+    def _on_low_vol_threshold_changed(self, value):
+        self._settings().setValue(self.LOW_VOL_SETTING, float(value))
+        self.reload()
+
+    def _decorated_funds(self) -> list:
+        """The funds, each carrying the computed columns the table shows but
+        the database does not store."""
+        from tradelab.core.etf_metrics import is_low_volatility
+        threshold = self.low_vol_threshold()
+        funds = self.db.etf_list()
+        for fund in funds:
+            fund["low_vol"] = is_low_volatility(fund, threshold)
+        return funds
+
     def reload(self):
         """Repaint the whole table from the database. Sorting is switched off
         while the rows go in: with it on, Qt re-sorts after every setItem and
         the row you are half-way through filling moves out from under you."""
-        funds = self.db.etf_list()
+        funds = self._decorated_funds()
         self._loading = True
         sorting = self.table.isSortingEnabled()
         self.table.setSortingEnabled(False)
@@ -1889,9 +1945,14 @@ class EtfScreenerPanel(QWidget):
         # a weight you typed is not good or bad.
         if key in self.COLOURED_COLUMNS and isinstance(value, (int, float)):
             item.setForeground(QColor(theme.pnl_color(value)))
+        elif key == "low_vol" and value is True:
+            item.setForeground(QColor(theme.UP))
         return item
 
     def _format(self, key, value):
+        if key == "low_vol":
+            # None is "not measured yet", which is not the same as failing.
+            return {True: self.LOW_VOL_PASS, False: ""}.get(value, self.LOW_VOL_UNKNOWN)
         if value is None or value == "":
             return ""
         if key in self.PERCENT_COLUMNS:
@@ -2017,6 +2078,9 @@ class EtfScreenerPanel(QWidget):
         for key, label in self.EXPOSURE_CHOICES:
             if any((f.get(key) or 0) > 0 for f in funds):
                 combo.addItem(f"Holds {label}", f"{key}\x1f>0")
+        if any(f.get("low_vol") is True for f in funds):
+            combo.addItem(f"Passes low vol ≤ {self.low_vol_spin.value():.1f}%",
+                          f"low_vol\x1f{self.LOW_VOL_PASS}")
         if previous is not None:
             index = combo.findData(previous)
             combo.setCurrentIndex(index if index >= 0 else 0)
@@ -2122,14 +2186,17 @@ class EtfScreenerPanel(QWidget):
             self, "Export ETF Screener", "etf_screener.csv", "CSV files (*.csv)")
         if not path:
             return
-        funds = self.db.etf_list()
+        funds = self._decorated_funds()
         keys = [key for key, _label, _editable in self.COLUMNS]
+        # A computed flag exports as a word, not as Python's True/False/None.
+        flag = {True: "yes", False: "no", None: ""}
         try:
             with open(path, "w", newline="", encoding="utf-8-sig") as handle:
                 writer = csv.writer(handle)
                 writer.writerow([label for _key, label, _editable in self.COLUMNS])
                 for fund in funds:
-                    writer.writerow([fund.get(key, "") for key in keys])
+                    writer.writerow([flag[fund.get("low_vol")] if key == "low_vol"
+                                     else fund.get(key, "") for key in keys])
         except OSError as exc:
             self.status.setText(f"Could not write {path}: {exc}")
             return
@@ -2291,6 +2358,7 @@ class EtfScreenerPanel(QWidget):
             return
         self._lt_rows = [{"symbol": fund_symbol(f), "market_value": float(f[weight_key]) * 100.0}
                          for f in funds]
+        self._lt_comps = {}
         self.status.setText(f"Opening up {len(funds)} funds…")
         worker = _FundCompositionWorker([r["symbol"] for r in self._lt_rows])
         worker.done.connect(self._on_look_through_loaded)
@@ -2298,10 +2366,36 @@ class EtfScreenerPanel(QWidget):
         worker.start()
 
     def _on_look_through_loaded(self, compositions, _sectors, error):
-        from tradelab.core import portfolio_analytics as pa
+        """First pass. A fund that is a wrapper around another fund — VFV.TO
+        publishes VOO.TO at 100% — gets one more lookup before rendering,
+        otherwise the report answers "you own VOO.TO", which is true and
+        useless."""
+        from tradelab.core.etf_metrics import pass_through_symbols
         if error:
             self.status.setText(f"Could not open the funds up: {error}")
             return
+        self._lt_comps = dict(compositions or {})
+        nested = pass_through_symbols(self._lt_comps)
+        if nested:
+            self.status.setText(f"{', '.join(nested)} held whole inside a fund — opening those too…")
+            worker = _FundCompositionWorker(nested)
+            worker.done.connect(self._on_look_through_second_level)
+            self._analysis_worker = worker
+            worker.start()
+            return
+        self._render_look_through()
+
+    def _on_look_through_second_level(self, compositions, _sectors, error):
+        """Second pass. A failure here is not fatal: the report still stands at
+        one level, it just names the wrapper instead of what's inside it."""
+        if not error:
+            self._lt_comps.update(compositions or {})
+        self._render_look_through()
+
+    def _render_look_through(self):
+        from tradelab.core import portfolio_analytics as pa
+        from tradelab.core.etf_metrics import expand_compositions
+        compositions = expand_compositions(self._lt_comps)
         result = pa.look_through(self._lt_rows, compositions or {})
         exposures = result.get("exposures") or []
         opened = result.get("funds_opened") or []
@@ -2333,6 +2427,14 @@ class EtfScreenerPanel(QWidget):
             f"{rest_pct:.0f}% of the allocation sits below what they report and is left "
             f"out rather than spread across the names above — every percentage here is a "
             f"floor, never an overstatement.")
+        top_level = {row["symbol"] for row in self._lt_rows}
+        nested = sorted(s for s, c in self._lt_comps.items()
+                        if s not in top_level and (c or {}).get("top_holdings"))
+        if nested:
+            footnote += (" Opened a second level for " + ", ".join(nested)
+                         + ", each held whole inside one of your funds — otherwise the "
+                           "answer would have been the name of a fund rather than what "
+                           "is in it.")
         if no_data:
             footnote += (" No holdings published for " + ", ".join(no_data)
                          + "; those count as themselves rather than being opened up.")
@@ -2357,7 +2459,7 @@ class EtfScreenerPanel(QWidget):
         from tradelab.core.etf_metrics import COMPOSITION_ROWS, composition_summary
 
         if funds is None:
-            funds = self.db.etf_list()
+            funds = self._decorated_funds()
         summaries = [composition_summary(funds, key) for _label, key in self.COMPOSITIONS]
 
         self.summary.setRowCount(1 + len(COMPOSITION_ROWS))

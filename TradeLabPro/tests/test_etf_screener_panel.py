@@ -466,6 +466,49 @@ def test_look_through_says_why_when_no_fund_publishes_holdings(panel, monkeypatc
     assert "VAB.TO" in panel.status.text()
 
 
+def test_look_through_opens_a_fund_held_whole_inside_a_fund(panel, monkeypatch, no_network):
+    """VFV.TO publishes one holding: VOO.TO at 100%. Stopping there answers
+    "you own VOO.TO", which is true and useless."""
+    from tradelab.ui import app as appmod
+    shown = {}
+    monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
+                        lambda self, parent, title, headers, rows, footnote="":
+                            shown.update(rows=rows, footnote=footnote) or None)
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO", my_mix=1.0)
+    panel.reload()
+    panel.show_look_through()
+    # First pass: a wrapper, so the panel asks for the nested fund instead of
+    # rendering.
+    panel._on_look_through_loaded({"VFV.TO": {"top_holdings": {"VOO.TO": 1.0}}}, {}, "")
+    assert not shown
+    panel._on_look_through_second_level(
+        {"VOO.TO": {"top_holdings": {"AAPL": 0.4, "MSFT": 0.2}}}, {}, "")
+
+    companies = {row[0]: row[1][2] for row in shown["rows"]}
+    assert companies["AAPL"] == pytest.approx(40.0)
+    # The 40% VOO.TO doesn't publish stays VOO.TO rather than being spread.
+    assert companies["VOO.TO"] == pytest.approx(40.0)
+    assert "second level" in shown["footnote"]
+
+
+def test_look_through_still_renders_when_the_second_level_fails(panel, monkeypatch, no_network):
+    from tradelab.ui import app as appmod
+    shown = {}
+    monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
+                        lambda self, parent, title, headers, rows, footnote="":
+                            shown.update(rows=rows) or None)
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO", my_mix=1.0)
+    panel.reload()
+    panel.show_look_through()
+    panel._on_look_through_loaded({"VFV.TO": {"top_holdings": {"VOO.TO": 1.0}}}, {}, "")
+    panel._on_look_through_second_level(None, None, "network down")
+    # Degrades to one level rather than reporting nothing at all.
+    assert [row[0] for row in shown["rows"]] == ["VOO.TO"]
+
+
 def test_look_through_reports_a_fetch_error(panel, no_network):
     panel.db.etf_upsert("XIC", yahoo="XIC.TO", my_mix=1.0)
     panel.reload()
@@ -563,6 +606,99 @@ def test_the_analyses_read_the_selected_allocation(panel):
     assert panel.current_weight_key() == "my_mix"       # defaults to your own
     panel.composition_combo.setCurrentIndex(0)
     assert panel.current_weight_key() == "low_risk"
+
+
+# -- the low-volatility flag -------------------------------------------------
+
+def test_low_vol_flags_a_fund_under_the_threshold(panel):
+    panel.low_vol_spin.setValue(12.0)
+    panel.db.etf_upsert("ZLB", volatility=0.09)
+    panel.db.etf_upsert("SMH", volatility=0.32)
+    panel.reload()
+    flags = {_cell(panel, r, "ticker").text(): _cell(panel, r, "low_vol").text()
+             for r in range(panel.table.rowCount())}
+    assert flags["ZLB"] == panel.LOW_VOL_PASS
+    assert flags["SMH"] == ""
+
+
+def test_an_unmeasured_fund_reads_unknown_not_failing(panel):
+    """A fund never refreshed has no volatility. Showing it as failing the
+    test would be an answer the data cannot support."""
+    panel.ticker_edit.setText("NEW"); panel.add_fund()
+    assert _cell(panel, 0, "low_vol").text() == panel.LOW_VOL_UNKNOWN
+
+
+def test_changing_the_threshold_re_flags_the_table(panel):
+    panel.db.etf_upsert("VCN", volatility=0.15)
+    panel.low_vol_spin.setValue(12.0)
+    panel.reload()
+    assert _cell(panel, 0, "low_vol").text() == ""
+    panel.low_vol_spin.setValue(20.0)
+    assert _cell(panel, 0, "low_vol").text() == panel.LOW_VOL_PASS
+
+
+def test_the_threshold_is_remembered(panel, qapp, tmp_path):
+    from tradelab.ui.app import EtfScreenerPanel
+    panel.low_vol_spin.setValue(7.5)
+    # The app's own store, not a bare QSettings() - that one persists nothing.
+    stored = EtfScreenerPanel._settings().value(EtfScreenerPanel.LOW_VOL_SETTING)
+    assert float(stored) == 7.5
+    fresh = EtfScreenerPanel(Database(path=tmp_path / "second.db"))
+    assert fresh.low_vol_spin.value() == 7.5
+
+
+def test_the_flag_column_is_not_editable(panel):
+    from PySide6.QtCore import Qt
+    panel.db.etf_upsert("ZLB", volatility=0.09)
+    panel.reload()
+    assert not (_cell(panel, 0, "low_vol").flags() & Qt.ItemIsEditable)
+
+
+def test_the_flag_is_not_stored_as_a_fund_column(panel):
+    """It is computed from volatility every time. Storing it would leave a
+    stale answer behind the moment the threshold moved."""
+    from tradelab.data.database import Database as DB
+    panel.db.etf_upsert("ZLB", volatility=0.09)
+    panel.reload()
+    assert "low_vol" not in DB.ETF_COLUMNS
+    assert "low_vol" not in panel.db.etf_get("ZLB")
+
+
+def test_filtering_on_the_flag(panel):
+    panel.low_vol_spin.setValue(12.0)
+    panel.db.etf_upsert("ZLB", volatility=0.09)
+    panel.db.etf_upsert("SMH", volatility=0.32)
+    panel.reload()
+    index = panel.filter_choice.findText("Passes low vol ≤ 12.0%")
+    assert index > 0
+    panel.filter_choice.setCurrentIndex(index)
+    visible = [_cell(panel, r, "ticker").text() for r in range(panel.table.rowCount())
+               if not panel.table.isRowHidden(r)]
+    assert visible == ["ZLB"]
+
+
+def test_the_flag_entry_is_absent_when_nothing_passes(panel):
+    panel.low_vol_spin.setValue(5.0)
+    panel.db.etf_upsert("SMH", volatility=0.32)
+    panel.reload()
+    assert panel.filter_choice.findText("Passes low vol ≤ 5.0%") == -1
+
+
+def test_export_writes_the_flag_as_a_word(panel, tmp_path, monkeypatch):
+    import csv
+    from tradelab.ui import app as appmod
+    panel.low_vol_spin.setValue(12.0)
+    panel.db.etf_upsert("ZLB", volatility=0.09)
+    panel.db.etf_upsert("NEW")
+    panel.reload()
+    out = tmp_path / "etf.csv"
+    monkeypatch.setattr(appmod.QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (str(out), "")))
+    panel.export_csv()
+    rows = list(csv.reader(out.read_text(encoding="utf-8-sig").splitlines()))
+    body = {row[0]: dict(zip(rows[0], row)) for row in rows[1:]}
+    assert body["ZLB"]["Low vol"] == "yes"
+    assert body["NEW"]["Low vol"] == ""      # not measured, not "no"
 
 
 # -- language & reference notes ---------------------------------------------

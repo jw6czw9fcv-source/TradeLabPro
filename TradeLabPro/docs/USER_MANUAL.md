@@ -436,10 +436,21 @@ the **Allocation** dropdown, then:
   bank held inside three index funds is one exposure, not three. Sources
   publish only each fund's largest holdings, so the rest is reported as
   unallocated rather than spread across the names on screen — every percentage
-  is a floor.
+  is a floor. A fund that is really a wrapper around another fund is opened
+  **twice**: VFV.TO publishes one holding, VOO.TO at 100%, and answering "you
+  own VOO.TO" would be true and useless.
 - **Compare selected** plots the funds you've highlighted on one chart, each
   restated to 100 at the first date they *all* share, so the lines answer one
   question: which grew fastest over the same period.
+
+**The Low vol column is a test you set.** Type a threshold next to **Low vol ≤**
+and every fund whose *measured* annualized volatility is at or below it is
+ticked. It is arithmetic on two numbers — your threshold and the volatility the
+refresh computed — so it is repeatable and it changes the moment you move the
+threshold. It marks which funds pass; it never says how much to hold, and it
+does not fill in the allocation columns. A fund that has never been refreshed
+reads **—**: not measured, which is not the same as failing the test. Once
+anything passes, the filter dropdown gains a *Passes low vol* entry.
 
 **An overlap warning appears on its own**, under the totals, when two funds in
 the allocation buy the same market and both carry weight (VCN and XIC, VIU and

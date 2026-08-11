@@ -147,6 +147,98 @@ def compute_metrics(symbol: str, prices: pd.Series | None = None) -> dict | None
     return out or None
 
 
+# A fund whose largest published holding is at least this much of it is a
+# wrapper around something else (VFV.TO is VOO.TO at 100%), and stopping there
+# tells you nothing. Only these get a second lookup: opening every holding of
+# every fund would be hundreds of requests for names that are already
+# companies. Deliberately high — a fund with 60% in one name is concentrated,
+# not a wrapper, and treating it as one would fetch it for no reason.
+PASS_THROUGH_WEIGHT = 0.9
+
+
+def pass_through_symbols(compositions: dict, min_weight: float = PASS_THROUGH_WEIGHT) -> list:
+    """Holdings big enough inside their parent to be worth opening up in turn.
+
+    Returns symbols that are held at `min_weight` or more of some fund and
+    whose own composition we don't have yet — the second level of a
+    look-through, kept to one extra request per fund.
+    """
+    known = set(compositions or {})
+    found = set()
+    for _symbol, composition in (compositions or {}).items():
+        for held, weight in ((composition or {}).get("top_holdings") or {}).items():
+            try:
+                weight = float(weight)
+            except (TypeError, ValueError):
+                continue
+            if weight >= min_weight and held not in known:
+                found.add(held)
+    return sorted(found)
+
+
+def expand_compositions(compositions: dict) -> dict:
+    """Fold a fund-of-funds down a level.
+
+    VFV.TO publishes exactly one holding: VOO.TO, at 100%. Looked through once,
+    the answer is "you own VOO.TO", which is true and useless. Where a holding
+    has its own published composition, its weight is distributed across what
+    *it* holds.
+
+    The part a nested fund does not publish stays attributed to that fund
+    rather than being spread over the names it does publish — same rule as the
+    single-level look-through, so every company weight stays a floor.
+    """
+    expanded = {}
+    for symbol, composition in (compositions or {}).items():
+        holdings = (composition or {}).get("top_holdings") or {}
+        out = {}
+        for held, weight in holdings.items():
+            try:
+                weight = float(weight)
+            except (TypeError, ValueError):
+                continue
+            inner = ((compositions or {}).get(held) or {}).get("top_holdings") or {}
+            if not inner or held == symbol:
+                out[held] = out.get(held, 0.0) + weight
+                continue
+            covered = 0.0
+            for deep, deep_weight in inner.items():
+                try:
+                    deep_weight = float(deep_weight)
+                except (TypeError, ValueError):
+                    continue
+                out[deep] = out.get(deep, 0.0) + weight * deep_weight
+                covered += deep_weight
+            rest = weight * max(0.0, 1.0 - covered)
+            if rest > 0:
+                out[held] = out.get(held, 0.0) + rest
+        expanded[symbol] = {**(composition or {}), "top_holdings": out}
+    return expanded
+
+
+# Default for the low-volatility flag, in annualized volatility. Not a
+# recommendation and not a rating: it is one number the person picks, applied
+# to the volatility the Screener already measured.
+LOW_VOL_THRESHOLD = 0.12
+
+
+def is_low_volatility(fund: dict, threshold: float = LOW_VOL_THRESHOLD):
+    """True / False / None for "this fund's measured volatility is at or below
+    `threshold`".
+
+    **None means not measured yet**, and is deliberately not False: a fund that
+    has never been refreshed is unknown, not volatile, and reporting it as
+    failing the test would be an answer the data can't support.
+    """
+    value = (fund or {}).get("volatility")
+    if value is None or value == "":
+        return None
+    try:
+        return float(value) <= float(threshold)
+    except (TypeError, ValueError):
+        return None
+
+
 def rebased_series(histories: dict, base: float = 100.0) -> dict:
     """Several funds on one scale: each restated to `base` at the first date
     they all share.
