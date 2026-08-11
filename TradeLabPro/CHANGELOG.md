@@ -34,10 +34,11 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
-- Full pytest suite (1079) passes, including annualization over three years, the un-annualized six-month window, Sharpe going negative against the risk-free rate, the drawdown after a 30% drop, short history writing only the columns it can support, metrics never reaching a user column, `None` never blanking a stored figure, percent-in/percent-out cell editing, non-editable computed columns, each allocation totalling from its own column, the coverage note, the schema-v4 rename preserving weights already typed, the pinned column sharing one model and scrolling in step, double-click charting the Yahoo symbol and not firing on an editable cell, the wrapping toolbar, the rebalance drift against a book the plan only half covers, the overlap detector's category fallback, rebasing from a common start, the filter leaving totals alone, CSV export in stored units, and the Excel importer's header mapping and blank-cell handling.
+- Full pytest suite (1081) passes, including annualization over three years, the un-annualized six-month window, Sharpe going negative against the risk-free rate, the drawdown after a 30% drop, short history writing only the columns it can support, metrics never reaching a user column, `None` never blanking a stored figure, percent-in/percent-out cell editing, non-editable computed columns, each allocation totalling from its own column, the coverage note, the schema-v4 rename preserving weights already typed, the pinned column sharing one model and scrolling in step, double-click charting the Yahoo symbol and not firing on an editable cell, the wrapping toolbar, the rebalance drift against a book the plan only half covers, the overlap detector's category fallback, rebasing from a common start, the filter leaving totals alone, CSV export in stored units, and the Excel importer's header mapping and blank-cell handling.
 
 ## 2.40.0 - Your workplace retirement plan, fund by fund
 
@@ -61,6 +62,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -80,6 +82,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -99,6 +102,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -123,6 +127,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -154,6 +159,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -179,6 +185,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -200,6 +207,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -218,6 +226,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -236,6 +245,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -253,6 +263,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -269,6 +280,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -289,6 +301,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -312,6 +325,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -330,6 +344,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -347,6 +362,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -369,6 +385,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -384,6 +401,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -398,6 +416,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -410,6 +429,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -426,6 +446,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -441,6 +462,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -457,6 +479,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -473,6 +496,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -486,6 +510,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -501,6 +526,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -520,6 +546,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -532,6 +559,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -552,6 +580,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -567,6 +596,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -580,6 +610,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -596,6 +627,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -608,6 +640,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -620,6 +653,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -632,6 +666,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -647,6 +682,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -666,6 +702,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -681,6 +718,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -693,6 +731,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -706,6 +745,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -731,6 +771,7 @@
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -750,6 +791,7 @@ Phase 8 delivers the safe, genuinely useful half of "IBKR-grade" connectivity: a
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -769,6 +811,7 @@ The roadmap's Phase 7 "AI Assistant" shipped as a real natural-language assistan
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -782,6 +825,7 @@ The roadmap's Phase 7 "AI Assistant" shipped as a real natural-language assistan
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -798,6 +842,7 @@ The Plugins tab was dead code (it only listed filenames and wasn't even register
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -819,6 +864,7 @@ Phase 5, plus a major push toward TradingView/IBKR-level flexibility: indicators
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -838,6 +884,7 @@ The Backtest panel existed but wasn't even registered as a tab (dead code) and w
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -857,6 +904,7 @@ Starts Phase 3. The Market tab was a placeholder (a regime-symbol table whose ow
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -870,6 +918,7 @@ Starts Phase 3. The Market tab was a placeholder (a regime-symbol table whose ow
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -889,6 +938,7 @@ Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -905,6 +955,7 @@ Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -924,6 +975,7 @@ Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -941,6 +993,7 @@ Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -964,6 +1017,7 @@ Continued first manual pass over Phase 1 (Chart Engine). All of these were silen
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -982,6 +1036,7 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -998,6 +1053,7 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -1017,6 +1073,7 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -1035,6 +1092,7 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -1065,6 +1123,7 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
@@ -1086,6 +1145,7 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 
 ### Fixed
 - **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **Re-adding a ticker wiped its Yahoo symbol.** With the Yahoo box empty, **Add** defaulted to the bare ticker and overwrote what was on file — turning `VFV.TO` into `VFV`, which Yahoo neither prices nor can open up, so the fund quietly became a "held directly" line in the look-through. Nothing typed now means nothing changed.
 - **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified

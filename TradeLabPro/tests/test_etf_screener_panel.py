@@ -98,6 +98,25 @@ def test_adding_an_existing_ticker_does_not_duplicate_it(panel):
     assert panel.db.etf_get("VFV")["yahoo"] == "VFV.TO"
 
 
+def test_re_adding_a_ticker_does_not_wipe_its_yahoo_symbol(panel):
+    """Re-adding VFV with the Yahoo box empty overwrote VFV.TO with VFV — a
+    symbol Yahoo neither prices nor can open up, which quietly turned a fund
+    into a "held directly" line in the look-through."""
+    panel.ticker_edit.setText("VFV"); panel.yahoo_edit.setText("VFV.TO")
+    panel.add_fund()
+    panel.ticker_edit.setText("VFV"); panel.add_fund()      # Yahoo box empty
+    assert panel.db.etf_get("VFV")["yahoo"] == "VFV.TO"
+    assert "already listed" in panel.status.text()
+
+
+def test_re_adding_with_a_symbol_typed_still_changes_it(panel):
+    panel.ticker_edit.setText("VFV"); panel.yahoo_edit.setText("VFV.TO")
+    panel.add_fund()
+    panel.ticker_edit.setText("VFV"); panel.yahoo_edit.setText("VOO")
+    panel.add_fund()
+    assert panel.db.etf_get("VFV")["yahoo"] == "VOO"
+
+
 def test_remove_selected_deletes_from_db(panel):
     panel.ticker_edit.setText("VFV"); panel.add_fund()
     panel.table.selectRow(0)

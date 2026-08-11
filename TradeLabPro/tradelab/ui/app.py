@@ -2008,13 +2008,23 @@ class EtfScreenerPanel(QWidget):
         if not ticker:
             self.status.setText("Enter a ticker to add.")
             return
-        yahoo = self.yahoo_edit.text().strip() or ticker
-        existed = self.db.etf_get(ticker) is not None
-        self.db.etf_upsert(ticker, yahoo=yahoo)
+        typed = self.yahoo_edit.text().strip()
+        existing = self.db.etf_get(ticker)
+        if existing and not typed:
+            # Adding a ticker already listed, with the Yahoo box left empty,
+            # must not overwrite the symbol on file: defaulting to the bare
+            # ticker turned VFV.TO into VFV, which Yahoo does not price and
+            # cannot open up. Nothing typed means nothing to change.
+            self.ticker_edit.clear(); self.yahoo_edit.clear()
+            self.status.setText(
+                f"{ticker} is already listed (Yahoo: {existing['yahoo'] or ticker}). "
+                f"Type a symbol to change it.")
+            return
+        self.db.etf_upsert(ticker, yahoo=typed or ticker)
         self.ticker_edit.clear(); self.yahoo_edit.clear()
         self.reload()
-        if existed:
-            self.status.setText(f"{ticker} was already listed — Yahoo symbol updated to {yahoo}.")
+        if existing:
+            self.status.setText(f"{ticker} was already listed — Yahoo symbol updated to {typed}.")
 
     def remove_selected(self):
         rows = {i.row() for i in self.table.selectedIndexes()}
@@ -2456,9 +2466,10 @@ class EtfScreenerPanel(QWidget):
             f"{rest_pct:.0f}% of the allocation sits below what they report and is left "
             f"out rather than spread across the names above — every percentage here is a "
             f"floor, never an overstatement.")
-        top_level = {row["symbol"] for row in self._lt_rows}
-        nested = sorted(s for s, c in self._lt_comps.items()
-                        if s not in top_level and (c or {}).get("top_holdings"))
+        # Only the symbols actually held inside a fund — not the alternate
+        # listings probed to find them, which are noise in a footnote.
+        nested = sorted(s for s in getattr(self, "_lt_nested", [])
+                        if (self._lt_comps.get(s) or {}).get("top_holdings"))
         if nested:
             footnote += (" Opened a second level for " + ", ".join(nested)
                          + ", each held whole inside one of your funds — otherwise the "
