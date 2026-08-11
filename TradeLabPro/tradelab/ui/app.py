@@ -1643,9 +1643,9 @@ class EtfScreenerPanel(QWidget):
         ("pct_us", "% US", True),
         ("pct_intl", "% Intl", True),
         ("pct_bond", "% Bonds", True),
-        ("pct_gold", "% Gold/Alt", True),
-        ("risk", "Risk", True),
+        ("pct_alt", "% Commodity", True),
         ("mer", "MER", True),
+        ("dividend_yield", "Div %/yr", False),
         ("ret_1m", "Ret 1M", False),
         ("ret_3m", "Ret 3M", False),
         ("ret_6m", "Ret 6M", False),
@@ -1655,14 +1655,12 @@ class EtfScreenerPanel(QWidget):
         ("ret_10a", "Ret 10Y", False),
         ("volatility", "Volatility", False),
         ("max_drawdown", "Worst drop", False),
-        ("sharpe", "Sharpe", False),
-        # Computed, not stored: one threshold you set, applied to the
-        # volatility already measured. See LOW_VOL_* below.
-        ("low_vol", "Low vol", False),
+        # The published Canadian rating (NI 81-102 Appendix F), computed here
+        # from the same prices - see core/etf_metrics.csa_volatility.
+        ("csa_level", "Risk", False),
         ("low_risk", "Low risk", True),
         ("mid_risk", "Mid risk", True),
         ("high_risk", "High risk", True),
-        ("my_mix", "My mix ✏️", True),
         ("suggested_account", "Account", True),
         ("notes", "Notes", True),
         ("yahoo", "Yahoo", True),
@@ -1671,35 +1669,25 @@ class EtfScreenerPanel(QWidget):
 
     # Stored as a fraction, typed and shown as a percent.
     PERCENT_COLUMNS = {
-        "pct_can", "pct_us", "pct_intl", "pct_bond", "pct_gold", "mer",
+        "pct_can", "pct_us", "pct_intl", "pct_bond", "pct_alt", "mer",
+        "dividend_yield", "csa_stdev",
         "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
         "volatility", "max_drawdown", "low_risk", "mid_risk", "high_risk",
-        "my_mix",
     }
-    NUMERIC_COLUMNS = PERCENT_COLUMNS | {"risk", "sharpe"}
+    NUMERIC_COLUMNS = PERCENT_COLUMNS | {"risk", "sharpe", "csa_months"}
 
     # Measured figures worth colouring green/red. Weights and fees are not
     # here: a 20% allocation is not "good", and every MER is a cost.
     COLOURED_COLUMNS = {
         "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
-        "sharpe",
     }
     # What the filter box searches.
     FILTER_COLUMNS = ("ticker", "name", "category", "region", "notes",
                       "suggested_account")
 
-    # The "Low vol" column is a test, not a rating: one threshold you choose,
-    # applied to the volatility the refresh measured. It is deliberately not a
-    # weight - it says which funds pass, never how much to put in them. A fund
-    # never refreshed reads "—" (not measured), which is not the same as
-    # failing the test.
-    LOW_VOL_SETTING = "etf_screener/low_vol_threshold"
-    LOW_VOL_PASS = "✓"
-    LOW_VOL_UNKNOWN = "—"
-
     # Which weight column each summary column reads.
     COMPOSITIONS = [("Low risk", "low_risk"), ("Mid risk", "mid_risk"),
-                    ("High risk", "high_risk"), ("My mix", "my_mix")]
+                    ("High risk", "high_risk")]
 
     # Carried over from the workbook this tab replaces: which US listings a
     # CAD-listed fund stands in for, and which have no CAD twin. Reference
@@ -1800,23 +1788,6 @@ class EtfScreenerPanel(QWidget):
                                         "inside it, so the same name held twice shows once.")
         self.lookthrough_btn.clicked.connect(self.show_look_through)
         export_btn = QPushButton("Export CSV"); export_btn.clicked.connect(self.export_csv)
-        from tradelab.core.etf_metrics import LOW_VOL_THRESHOLD
-        self.low_vol_spin = QDoubleSpinBox()
-        self.low_vol_spin.setRange(0.0, 100.0)
-        self.low_vol_spin.setDecimals(1)
-        self.low_vol_spin.setSingleStep(0.5)
-        self.low_vol_spin.setSuffix(" %")
-        saved = self._settings().value(self.LOW_VOL_SETTING)
-        try:
-            self.low_vol_spin.setValue(float(saved) if saved is not None
-                                       else LOW_VOL_THRESHOLD * 100.0)
-        except (TypeError, ValueError):
-            self.low_vol_spin.setValue(LOW_VOL_THRESHOLD * 100.0)
-        self.low_vol_spin.setToolTip(
-            "Flags every fund whose measured annualized volatility is at or below this. "
-            "Your threshold, applied mechanically — it marks which funds pass, it never "
-            "says how much to hold.")
-        self.low_vol_spin.valueChanged.connect(self._on_low_vol_threshold_changed)
         self.composition_combo = QComboBox()
         for label, key in self.COMPOSITIONS:
             self.composition_combo.addItem(label, key)
@@ -1824,7 +1795,6 @@ class EtfScreenerPanel(QWidget):
         self.composition_combo.setToolTip("Which allocation the analyses below act on.")
         self.composition_combo.currentIndexChanged.connect(lambda _i: self._refresh_summary())
         for widget in (self.watch_btn, self.portfolio_btn, self.compare_btn,
-                       QLabel("  Low vol ≤"), self.low_vol_spin,
                        QLabel("  Allocation:"), self.composition_combo,
                        self.rebalance_btn, self.lookthrough_btn, export_btn):
             actions.addWidget(widget)
@@ -1882,37 +1852,11 @@ class EtfScreenerPanel(QWidget):
         self.reload()
 
     # -- data -------------------------------------------------------------
-    # -- the low-volatility test -------------------------------------------
-    @staticmethod
-    def _settings():
-        """The app's own settings store. A bare QSettings() has no
-        organization, writes somewhere else, and reads back nothing — which is
-        how the threshold silently failed to persist the first time."""
-        return QSettings("TradeLabPro", "TradeLabPro")
-
-    def low_vol_threshold(self) -> float:
-        """The threshold as a fraction, matching how volatility is stored."""
-        return float(self.low_vol_spin.value()) / 100.0
-
-    def _on_low_vol_threshold_changed(self, value):
-        self._settings().setValue(self.LOW_VOL_SETTING, float(value))
-        self.reload()
-
-    def _decorated_funds(self) -> list:
-        """The funds, each carrying the computed columns the table shows but
-        the database does not store."""
-        from tradelab.core.etf_metrics import is_low_volatility
-        threshold = self.low_vol_threshold()
-        funds = self.db.etf_list()
-        for fund in funds:
-            fund["low_vol"] = is_low_volatility(fund, threshold)
-        return funds
-
     def reload(self):
         """Repaint the whole table from the database. Sorting is switched off
         while the rows go in: with it on, Qt re-sorts after every setItem and
         the row you are half-way through filling moves out from under you."""
-        funds = self._decorated_funds()
+        funds = self.db.etf_list()
         self._loading = True
         sorting = self.table.isSortingEnabled()
         self.table.setSortingEnabled(False)
@@ -1920,7 +1864,7 @@ class EtfScreenerPanel(QWidget):
         self.table.setRowCount(len(funds))
         for r, fund in enumerate(funds):
             for c, (key, _label, editable) in enumerate(self.COLUMNS):
-                self.table.setItem(r, c, self._make_item(key, fund.get(key), editable))
+                self.table.setItem(r, c, self._make_item(key, fund.get(key), editable, fund))
         self.table.setSortingEnabled(sorting)
         self.table.resizeColumnsToContents()
         frozen = getattr(self, "frozen", None)
@@ -1933,7 +1877,7 @@ class EtfScreenerPanel(QWidget):
         self._refresh_summary(funds)
         self.apply_filter()   # a reload must not un-hide rows the filter excluded
 
-    def _make_item(self, key, value, editable):
+    def _make_item(self, key, value, editable, fund=None):
         item = table_item(
             value if value is not None else "",
             numeric=key in self.NUMERIC_COLUMNS,
@@ -1946,14 +1890,28 @@ class EtfScreenerPanel(QWidget):
         # a weight you typed is not good or bad.
         if key in self.COLOURED_COLUMNS and isinstance(value, (int, float)):
             item.setForeground(QColor(theme.pnl_color(value)))
-        elif key == "low_vol" and value is True:
-            item.setForeground(QColor(theme.UP))
+        if key == "csa_level" and fund:
+            item.setToolTip(self._risk_tooltip(fund))
         return item
 
+    @staticmethod
+    def _risk_tooltip(fund) -> str:
+        """What the rating was computed from. A level standing on four years
+        is not the regulator's ten-year level, and the cell has to be able to
+        say which one you are looking at."""
+        stdev, months = fund.get("csa_stdev"), fund.get("csa_months") or 0
+        if stdev is None:
+            return ("No rating yet — refresh returns & risk. Needs at least three "
+                    "years of month-end prices.")
+        text = (f"NI 81-102 Appendix F: {float(stdev) * 100:.1f}% annualized standard "
+                f"deviation of monthly returns.")
+        if months >= 120:
+            return text + " Full ten-year window, as the regulation prescribes."
+        return (text + f" Computed on {months / 12:.1f} years — all this fund has. The "
+                f"published rating fills a short history with a reference index; this "
+                f"does not, so it can differ from the fund's own document.")
+
     def _format(self, key, value):
-        if key == "low_vol":
-            # None is "not measured yet", which is not the same as failing.
-            return {True: self.LOW_VOL_PASS, False: ""}.get(value, self.LOW_VOL_UNKNOWN)
         if value is None or value == "":
             return ""
         if key in self.PERCENT_COLUMNS:
@@ -2061,15 +2019,16 @@ class EtfScreenerPanel(QWidget):
 
     # -- filtering and selection -------------------------------------------
     # Which columns the dropdown offers a value list for, and what to call them.
-    CHOICE_COLUMNS = [("category", "Category"), ("region", "Region"),
-                      ("suggested_account", "Account"), ("currency", "Currency")]
+    CHOICE_COLUMNS = [("csa_level", "Risk"), ("category", "Category"),
+                      ("region", "Region"), ("suggested_account", "Account"),
+                      ("currency", "Currency")]
 
     # Region is a label; this is what the fund actually contains. XAW is
     # labelled "Global" and is 60% US — filtering on the label alone would miss
     # it, and "show me everything with US in it" is the more useful question.
     EXPOSURE_CHOICES = [("pct_can", "Canada"), ("pct_us", "United States"),
                         ("pct_intl", "International"), ("pct_bond", "Bonds"),
-                        ("pct_gold", "Gold / alternatives")]
+                        ("pct_alt", "Commodities")]
 
     def _rebuild_filter_choices(self, funds):
         """Repopulate the dropdown from what the table actually contains — a
@@ -2089,9 +2048,6 @@ class EtfScreenerPanel(QWidget):
         for key, label in self.EXPOSURE_CHOICES:
             if any((f.get(key) or 0) > 0 for f in funds):
                 combo.addItem(f"Holds {label}", f"{key}\x1f>0")
-        if any(f.get("low_vol") is True for f in funds):
-            combo.addItem(f"Passes low vol ≤ {self.low_vol_spin.value():.1f}%",
-                          f"low_vol\x1f{self.LOW_VOL_PASS}")
         if previous is not None:
             index = combo.findData(previous)
             combo.setCurrentIndex(index if index >= 0 else 0)
@@ -2197,17 +2153,14 @@ class EtfScreenerPanel(QWidget):
             self, "Export ETF Screener", "etf_screener.csv", "CSV files (*.csv)")
         if not path:
             return
-        funds = self._decorated_funds()
+        funds = self.db.etf_list()
         keys = [key for key, _label, _editable in self.COLUMNS]
-        # A computed flag exports as a word, not as Python's True/False/None.
-        flag = {True: "yes", False: "no", None: ""}
         try:
             with open(path, "w", newline="", encoding="utf-8-sig") as handle:
                 writer = csv.writer(handle)
                 writer.writerow([label for _key, label, _editable in self.COLUMNS])
                 for fund in funds:
-                    writer.writerow([flag[fund.get("low_vol")] if key == "low_vol"
-                                     else fund.get(key, "") for key in keys])
+                    writer.writerow([fund.get(key, "") for key in keys])
         except OSError as exc:
             self.status.setText(f"Could not write {path}: {exc}")
             return
@@ -2502,7 +2455,7 @@ class EtfScreenerPanel(QWidget):
         from tradelab.core.etf_metrics import COMPOSITION_ROWS, composition_summary
 
         if funds is None:
-            funds = self._decorated_funds()
+            funds = self.db.etf_list()
         summaries = [composition_summary(funds, key) for _label, key in self.COMPOSITIONS]
 
         self.summary.setRowCount(1 + len(COMPOSITION_ROWS))

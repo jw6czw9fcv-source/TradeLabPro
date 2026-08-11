@@ -43,9 +43,9 @@ COMPOSITION_ROWS = [
     ("% United States", "pct_us", "pct"),
     ("% International", "pct_intl", "pct"),
     ("% Bonds", "pct_bond", "pct"),
-    ("% Gold / alternatives", "pct_gold", "pct"),
-    ("Average risk (1→5)", "risk", "num"),
+    ("% Commodity", "pct_alt", "pct"),
     ("Weighted MER", "mer", "pct"),
+    ("Weighted dividend yield", "dividend_yield", "pct"),
     ("Weighted 10-year return", "ret_10a", "pct"),
 ]
 
@@ -95,6 +95,84 @@ def risk_metrics(prices: pd.Series):
     return round(vol, 4), round(max_dd, 4), (round(sharpe, 2) if sharpe is not None else None)
 
 
+# --- the Canadian regulatory risk classification ---------------------------
+#
+# NI 81-102 Appendix F: every fund and ETF sold in Canada rates its risk with
+# one measure, the annualized standard deviation of **monthly** total returns
+# over **ten years** (monthly stdev x sqrt(12)), banded into five levels. This
+# is the rating printed in the Fund Facts / ETF Facts document, so a figure
+# computed here can be checked against the fund's own published document.
+#
+# It is deliberately not the same number as `risk_metrics()` volatility, which
+# samples daily over whatever history exists — that one is for comparing funds
+# inside this app, this one is for matching a published standard.
+CSA_BANDS = ((0.06, "Low"), (0.11, "Low to medium"),
+             (0.16, "Medium"), (0.20, "Medium to high"))
+CSA_HIGH = "High"
+
+CSA_MONTHS = 120        # the ten years the methodology asks for
+# The regulation fills a short history with a reference index. We can't, so we
+# report what the fund itself has and say how long it was — below three years
+# the figure says more about one market than about the fund.
+CSA_MIN_MONTHS = 36
+
+
+def csa_volatility(prices: pd.Series):
+    """(annualized stdev as a fraction, months used) per Appendix F's recipe:
+    month-end total returns, standard deviation, times the square root of 12.
+
+    None when there isn't enough history. The months count is returned with
+    the figure because a level computed on four years is not the regulatory
+    ten-year level and the caller has to be able to say so.
+    """
+    if prices is None or len(prices) < 2:
+        return None, 0
+    try:
+        monthly = prices.resample("ME").last().dropna()
+    except (TypeError, ValueError):
+        return None, 0
+    returns = monthly.pct_change().dropna()
+    if len(returns) > CSA_MONTHS:
+        returns = returns.iloc[-CSA_MONTHS:]
+    months = len(returns)
+    if months < CSA_MIN_MONTHS:
+        return None, months
+    stdev = float(returns.std(ddof=1)) * (12 ** 0.5)
+    return round(stdev, 4), months
+
+
+def csa_level(stdev) -> str | None:
+    """The Appendix F band a standard deviation falls in. `stdev` is a
+    fraction (0.145 = 14.5%), matching how this app stores volatility."""
+    if stdev is None:
+        return None
+    try:
+        stdev = float(stdev)
+    except (TypeError, ValueError):
+        return None
+    for ceiling, label in CSA_BANDS:
+        if stdev < ceiling:
+            return label
+    return CSA_HIGH
+
+
+def dividend_yield(dividends, price):
+    """Trailing-twelve-month distributions over the current price, as a
+    fraction. Uses the same `ttm_per_share` the Dividends tab does, so the two
+    can't report different yields for the same fund."""
+    from tradelab.core.dividends import ttm_per_share
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        return None
+    if price <= 0 or dividends is None or len(dividends) == 0:
+        return None
+    ttm = ttm_per_share(dividends)
+    if not ttm:
+        return None
+    return round(float(ttm) / price, 4)
+
+
 def get_prices(symbol: str, period: str = "11y") -> pd.Series | None:
     """Adjusted-close series (dividends reinvested) for one Yahoo symbol.
     None on any failure — the caller skips the fund rather than writing a
@@ -123,7 +201,8 @@ def get_prices(symbol: str, period: str = "11y") -> pd.Series | None:
     return close.sort_index()
 
 
-def compute_metrics(symbol: str, prices: pd.Series | None = None) -> dict | None:
+def compute_metrics(symbol: str, prices: pd.Series | None = None,
+                    dividends=None) -> dict | None:
     """Every metric for one fund, keyed by its `etf_screener` column and ready
     for `Database.etf_update_metrics()`. Pass `prices` to reuse an
     already-fetched series (and to test without a network). None when no
@@ -144,6 +223,23 @@ def compute_metrics(symbol: str, prices: pd.Series | None = None) -> dict | None
         out["max_drawdown"] = max_dd
     if sharpe is not None:
         out["sharpe"] = sharpe
+
+    # The published-standard rating, alongside the app's own volatility.
+    stdev, months = csa_volatility(prices)
+    if stdev is not None:
+        out["csa_stdev"] = stdev
+        out["csa_level"] = csa_level(stdev)
+        out["csa_months"] = months
+
+    if dividends is None and yf is not None and symbol:
+        try:
+            from tradelab.data.market_data import get_dividends
+            dividends = get_dividends(symbol)
+        except Exception:
+            dividends = None
+    yield_pct = dividend_yield(dividends, float(prices.iloc[-1]))
+    if yield_pct is not None:
+        out["dividend_yield"] = yield_pct
     return out or None
 
 
@@ -369,7 +465,7 @@ def rebalance(funds: list[dict], holding_rows: list[dict], weight_key: str = "my
 # difference across the five buckets) are treated as the same exposure. 0.10
 # keeps VCN/XIC and VIU/XEF together without merging VFV and VGT.
 OVERLAP_TOLERANCE = 0.10
-_MIX_COLUMNS = ("pct_can", "pct_us", "pct_intl", "pct_bond", "pct_gold")
+_MIX_COLUMNS = ("pct_can", "pct_us", "pct_intl", "pct_bond", "pct_alt")
 
 
 def _mix(fund: dict) -> list[float] | None:

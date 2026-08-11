@@ -134,11 +134,11 @@ def test_remove_with_nothing_selected_is_a_noop(panel):
 
 # -- editing cells ----------------------------------------------------------
 
-def test_editing_my_mix_persists_as_a_fraction(panel):
+def test_editing_an_allocation_persists_as_a_fraction(panel):
     panel.ticker_edit.setText("VFV"); panel.add_fund()
-    item = _cell(panel, 0, "my_mix")
+    item = _cell(panel, 0, "mid_risk")
     item.setText("20")                     # typed as a percent
-    assert panel.db.etf_get("VFV")["my_mix"] == pytest.approx(0.20)
+    assert panel.db.etf_get("VFV")["mid_risk"] == pytest.approx(0.20)
     assert item.text() == "20.0%"          # redrawn in the stored unit
 
 
@@ -150,15 +150,15 @@ def test_editing_accepts_a_typed_percent_sign_and_a_comma(panel):
 
 def test_clearing_a_numeric_cell_stores_none_not_zero(panel):
     panel.ticker_edit.setText("VFV"); panel.add_fund()
-    _cell(panel, 0, "my_mix").setText("20")
-    _cell(panel, 0, "my_mix").setText("")
-    assert panel.db.etf_get("VFV")["my_mix"] is None
+    _cell(panel, 0, "mid_risk").setText("20")
+    _cell(panel, 0, "mid_risk").setText("")
+    assert panel.db.etf_get("VFV")["mid_risk"] is None
 
 
-def test_editing_risk_stores_an_integer(panel):
+def test_editing_a_weight_column_stores_a_fraction(panel):
     panel.ticker_edit.setText("VFV"); panel.add_fund()
-    _cell(panel, 0, "risk").setText("4")
-    assert panel.db.etf_get("VFV")["risk"] == 4
+    _cell(panel, 0, "low_risk").setText("28")
+    assert panel.db.etf_get("VFV")["low_risk"] == pytest.approx(0.28)
 
 
 def test_editing_a_text_cell_persists_verbatim(panel):
@@ -170,18 +170,18 @@ def test_editing_a_text_cell_persists_verbatim(panel):
 def test_computed_columns_are_not_editable(panel):
     from PySide6.QtCore import Qt
     panel.ticker_edit.setText("VFV"); panel.add_fund()
-    for key in ("ticker", "ret_1a", "volatility", "sharpe", "updated_at"):
+    for key in ("ticker", "ret_1a", "volatility", "csa_level", "updated_at"):
         assert not (_cell(panel, 0, key).flags() & Qt.ItemIsEditable), key
-    for key in ("my_mix", "notes", "mer", "risk"):
+    for key in ("mid_risk", "notes", "mer", "category"):
         assert _cell(panel, 0, key).flags() & Qt.ItemIsEditable, key
 
 
 def test_percentages_are_displayed_as_percents(panel):
-    panel.db.etf_upsert("VFV", ret_1a=0.25, mer=0.0009, sharpe=1.234)
+    panel.db.etf_upsert("VFV", ret_1a=0.25, mer=0.0009, dividend_yield=0.033)
     panel.reload()
     assert _cell(panel, 0, "ret_1a").text() == "25.0%"
     assert _cell(panel, 0, "mer").text() == "0.09%"      # MER needs 2 decimals
-    assert _cell(panel, 0, "sharpe").text() == "1.23"
+    assert _cell(panel, 0, "dividend_yield").text() == "3.3%"
 
 
 def test_missing_values_render_blank_not_none(panel):
@@ -203,34 +203,36 @@ def _summary_row(panel, column):
     return 1 + [col for _l, col, _k in COMPOSITION_ROWS].index(column)
 
 
-def test_the_four_allocations_are_low_mid_high_and_your_own(panel):
+def test_the_allocations_are_a_low_mid_high_ladder(panel):
+    """"My mix" is gone: it duplicated Mid risk on every row of the workbook
+    it came from, so it was a second name for the same column."""
     assert [k for _label, k in panel.COMPOSITIONS] == [
-        "low_risk", "mid_risk", "high_risk", "my_mix"]
+        "low_risk", "mid_risk", "high_risk"]
     headers = [panel.summary.horizontalHeaderItem(c).text()
                for c in range(1, panel.summary.columnCount())]
-    assert headers == ["Low risk", "Mid risk", "High risk", "My mix"]
+    assert headers == ["Low risk", "Mid risk", "High risk"]
 
 
 def test_summary_totals_the_allocation(panel):
-    panel.db.etf_upsert("VFV", pct_us=1.0, my_mix=0.6)
-    panel.db.etf_upsert("VAB", pct_bond=1.0, my_mix=0.4)
+    panel.db.etf_upsert("VFV", pct_us=1.0, mid_risk=0.6)
+    panel.db.etf_upsert("VAB", pct_bond=1.0, mid_risk=0.4)
     panel.reload()
-    cell = panel.summary.item(0, _summary_col(panel, "my_mix")).text()
+    cell = panel.summary.item(0, _summary_col(panel, "mid_risk")).text()
     assert "100.0%" in cell
     assert "OK" in cell
 
 
 def test_summary_flags_an_allocation_that_does_not_add_up(panel):
-    panel.db.etf_upsert("VFV", my_mix=0.6)
+    panel.db.etf_upsert("VFV", mid_risk=0.6)
     panel.reload()
-    assert "adjust" in panel.summary.item(0, _summary_col(panel, "my_mix")).text()
+    assert "adjust" in panel.summary.item(0, _summary_col(panel, "mid_risk")).text()
 
 
 def test_summary_updates_when_a_weight_is_edited(panel):
     panel.db.etf_upsert("VFV", pct_us=1.0)
     panel.reload()
-    _cell(panel, 0, "my_mix").setText("100")
-    assert "100.0%" in panel.summary.item(0, _summary_col(panel, "my_mix")).text()
+    _cell(panel, 0, "mid_risk").setText("100")
+    assert "100.0%" in panel.summary.item(0, _summary_col(panel, "mid_risk")).text()
 
 
 def test_each_allocation_is_totalled_from_its_own_column(panel):
@@ -238,7 +240,7 @@ def test_each_allocation_is_totalled_from_its_own_column(panel):
     panel.db.etf_upsert("VAB", pct_bond=1.0, low_risk=1.0)
     panel.reload()
     assert "100.0%" in panel.summary.item(0, _summary_col(panel, "low_risk")).text()
-    for key in ("mid_risk", "high_risk", "my_mix"):
+    for key in ("low_risk", "mid_risk", "high_risk"):
         assert "0.0%" in panel.summary.item(0, _summary_col(panel, key)).text()
 
 
@@ -249,11 +251,11 @@ def test_editing_low_risk_persists(panel):
 
 
 def test_summary_names_partial_coverage(panel):
-    panel.db.etf_upsert("VFV", ret_10a=0.16, my_mix=0.5)
-    panel.db.etf_upsert("GGOV", my_mix=0.5)      # created 2025, no 10-year
+    panel.db.etf_upsert("VFV", ret_10a=0.16, mid_risk=0.5)
+    panel.db.etf_upsert("GGOV", mid_risk=0.5)      # created 2025, no 10-year
     panel.reload()
     cell = panel.summary.item(_summary_row(panel, "ret_10a"),
-                              _summary_col(panel, "my_mix"))
+                              _summary_col(panel, "mid_risk"))
     assert "of 50%" in cell.text()
 
 
@@ -266,12 +268,12 @@ def test_refresh_is_a_noop_with_no_funds(panel):
 
 def test_row_done_writes_metrics_without_touching_user_fields(panel):
     panel.ticker_edit.setText("VFV"); panel.add_fund()
-    panel.db.etf_upsert("VFV", notes="cœur US", my_mix=0.2)
+    panel.db.etf_upsert("VFV", notes="cœur US", mid_risk=0.2)
     panel._on_row_done("VFV", {"ret_1a": 0.25, "volatility": 0.14})
     fund = panel.db.etf_get("VFV")
     assert fund["ret_1a"] == pytest.approx(0.25)
     assert fund["notes"] == "cœur US"
-    assert fund["my_mix"] == pytest.approx(0.2)
+    assert fund["mid_risk"] == pytest.approx(0.2)
 
 
 def test_row_done_with_no_metrics_leaves_the_row_alone(panel):
@@ -328,12 +330,12 @@ def test_clearing_the_filter_shows_everything_again(panel):
 
 def test_filtering_does_not_change_the_totals(panel):
     """Hiding a row is a view change; the allocation still holds what it holds."""
-    panel.db.etf_upsert("VFV", my_mix=0.5)
-    panel.db.etf_upsert("VAB", my_mix=0.5)
+    panel.db.etf_upsert("VFV", mid_risk=0.5)
+    panel.db.etf_upsert("VAB", mid_risk=0.5)
     panel.reload()
-    before = panel.summary.item(0, _summary_col(panel, "my_mix")).text()
+    before = panel.summary.item(0, _summary_col(panel, "mid_risk")).text()
     panel.filter_edit.setText("VFV")
-    assert panel.summary.item(0, _summary_col(panel, "my_mix")).text() == before
+    assert panel.summary.item(0, _summary_col(panel, "mid_risk")).text() == before
 
 
 def test_add_selected_to_watchlist_uses_the_yahoo_symbol(panel):
@@ -375,7 +377,7 @@ def test_add_buttons_need_a_selection(panel):
 def test_export_writes_every_column_as_stored(panel, tmp_path, monkeypatch):
     import csv
     from tradelab.ui import app as appmod
-    panel.db.etf_upsert("VFV", name="Vanguard S&P 500", ret_1a=0.25, my_mix=0.2)
+    panel.db.etf_upsert("VFV", name="Vanguard S&P 500", ret_1a=0.25, mid_risk=0.2)
     panel.reload()
     out = tmp_path / "etf.csv"
     monkeypatch.setattr(appmod.QFileDialog, "getSaveFileName",
@@ -400,29 +402,32 @@ def test_export_cancelled_writes_nothing(panel, tmp_path, monkeypatch):
 
 def _canada(**extra):
     return {"pct_can": 1.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 0.0,
-            "pct_gold": 0.0, "category": "Canadian equity", **extra}
+            "pct_alt": 0.0, "category": "Canadian equity", **extra}
 
 
 def test_overlap_warning_names_the_pair(panel):
-    panel.db.etf_upsert("VCN", **_canada(my_mix=0.2))
-    panel.db.etf_upsert("XIC", **_canada(my_mix=0.1))
+    panel.db.etf_upsert("VCN", **_canada(mid_risk=0.2))
+    panel.db.etf_upsert("XIC", **_canada(mid_risk=0.1))
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk
     text = panel.overlap_label.text()
     assert "VCN" in text and "XIC" in text
 
 
 def test_no_overlap_warning_for_different_exposures(panel):
-    panel.db.etf_upsert("VCN", **_canada(my_mix=0.5))
-    panel.db.etf_upsert("VAB", category="Bonds", my_mix=0.5, pct_can=0.0, pct_us=0.0,
-                        pct_intl=0.0, pct_bond=1.0, pct_gold=0.0)
+    panel.db.etf_upsert("VCN", **_canada(mid_risk=0.5))
+    panel.db.etf_upsert("VAB", category="Bonds", mid_risk=0.5, pct_can=0.0, pct_us=0.0,
+                        pct_intl=0.0, pct_bond=1.0, pct_alt=0.0)
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk
     assert panel.overlap_label.text() == ""
 
 
 def test_overlap_warning_follows_the_selected_allocation(panel):
-    panel.db.etf_upsert("VCN", **_canada(my_mix=0.2, low_risk=0.0))
-    panel.db.etf_upsert("XIC", **_canada(my_mix=0.1, low_risk=0.0))
+    panel.db.etf_upsert("VCN", **_canada(mid_risk=0.2, low_risk=0.0))
+    panel.db.etf_upsert("XIC", **_canada(mid_risk=0.1, low_risk=0.0))
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk: both weighted
     assert panel.overlap_label.text()
     low = [i for i, (_l, k) in enumerate(panel.COMPOSITIONS) if k == "low_risk"][0]
     panel.composition_combo.setCurrentIndex(low)
@@ -463,8 +468,9 @@ def test_look_through_reads_the_exposures_key(panel, monkeypatch, no_network):
                             shown.update(rows=rows, footnote=footnote) or None)
     monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
 
-    panel.db.etf_upsert("XIC", yahoo="XIC.TO", my_mix=1.0)
+    panel.db.etf_upsert("XIC", yahoo="XIC.TO", mid_risk=1.0)
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk
     panel.show_look_through()      # sets _lt_rows without starting the worker
     panel._on_look_through_loaded(
         {"XIC.TO": {"top_holdings": {"RY.TO": 0.6, "TD.TO": 0.2}}}, {}, "")
@@ -478,8 +484,9 @@ def test_look_through_reads_the_exposures_key(panel, monkeypatch, no_network):
 def test_look_through_says_why_when_no_fund_publishes_holdings(panel, monkeypatch, no_network):
     from tradelab.ui import app as appmod
     monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
-    panel.db.etf_upsert("VAB", yahoo="VAB.TO", my_mix=1.0)
+    panel.db.etf_upsert("VAB", yahoo="VAB.TO", mid_risk=1.0)
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk
     panel.show_look_through()
     panel._on_look_through_loaded({"VAB.TO": {}}, {}, "")
     assert "No holdings published" in panel.status.text()
@@ -496,8 +503,9 @@ def test_look_through_opens_a_fund_held_whole_inside_a_fund(panel, monkeypatch, 
                             shown.update(rows=rows, footnote=footnote) or None)
     monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
 
-    panel.db.etf_upsert("VFV", yahoo="VFV.TO", my_mix=1.0)
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO", mid_risk=1.0)
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk
     panel.show_look_through()
     # First pass: a wrapper, so the panel asks for the nested fund instead of
     # rendering.
@@ -525,8 +533,9 @@ def test_look_through_falls_back_to_the_us_listing_of_a_nested_fund(panel, monke
                             shown.update(rows=rows) or None)
     monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
 
-    panel.db.etf_upsert("VFV", yahoo="VFV.TO", my_mix=1.0)
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO", mid_risk=1.0)
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk
     panel.show_look_through()
     panel._on_look_through_loaded({"VFV.TO": {"top_holdings": {"VOO.TO": 1.0}}}, {}, "")
     # Both listings were requested.
@@ -545,8 +554,9 @@ def test_look_through_still_renders_when_the_second_level_fails(panel, monkeypat
                         lambda self, parent, title, headers, rows, footnote="":
                             shown.update(rows=rows) or None)
     monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
-    panel.db.etf_upsert("VFV", yahoo="VFV.TO", my_mix=1.0)
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO", mid_risk=1.0)
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk
     panel.show_look_through()
     panel._on_look_through_loaded({"VFV.TO": {"top_holdings": {"VOO.TO": 1.0}}}, {}, "")
     panel._on_look_through_second_level(None, None, "network down")
@@ -555,8 +565,9 @@ def test_look_through_still_renders_when_the_second_level_fails(panel, monkeypat
 
 
 def test_look_through_reports_a_fetch_error(panel, no_network):
-    panel.db.etf_upsert("XIC", yahoo="XIC.TO", my_mix=1.0)
+    panel.db.etf_upsert("XIC", yahoo="XIC.TO", mid_risk=1.0)
     panel.reload()
+    panel.composition_combo.setCurrentIndex(1)      # Mid risk
     panel.show_look_through()
     panel._on_look_through_loaded(None, None, "network down")
     assert "network down" in panel.status.text()
@@ -624,14 +635,14 @@ def test_exposure_filter_finds_a_fund_its_label_would_hide(panel):
 
 
 def test_exposure_filter_excludes_a_zero_share(panel):
-    panel.db.etf_upsert("VAB", pct_gold=0.0, pct_bond=1.0)
+    panel.db.etf_upsert("VAB", pct_alt=0.0, pct_bond=1.0)
     panel.reload()
     # Nothing holds gold, so the entry isn't even offered.
-    assert panel.filter_choice.findText("Holds Gold / alternatives") == -1
-    panel.db.etf_upsert("MNT", pct_gold=1.0)
+    assert panel.filter_choice.findText("Holds Commodities") == -1
+    panel.db.etf_upsert("MNT", pct_alt=1.0)
     panel.reload()
     panel.filter_choice.setCurrentIndex(
-        panel.filter_choice.findText("Holds Gold / alternatives"))
+        panel.filter_choice.findText("Holds Commodities"))
     visible = [_cell(panel, r, "ticker").text() for r in range(panel.table.rowCount())
                if not panel.table.isRowHidden(r)]
     assert visible == ["MNT"]
@@ -648,102 +659,53 @@ def test_all_funds_clears_the_choice(panel):
 
 
 def test_the_analyses_read_the_selected_allocation(panel):
-    assert panel.current_weight_key() == "my_mix"       # defaults to your own
     panel.composition_combo.setCurrentIndex(0)
     assert panel.current_weight_key() == "low_risk"
+    panel.composition_combo.setCurrentIndex(1)
+    assert panel.current_weight_key() == "mid_risk"
 
 
-# -- the low-volatility flag -------------------------------------------------
+# -- the published risk rating ----------------------------------------------
 
-def test_low_vol_flags_a_fund_under_the_threshold(panel):
-    panel.low_vol_spin.setValue(12.0)
-    panel.db.etf_upsert("ZLB", volatility=0.09)
-    panel.db.etf_upsert("SMH", volatility=0.32)
+def test_risk_column_shows_the_published_band(panel):
+    panel.db.etf_upsert("ZLB", csa_stdev=0.09, csa_level="Low to medium", csa_months=120)
     panel.reload()
-    flags = {_cell(panel, r, "ticker").text(): _cell(panel, r, "low_vol").text()
-             for r in range(panel.table.rowCount())}
-    assert flags["ZLB"] == panel.LOW_VOL_PASS
-    assert flags["SMH"] == ""
+    assert _cell(panel, 0, "csa_level").text() == "Low to medium"
 
 
-def test_an_unmeasured_fund_reads_unknown_not_failing(panel):
-    """A fund never refreshed has no volatility. Showing it as failing the
-    test would be an answer the data cannot support."""
+def test_a_fund_never_refreshed_has_no_rating(panel):
     panel.ticker_edit.setText("NEW"); panel.add_fund()
-    assert _cell(panel, 0, "low_vol").text() == panel.LOW_VOL_UNKNOWN
+    assert _cell(panel, 0, "csa_level").text() == ""
+    assert "refresh" in _cell(panel, 0, "csa_level").toolTip().lower()
 
 
-def test_changing_the_threshold_re_flags_the_table(panel):
-    panel.db.etf_upsert("VCN", volatility=0.15)
-    panel.low_vol_spin.setValue(12.0)
+def test_the_rating_tooltip_says_it_used_the_full_window(panel):
+    panel.db.etf_upsert("VFV", csa_stdev=0.145, csa_level="Medium", csa_months=120)
     panel.reload()
-    assert _cell(panel, 0, "low_vol").text() == ""
-    panel.low_vol_spin.setValue(20.0)
-    assert _cell(panel, 0, "low_vol").text() == panel.LOW_VOL_PASS
+    tip = _cell(panel, 0, "csa_level").toolTip()
+    assert "14.5%" in tip and "ten-year" in tip
 
 
-def test_the_threshold_is_remembered(panel, qapp, tmp_path):
-    from tradelab.ui.app import EtfScreenerPanel
-    panel.low_vol_spin.setValue(7.5)
-    # The app's own store, not a bare QSettings() - that one persists nothing.
-    stored = EtfScreenerPanel._settings().value(EtfScreenerPanel.LOW_VOL_SETTING)
-    assert float(stored) == 7.5
-    fresh = EtfScreenerPanel(Database(path=tmp_path / "second.db"))
-    assert fresh.low_vol_spin.value() == 7.5
-
-
-def test_the_flag_column_is_not_editable(panel):
-    from PySide6.QtCore import Qt
-    panel.db.etf_upsert("ZLB", volatility=0.09)
+def test_the_rating_tooltip_warns_on_a_short_history(panel):
+    """A level standing on four years is not the regulator's ten-year level,
+    and the cell has to say which one you are looking at."""
+    panel.db.etf_upsert("GGOV", csa_stdev=0.04, csa_level="Low", csa_months=48)
     panel.reload()
-    assert not (_cell(panel, 0, "low_vol").flags() & Qt.ItemIsEditable)
+    tip = _cell(panel, 0, "csa_level").toolTip()
+    assert "4.0 years" in tip
+    assert "reference index" in tip
 
 
-def test_the_flag_is_not_stored_as_a_fund_column(panel):
-    """It is computed from volatility every time. Storing it would leave a
-    stale answer behind the moment the threshold moved."""
-    from tradelab.data.database import Database as DB
-    panel.db.etf_upsert("ZLB", volatility=0.09)
+def test_filtering_by_risk_band(panel):
+    panel.db.etf_upsert("ZLB", csa_level="Low")
+    panel.db.etf_upsert("SMH", csa_level="High")
     panel.reload()
-    assert "low_vol" not in DB.ETF_COLUMNS
-    assert "low_vol" not in panel.db.etf_get("ZLB")
-
-
-def test_filtering_on_the_flag(panel):
-    panel.low_vol_spin.setValue(12.0)
-    panel.db.etf_upsert("ZLB", volatility=0.09)
-    panel.db.etf_upsert("SMH", volatility=0.32)
-    panel.reload()
-    index = panel.filter_choice.findText("Passes low vol ≤ 12.0%")
+    index = panel.filter_choice.findText("Risk: Low")
     assert index > 0
     panel.filter_choice.setCurrentIndex(index)
     visible = [_cell(panel, r, "ticker").text() for r in range(panel.table.rowCount())
                if not panel.table.isRowHidden(r)]
     assert visible == ["ZLB"]
-
-
-def test_the_flag_entry_is_absent_when_nothing_passes(panel):
-    panel.low_vol_spin.setValue(5.0)
-    panel.db.etf_upsert("SMH", volatility=0.32)
-    panel.reload()
-    assert panel.filter_choice.findText("Passes low vol ≤ 5.0%") == -1
-
-
-def test_export_writes_the_flag_as_a_word(panel, tmp_path, monkeypatch):
-    import csv
-    from tradelab.ui import app as appmod
-    panel.low_vol_spin.setValue(12.0)
-    panel.db.etf_upsert("ZLB", volatility=0.09)
-    panel.db.etf_upsert("NEW")
-    panel.reload()
-    out = tmp_path / "etf.csv"
-    monkeypatch.setattr(appmod.QFileDialog, "getSaveFileName",
-                        staticmethod(lambda *a, **k: (str(out), "")))
-    panel.export_csv()
-    rows = list(csv.reader(out.read_text(encoding="utf-8-sig").splitlines()))
-    body = {row[0]: dict(zip(rows[0], row)) for row in rows[1:]}
-    assert body["ZLB"]["Low vol"] == "yes"
-    assert body["NEW"]["Low vol"] == ""      # not measured, not "no"
 
 
 # -- language & reference notes ---------------------------------------------

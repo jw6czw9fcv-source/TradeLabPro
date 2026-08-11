@@ -6,7 +6,7 @@ from tradelab.data.database import Database
 def test_fresh_database_applies_all_migrations(tmp_db_path):
     db = Database(path=tmp_db_path)
     row = db.conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
-    assert row["v"] == 4  # SCHEMA_V1..V4 currently defined
+    assert row["v"] == 5  # SCHEMA_V1..V5 currently defined
 
 
 def test_default_watchlist_created(tmp_db_path):
@@ -20,7 +20,7 @@ def test_reopening_database_does_not_reapply_migrations(tmp_db_path):
     db1.conn.close()
     db2 = Database(path=tmp_db_path)  # should not raise / duplicate anything
     count = db2.conn.execute("SELECT COUNT(*) AS n FROM schema_version").fetchone()["n"]
-    assert count == 4
+    assert count == 5
 
 
 def test_save_and_load_chart_layout(tmp_db_path):

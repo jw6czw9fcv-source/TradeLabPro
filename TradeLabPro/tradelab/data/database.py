@@ -124,10 +124,24 @@ ALTER TABLE etf_screener RENAME COLUMN ma_compo TO my_mix;
 ALTER TABLE etf_screener ADD COLUMN low_risk REAL;
 """
 
-MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4]
+# v5: the published risk rating (NI 81-102 Appendix F), a distribution yield,
+# and the gold bucket generalised. Gold was one commodity in a list built for
+# index funds; a silver or a lithium fund needed the same column, and what it
+# holds is already named in `category`. Nothing is dropped: `risk`, `sharpe`
+# and `my_mix` stay in the table (my_mix duplicated mid_risk on every row) and
+# simply leave the screen, so no judgement anyone typed is destroyed.
+SCHEMA_V5 = """
+ALTER TABLE etf_screener RENAME COLUMN pct_gold TO pct_alt;
+ALTER TABLE etf_screener ADD COLUMN csa_stdev REAL;
+ALTER TABLE etf_screener ADD COLUMN csa_level TEXT;
+ALTER TABLE etf_screener ADD COLUMN csa_months INTEGER;
+ALTER TABLE etf_screener ADD COLUMN dividend_yield REAL;
+"""
+
+MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
-SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4
+SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5
 
 
 class Database:
@@ -269,11 +283,11 @@ class Database:
     # -- ETF Screener ---------------------------------------------------------
     ETF_COLUMNS = [
         "ticker", "name", "category", "exchange", "currency", "region",
-        "pct_can", "pct_us", "pct_intl", "pct_bond", "pct_gold", "risk", "mer",
+        "pct_can", "pct_us", "pct_intl", "pct_bond", "pct_alt", "risk", "mer",
         "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
         "volatility", "max_drawdown", "sharpe", "low_risk", "mid_risk",
         "high_risk", "my_mix", "notes", "suggested_account", "yahoo",
-        "updated_at",
+        "csa_stdev", "csa_level", "csa_months", "dividend_yield", "updated_at",
     ]
 
     # Everything etf_metrics computes. Kept apart from the rest so a refresh
@@ -281,6 +295,7 @@ class Database:
     ETF_METRIC_COLUMNS = {
         "ret_1m", "ret_3m", "ret_6m", "ret_1a", "ret_3a", "ret_5a", "ret_10a",
         "volatility", "max_drawdown", "sharpe",
+        "csa_stdev", "csa_level", "csa_months", "dividend_yield",
     }
 
     def etf_list(self) -> list[dict]:

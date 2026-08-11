@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.41.0**
+**Version 2.42.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
 **Home** dashboard showing your book, a chart of its year so far, the market
@@ -377,9 +377,36 @@ between Scanner and Watchlists because that is where the decision falls.
 
 **The table.** One row per fund, one column per thing you compare on: name,
 category, region, what the fund holds in **Canada / the US / international /
-bonds / gold**, a **risk** rating of your own from 1 to 5, the **MER**, returns
-from **one month to ten years**, **volatility**, **worst drop**, **Sharpe**,
-free-text **notes**, and the **account** you'd hold it in. Click any cell in a
+bonds / commodities**, the **MER**, the **distribution yield**, returns from
+**one month to ten years**, **volatility**, **worst drop**, the **Risk**
+rating, free-text **notes**, and the **account** you'd hold it in.
+
+**What "Risk" means here.** Every fund and ETF sold in Canada must rate its
+risk with one prescribed measure and print it in its *Fund Facts*: the
+annualized standard deviation of **monthly** returns over **ten years**, put
+into five bands — under 6% *Low*, 6–11 *Low to medium*, 11–16 *Medium*, 16–20
+*Medium to high*, 20 and over *High*. This column computes that same figure
+from the same prices, so you can check it against the fund's own document
+instead of taking the app's word for it. **Hover the cell** and it tells you
+the standard deviation and how many years went into it.
+
+Two things it is not. It is **not** the Volatility column beside it: that one
+samples daily over whatever history a fund has, which is the right measure for
+comparing funds inside the app and the wrong one for these bands — VFV reads
+16.5% daily but 12.9% the regulator's way, which is a different band. And it
+rates **volatility only**: not credit risk, liquidity, concentration, currency,
+or the chance of permanent loss. A quiet bond fund rates *Low* right up until
+an issuer defaults.
+
+A fund without ten years is rated on what it has and the tooltip says so; the
+published methodology fills a short history with a reference index and this
+does not, so a young fund can differ from its document. Under three years
+nothing is rated.
+
+**% Commodity** is the bucket for what has no geography — bullion in a vault.
+Companies that *mine* it are equities and belong in the regional columns, with
+the theme named in Category. Gold, silver and lithium funds all land wherever
+that rule puts them. Click any cell in a
 column you own and type. Percentages go in the way you'd say them — `20`, `20%`
 and `62.5 %` all mean the same thing — and the cell redraws as `20.0%` so what
 you typed and what was stored can never disagree. Clearing a number stores
@@ -406,12 +433,12 @@ Yahoo doesn't recognise is counted and skipped rather than stopping the run.
 **The refresh never touches what you typed**: category, weights, risk, notes and
 your allocations are yours.
 
-**Four allocations, side by side.** **Low risk**, **Mid risk**, **High risk**
-and **My mix** are four weight columns in the table, totalled under it: what
-each one holds by region, its weighted risk, its weighted MER, its weighted
-ten-year return, and whether the weights add up to 100% (`OK ✓` or *adjust*).
-Keep three reference ladders and your own working mix in view at once; change a
-weight in the table and the totals move with it.
+**Three allocations, side by side.** **Low risk**, **Mid risk** and **High
+risk** are weight columns for you to fill in, totalled under the table: what
+each one holds by region, its weighted MER, its weighted distribution yield,
+its weighted ten-year return, and whether the weights add up to 100% (`OK ✓` or
+*adjust*). Change a weight and the totals move with it. The **Allocation**
+dropdown decides which of the three the analyses below act on.
 
 **Two things the tab deliberately won't do.** A fund that listed five years ago
 has **no** ten-year return, so that cell stays empty instead of annualizing

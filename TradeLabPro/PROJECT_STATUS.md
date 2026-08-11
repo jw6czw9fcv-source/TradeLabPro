@@ -1,9 +1,17 @@
 # TradeLab Pro Project Status
 
-Current version: 2.41.0
+Current version: 2.42.0
 Current phase: ETF comparison & allocation building (done)
 
-## Completed in 2.41.0 (The ETF workbook, in the app)
+## Completed in 2.42.0 (One risk rating, the published one)
+- **`csa_volatility()` / `csa_level()` in `core/etf_metrics.py`** — NI 81-102 Appendix F: annualized standard deviation of **month-end** returns over **10 years** (monthly sd x sqrt(12)), banded 0-6 Low / 6-11 Low to medium / 11-16 Medium / 16-20 Medium to high / 20+ High. Bands verified against the AIMA Canada & CAIA guidelines quoting Appendix F, not written from memory. Returns `(stdev, months)`: **the window is reported with the figure**, because a level standing on 4 years is not the regulator's 10-year level. `CSA_MIN_MONTHS = 36` — under three years nothing is rated. The regulation fills a short history with a reference index; **we do not**, and the tooltip says so, so a young fund can differ from its own Fund Facts.
+- **Deliberately a second measurement, not a replacement for `risk_metrics()`**: that one is daily x sqrt(252) over available history (for comparing funds inside the app), this one is monthly over a fixed decade (for matching a published document). Confusing them is the whole trap.
+- `dividend_yield()` reuses `core.dividends.ttm_per_share` so the Screener and the Dividends tab cannot report different yields; `compute_metrics(symbol, prices, dividends)` fetches dividends itself when not supplied.
+- **Schema v5**: `pct_gold` -> `pct_alt` (gold was one commodity in a column built for index funds; the rule is *metal in a vault has no geography, miners are equities and go in the regional columns*), plus `csa_stdev` / `csa_level` / `csa_months` / `dividend_yield`. **Nothing dropped** - `risk`, `sharpe` and `my_mix` stay in the table and merely leave the screen, so no judgement anyone typed is destroyed.
+- **Columns removed from the view**, on the user's "enlever le superflu": hand-typed `risk` 1-5 (disagreed with the app's own volatility: ZLU rated 2 at 13.9%, MNT rated 3 at 19.6%), `sharpe` (a performance measure, incomparable across funds with different histories), `my_mix` (**verified identical to `mid_risk` on all 31 rows**), and the `low_vol` flag from 2.41.0 (the Risk column answers it against a published standard).
+- Summary rows reworked: "Average risk" dropped with its input column, "Weighted dividend yield" added. Filter gains a `Risk: <band>` group.
+
+## Completed in 2.41.0 (The ETF workbook, in the app) — pushed + tagged v2.41.0 (b6cdb78)
 - **Schema v3** (`SCHEMA_V3` in `data/database.py`): one `etf_screener` row per fund, mirroring the columns of the `Portefeuille_FNB.xlsx` workbook it replaces. Percentages stored as fractions, as the workbook stored them.
 - **Typed columns and computed columns never cross.** `etf_upsert` touches only the keys it is given (so editing one cell can't blank the row) and ignores unknown ones; `etf_update_metrics` is restricted to `ETF_METRIC_COLUMNS` and **drops `None`** — a fund with eight years of history keeps the ten-year figure already on file instead of having a refresh erase it.
 - New `core/etf_metrics.py` (Qt-free, offline-testable): `trailing_return`, `risk_metrics`, `get_prices`, `compute_metrics` — the maths of `tools/maj_rendements.py`, unchanged, ported off the spreadsheet. Returns >= 1 year annualized, adjusted close (dividends reinvested), 3% risk-free rate for Sharpe. **A column with too little history is not written**, never estimated.

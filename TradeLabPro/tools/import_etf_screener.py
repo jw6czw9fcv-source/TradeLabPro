@@ -44,7 +44,7 @@ COLUMN_MAP = {
     "% US": "pct_us",
     "% Intl": "pct_intl",
     "% Obl.": "pct_bond",
-    "% Or/Alt": "pct_gold",
+    "% Or/Alt": "pct_alt",
     "Risque": "risk",
     "MER": "mer",
     "Rend 1M": "ret_1m",

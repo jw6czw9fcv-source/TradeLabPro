@@ -6,9 +6,10 @@ import pytest
 
 from tradelab.core.etf_metrics import (
     COMPOSITION_ROWS, PERIODS, composition_summary, compute_metrics,
-    alternate_listing, expand_compositions, fold_alternate_listings,
-    fund_symbol, is_low_volatility, overlaps, pass_through_symbols, rebalance,
-    risk_metrics, trailing_return,
+    alternate_listing, csa_level, csa_volatility, dividend_yield,
+    expand_compositions, fold_alternate_listings, fund_symbol,
+    is_low_volatility, overlaps, pass_through_symbols, rebalance, risk_metrics,
+    trailing_return,
 )
 
 
@@ -108,10 +109,10 @@ def test_periods_cover_expected_columns():
 def _book():
     return [
         {"ticker": "VFV", "pct_can": 0.0, "pct_us": 1.0, "pct_intl": 0.0,
-         "pct_bond": 0.0, "pct_gold": 0.0, "risk": 4, "mer": 0.0009,
+         "pct_bond": 0.0, "pct_alt": 0.0, "risk": 4, "mer": 0.0009,
          "ret_10a": 0.16, "my_mix": 0.5, "mid_risk": 0.2},
         {"ticker": "VAB", "pct_can": 0.0, "pct_us": 0.0, "pct_intl": 0.0,
-         "pct_bond": 1.0, "pct_gold": 0.0, "risk": 1, "mer": 0.0009,
+         "pct_bond": 1.0, "pct_alt": 0.0, "risk": 1, "mer": 0.0009,
          "ret_10a": 0.02, "my_mix": 0.5, "mid_risk": 0.8},
     ]
 
@@ -124,13 +125,13 @@ def test_composition_weights_the_regional_split():
     rows = composition_summary(_book())["rows"]
     assert rows["pct_us"]["value"] == pytest.approx(0.5)
     assert rows["pct_bond"]["value"] == pytest.approx(0.5)
-    assert rows["pct_gold"]["value"] == pytest.approx(0.0)
+    assert rows["pct_alt"]["value"] == pytest.approx(0.0)
 
 
 def test_composition_reads_the_weight_column_it_is_given():
     rows = composition_summary(_book(), "mid_risk")["rows"]
     assert rows["pct_us"]["value"] == pytest.approx(0.2)
-    assert rows["risk"]["value"] == pytest.approx(0.2 * 4 + 0.8 * 1)
+    assert rows["mer"]["value"] == pytest.approx(0.0009)
 
 
 def test_composition_ignores_funds_with_no_weight():
@@ -240,12 +241,12 @@ def test_rebalance_sorts_by_how_far_off_it_is():
 # -- overlaps: the same exposure bought twice --------------------------------
 
 def _twins():
-    canada = {"pct_can": 1.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 0.0, "pct_gold": 0.0}
+    canada = {"pct_can": 1.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 0.0, "pct_alt": 0.0}
     return [
         {"ticker": "VCN", "category": "Canadian equity", "my_mix": 0.2, **canada},
         {"ticker": "XIC", "category": "Canadian equity", "my_mix": 0.1, **canada},
         {"ticker": "VAB", "category": "Bonds", "my_mix": 0.3,
-         "pct_can": 0.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 1.0, "pct_gold": 0.0},
+         "pct_can": 0.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 1.0, "pct_alt": 0.0},
     ]
 
 
@@ -265,9 +266,9 @@ def test_overlap_ignores_a_fund_with_no_weight():
 def test_overlap_does_not_flag_genuinely_different_exposures():
     funds = [
         {"ticker": "VFV", "category": "S&P 500", "my_mix": 0.5,
-         "pct_can": 0.0, "pct_us": 1.0, "pct_intl": 0.0, "pct_bond": 0.0, "pct_gold": 0.0},
+         "pct_can": 0.0, "pct_us": 1.0, "pct_intl": 0.0, "pct_bond": 0.0, "pct_alt": 0.0},
         {"ticker": "VAB", "category": "Bonds", "my_mix": 0.5,
-         "pct_can": 0.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 1.0, "pct_gold": 0.0},
+         "pct_can": 0.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 1.0, "pct_alt": 0.0},
     ]
     assert overlaps(funds) == []
 
@@ -423,3 +424,84 @@ def test_fund_symbol_prefers_the_yahoo_listing():
     assert fund_symbol({"ticker": "VFV", "yahoo": "VFV.TO"}) == "VFV.TO"
     assert fund_symbol({"ticker": "vug"}) == "VUG"
     assert fund_symbol({}) == ""
+
+
+# -- the published Canadian risk rating (NI 81-102 Appendix F) --------------
+
+def _monthly(years: float, monthly_sd: float, seed: int = 3) -> pd.Series:
+    """Daily prices whose month-end returns have a known standard deviation."""
+    rng = np.random.default_rng(seed)
+    months = int(years * 12)
+    idx = pd.date_range(end=pd.Timestamp("2026-08-01"), periods=months, freq="ME")
+    steps = rng.normal(0, monthly_sd, size=months)
+    return pd.Series(100 * np.cumprod(1 + steps), index=idx)
+
+
+def test_csa_volatility_annualizes_monthly_by_root_twelve():
+    prices = _monthly(12, monthly_sd=0.03)
+    stdev, months = csa_volatility(prices)
+    assert months == 120                     # capped at the ten-year window
+    assert stdev == pytest.approx(0.03 * (12 ** 0.5), abs=0.02)
+
+
+def test_csa_volatility_reports_how_many_months_it_used():
+    stdev, months = csa_volatility(_monthly(5, 0.03))
+    assert stdev is not None
+    assert months == 59                      # 60 month-ends, 59 returns
+
+
+def test_csa_volatility_refuses_too_short_a_history():
+    stdev, months = csa_volatility(_monthly(2, 0.03))
+    assert stdev is None                     # under three years, not reported
+    assert months < 36
+
+
+def test_csa_level_bands_match_appendix_f():
+    # 0-6 low, 6-11 low to medium, 11-16 medium, 16-20 medium to high, 20+ high
+    assert csa_level(0.0) == "Low"
+    assert csa_level(0.059) == "Low"
+    assert csa_level(0.06) == "Low to medium"
+    assert csa_level(0.109) == "Low to medium"
+    assert csa_level(0.11) == "Medium"
+    assert csa_level(0.159) == "Medium"
+    assert csa_level(0.16) == "Medium to high"
+    assert csa_level(0.199) == "Medium to high"
+    assert csa_level(0.20) == "High"
+    assert csa_level(1.0) == "High"
+
+
+def test_csa_level_of_nothing_is_nothing():
+    assert csa_level(None) is None
+    assert csa_level("n/a") is None
+
+
+def test_compute_metrics_carries_the_rating_and_its_window():
+    metrics = compute_metrics("SYNTH", prices=_monthly(12, 0.03), dividends=[])
+    assert metrics["csa_level"] in {"Low", "Low to medium", "Medium",
+                                    "Medium to high", "High"}
+    assert metrics["csa_months"] == 120
+    # The app's own volatility is a different measurement, kept alongside.
+    assert metrics["csa_stdev"] != metrics.get("volatility")
+
+
+# -- distribution yield ------------------------------------------------------
+
+def _dividends(amounts, end="2026-08-01"):
+    idx = pd.date_range(end=pd.Timestamp(end), periods=len(amounts), freq="QE")
+    return pd.Series(amounts, index=idx)
+
+
+def test_dividend_yield_is_trailing_twelve_months_over_price():
+    divs = _dividends([0.25, 0.25, 0.25, 0.25])
+    assert dividend_yield(divs, 100.0) == pytest.approx(0.01)
+
+
+def test_dividend_yield_of_a_fund_paying_nothing_is_none():
+    assert dividend_yield(pd.Series(dtype=float), 100.0) is None
+    assert dividend_yield(None, 100.0) is None
+
+
+def test_dividend_yield_needs_a_real_price():
+    divs = _dividends([0.25, 0.25, 0.25, 0.25])
+    assert dividend_yield(divs, 0) is None
+    assert dividend_yield(divs, None) is None
