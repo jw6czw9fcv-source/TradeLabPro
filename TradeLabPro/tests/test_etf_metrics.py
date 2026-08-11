@@ -6,8 +6,9 @@ import pytest
 
 from tradelab.core.etf_metrics import (
     COMPOSITION_ROWS, PERIODS, composition_summary, compute_metrics,
-    expand_compositions, fund_symbol, is_low_volatility, overlaps,
-    pass_through_symbols, rebalance, risk_metrics, trailing_return,
+    alternate_listing, expand_compositions, fold_alternate_listings,
+    fund_symbol, is_low_volatility, overlaps, pass_through_symbols, rebalance,
+    risk_metrics, trailing_return,
 )
 
 
@@ -351,6 +352,38 @@ def test_expand_keeps_the_other_keys_of_a_composition():
 def test_expand_survives_a_fund_listing_itself():
     comps = {"AAA": {"top_holdings": {"AAA": 1.0}}}
     assert expand_compositions(comps)["AAA"]["top_holdings"] == {"AAA": 1.0}
+
+
+def test_alternate_listing_drops_the_toronto_suffix():
+    """A Canadian fund's holdings come back with .TO appended. Right for RY
+    inside XIC.TO; wrong for VOO inside VFV.TO, and VOO.TO does not exist."""
+    assert alternate_listing("VOO.TO") == "VOO"
+    assert alternate_listing("voo.to") == "VOO"
+
+
+def test_alternate_listing_is_none_for_an_ordinary_symbol():
+    assert alternate_listing("VOO") is None
+    assert alternate_listing("") is None
+    assert alternate_listing(None) is None
+    assert alternate_listing(".TO") is None
+
+
+def test_fold_gives_a_dead_symbol_its_real_listings_holdings():
+    comps = {"VOO.TO": {}, "VOO": {"top_holdings": {"AAPL": 0.4}}}
+    folded = fold_alternate_listings(comps, ["VOO.TO"])
+    assert folded["VOO.TO"]["top_holdings"] == {"AAPL": 0.4}
+
+
+def test_fold_leaves_a_symbol_that_answered_for_itself():
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 0.08}},
+             "XIC": {"top_holdings": {"SOMETHING": 1.0}}}
+    folded = fold_alternate_listings(comps, ["XIC.TO"])
+    assert folded["XIC.TO"]["top_holdings"] == {"RY.TO": 0.08}
+
+
+def test_fold_does_nothing_without_an_alternate():
+    comps = {"VAB.TO": {}}
+    assert fold_alternate_listings(comps, ["VAB.TO"]) == comps
 
 
 def test_expand_of_nothing_is_nothing():

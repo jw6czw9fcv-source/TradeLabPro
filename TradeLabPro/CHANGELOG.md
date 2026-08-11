@@ -32,8 +32,12 @@
 - **The second level stops at the second level.** A fund inside a fund is opened once; the part a nested fund doesn't publish stays attributed to that fund rather than spread over the names it does publish, so every company weight is still a floor.
 - **The gap is a figure, not an instruction.** "Buy $4,200 of VAB" is arithmetic on your own target; it ignores commissions, the tax on a sale, and whether the trade is worth making at all.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
-- Full pytest suite (1071) passes, including annualization over three years, the un-annualized six-month window, Sharpe going negative against the risk-free rate, the drawdown after a 30% drop, short history writing only the columns it can support, metrics never reaching a user column, `None` never blanking a stored figure, percent-in/percent-out cell editing, non-editable computed columns, each allocation totalling from its own column, the coverage note, the schema-v4 rename preserving weights already typed, the pinned column sharing one model and scrolling in step, double-click charting the Yahoo symbol and not firing on an editable cell, the wrapping toolbar, the rebalance drift against a book the plan only half covers, the overlap detector's category fallback, rebasing from a common start, the filter leaving totals alone, CSV export in stored units, and the Excel importer's header mapping and blank-cell handling.
+- Full pytest suite (1079) passes, including annualization over three years, the un-annualized six-month window, Sharpe going negative against the risk-free rate, the drawdown after a 30% drop, short history writing only the columns it can support, metrics never reaching a user column, `None` never blanking a stored figure, percent-in/percent-out cell editing, non-editable computed columns, each allocation totalling from its own column, the coverage note, the schema-v4 rename preserving weights already typed, the pinned column sharing one model and scrolling in step, double-click charting the Yahoo symbol and not firing on an editable cell, the wrapping toolbar, the rebalance drift against a book the plan only half covers, the overlap detector's category fallback, rebasing from a common start, the filter leaving totals alone, CSV export in stored units, and the Excel importer's header mapping and blank-cell handling.
 
 ## 2.40.0 - Your workplace retirement plan, fund by fund
 
@@ -55,6 +59,10 @@
 - **The chart uses unit values only.** A balance rises when you contribute; drawing that as performance would be a lie, so those funds are left off rather than drawn wrong.
 - **Nothing is recommended.** Returns, benchmarks and fees are laid side by side as facts. Which fund to hold is not the app's call.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - Full pytest suite (911) passes, including the XIRR against a known rate, the Modified Dietz correction for a late contribution, the fee turning a +0.03 pp win into a -1.72 pp loss, holdings-weighted plan returns, column-heading mapping, French worded dates, the statement parser against a real Canada Life layout, and the panel's paste-preview-before-write, index editing, synthetic-data refusal and empty states.
 
@@ -70,6 +78,10 @@
 - **A short curve says why it's short.** The book is only valued on days every holding traded, so a name that listed part-way through the year shortens it — the chart names that holding instead of quietly starting the year in March.
 - **Too little of the year is stated, not drawn.** In the first days of January the chart says so rather than running a line through two points.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - Full pytest suite (819) passes, including the last-year anchor, a book with no prior-year history, the three-session minimum, the holding that shortens the year, currency conversion, the deepest-dip figure, agreement with `portfolio_analytics.portfolio_equity`, and the panel's chart, footnote, cursor readout and empty states.
 
@@ -84,6 +96,10 @@
 - **Distant dates are dropped** (45-day horizon). Beyond about six weeks a date is trivia rather than something to know today, and estimated earnings dates that far out often move.
 - **Nothing is inferred.** A date is either published or absent. ETFs have no earnings and generally publish no calendar at all, so the line **names the holdings that had none** ("No calendar published for VTI, XDIV.TO, XIC.TO — funds rarely have one") rather than leaving a silence you would have to interpret.
 - **No economic calendar and no analyst actions.** CPI, PPI, central-bank decisions and rating changes are *not* included: no source wired into this app publishes them reliably, and a hardcoded table of dates goes stale without saying so. A wrong date on a real-money screen is worse than no date. The reasoning is recorded in `core/events.py` so it isn't quietly reversed later.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - Full pytest suite (799) passes, including ordering, the past-date and horizon cutoffs, both event kinds for one holding, holdings with no calendar, the summary text and its overflow count, timestamp inputs, and the Home line in all three states.
@@ -104,6 +120,10 @@
 ### Notes
 - **Every look-through figure is a floor, never a total.** Sources publish only a fund's top ~10 holdings, so each fund's unreported remainder is reported separately as unallocated rather than being spread across the names that *are* visible, which would overstate every one of them. The section states the amount and share left unaccounted for.
 - Composition is **never synthesized** — a fund with no data is named and counted as itself, matching the rule dividends and prices already follow.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - Full pytest suite (774) passes, including the merge of direct and fund exposure, the unallocated remainder, plain stocks, unreadable funds, empty books, sector blending across funds and single stocks, the Canadian bare-ticker resolution, sector-name normalization, and the Home attention line.
@@ -132,6 +152,10 @@
 - **A startup failure could have crashed the error handler itself.** The handlers guarding the startup refresh called a logger that only existed as a local inside `main()`, so the very path meant to keep startup safe would have raised `NameError`. Fixed with a module-level logger, plus a test that startup survives a broken panel.
 - Home refuses synthetic prices exactly as Analytics and Dividends do — a failed download shows "—" instead of becoming a fabricated book value.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - Full pytest suite (759) passes, including new coverage of the movers ordering and native/converted split, the next-payment wrap into next year, the attention rules, the world board and macro formatting (FX decimals, basis points, missing data), the Market tab's exposed read, staleness labelling, and a market source that returns nothing or raises.
 - Checked against a live market refresh: US 82/100, Canada 100/100, and the macro row against real quotes (USD/CAD 1.4125, oil $81.90, gold $4,081, US 10Y 4.64%).
@@ -153,6 +177,10 @@
 - **The chart header and the Dividends tab could disagree** about the same stock's yield, for the same windowing reason. Both now use one shared calculation, so a stock can never show two different yields in the same app.
 - Dividend data is **never synthesized** — a name that pays nothing, or a failed lookup, shows blank rather than a fabricated figure, matching the Analytics tab's rule.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - Full pytest suite (728) passes, including new coverage of frequency detection, TTM versus forward rate, the growth-artifact regression using RY.TO's real payment history, the payment calendar, currency conversion, the Dividends tab UI, and the chart markers (placement, tooltips, toggling, timezone-aware dates, non-payers, and agreement with the Dividends tab).
 
@@ -170,6 +198,10 @@
 - **Click a holding to chart it** — rows in both the Portfolio and Analytics tables now load that symbol in the chart workspace, matching the rest of the app.
 - The "Return vs bench" tile names the benchmark (e.g. "+47.0% vs SPY +19.2%").
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - Full pytest suite (700) passes, including new regression coverage for the synthetic-data tagging and refusal, the unpriced-cost exclusion, the window-truncation flag, and a check that the real database is untouched after a full test run.
 
@@ -183,6 +215,10 @@
 - **Import your open positions from IBKR (read-only).** On the Portfolio tab, "Import from IBKR" pulls your current holdings — either from a positions file (Activity/Flex CSV or XML) or a direct Flex Web Service fetch (reusing the token and query id saved in the Journal). Holdings land in an "IBKR" portfolio; each import replaces the previous one, so re-importing never duplicates. Never logs in to trade or moves funds.
 - **Symbol resolution for imported tickers.** IBKR reports bare local tickers, which can resolve to the wrong Yahoo listing (US `XDIV` at $30 vs Toronto `XDIV.TO` at $46 — and some US names even have a Canadian CDR at the same ticker). Imports are corrected to the right listing by exchange/currency and, as a fallback, by matching each candidate's price to your cost basis, so a mixed CAD/US book prices correctly.
 - **Multi-currency, viewed in one currency (default CAD).** In the Analytics tab, each holding's live price is converted to the chosen currency using live FX (e.g. USD→CAD), and the benchmark too, so a mixed CAD/US account is valued apples-to-apples. Your **imported cost basis is used exactly as imported and is never adjusted** — an IBKR CAD account's costs stay in CAD.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - Full pytest suite passes, including new coverage of the analytics engine (valuation, equity curve, beta, drawdown, concentration, correlation, currency conversion), the IBKR position parsers (XML/CSV, lot merging, short signs, exchange/currency and cost-basis symbol resolution), and the Analytics and Portfolio-import UI.
@@ -198,6 +234,10 @@
 - Everything is computed **offline** from the price history with plain math (no API key, no extra services), on a background thread so the window stays responsive.
 - Purely **descriptive and backward-looking**: seasonality summarizes what price did in past calendars — it is clearly labelled as not a forecast and not financial advice.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - Full pytest suite passes, including new coverage of the month-over-month return series, per-month averaging/win-rate/extremes across years, weekday and intra-year annual returns, year coverage counting, the strong/weak month reads and summary, and the Seasonality tab UI (all three tables populate; a bad symbol is handled gracefully).
 
@@ -211,6 +251,10 @@
 - The whole tab is **offline-first**: every grade and report is computed locally with plain math and needs no API key or network. The AI only narrates those numbers — it never invents them.
 - Educational and retrospective by design: the Coach reviews the past and gives process feedback; it never recommends a trade or predicts a price, consistent with the app's simulated-only, no-advice safety model.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - Full pytest suite passes, including new coverage of the grading rubric (textbook A, lucky-no-stop-win grades F, honored vs gapped stops, documented vs undocumented), the aggregate process report (no-stop %, stop-honored %, holding-discipline flag, empty/small-sample safety), the offline report and journal context builder, the transport-injected AI-chat path, and CoachPanel UI (grades render, empty journal is safe, chat falls back to the offline review without a key).
 
@@ -222,6 +266,10 @@
 
 ### Changed
 - **One refresh now loads both markets.** A single "Refresh" downloads and scores both the US and Canada in the same batched pass (~167 symbols across ~5 requests) and caches both. Switching country afterwards is always an instant re-render from memory — never a second download. This replaces the previous background prefetch, which could be raced by switching before it finished.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - Full pytest suite passes. New tests: batched `get_histories`/`_yahoo_histories` (chunking, empty-symbol synthetic fallback, de-duplication, no-yfinance, and a mid-refresh download failure); the both-markets caching contract; and a regression test that the global indices stay populated across a US → Canada → US switch.
@@ -238,6 +286,10 @@
 ### Changed
 - **The read score's breadth now comes from stock-level participation** instead of the coarse 11-sector count. The share above the 200-day average is weighted heavily and named explicitly in the read's reasons and one-line summary (e.g. "Strong breadth — 78% of stocks above their 200-day avg").
 - A full refresh now downloads ~86 symbols per market (up from ~45) to sample the breadth constituents — still off the UI thread with a progress bar, and the other market is still prefetched in the background.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 623/623 pytest tests pass (new: `breadth_universe` sampling/de-duplication and market separation, `advance_decline` counts/ratio/percentages and empty-safe behaviour, the 200-day breadth highlight in the read, and MarketPanel tests that the breadth card populates, highlights % above 200-day, and follows the country selector).
@@ -258,6 +310,10 @@
 - **The Scanner uses one selector too.** The exchange preset now reads `… / Sectors — US / Sectors — Canada`; the separate "Sector market" dropdown was removed.
 - **Full screen is exited with a ⤢ retract icon** button rather than Escape (which is now reserved for the chart tools).
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 613/613 pytest tests pass (new: duplicate-`Close` regression, per-market sector instruments and equal-weight aggregation, the whole-tab-follows-country behaviour, cross-market caching/prefetch, the Measure tool and its readout, and Esc-cancels-tool; a chart test that used the shared data DB with a hardcoded symbol was isolated so a real user-drawn annotation can no longer break the suite).
 
@@ -272,6 +328,10 @@
 - Sub-sector lists (gold, banks, uranium, REITs…) stay a **single definition** and are split by listing suffix at read time, so a symbol is only ever recorded once and the two markets cannot drift apart. Universe keys now carry their region (`Sector - Canada - Banks`), while the checkbox label drops it since the dropdown above already states the market.
 - `tradelab/core/sectors.py` is now region-based: `REGIONS`, `US_SECTORS`, `CANADA_SECTORS`, `is_canadian()`, `region_baskets()`, `basket_choices(region)`, `basket_symbols(name, region)`, `universe_name()`, `split_universe_name()`.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 596/596 pytest tests pass, including a guard that walks every basket in both markets and fails on a single cross-market symbol, plus Scanner UI tests that the market selector swaps the listed baskets and that scanning Canadian "Gold & Precious Metals" yields only TSX names.
 
@@ -284,6 +344,10 @@
 - **Sector, sub-sector and ETF baskets in the Scanner.** New `tradelab/core/sectors.py` ships **43 curated baskets** on three levels: the **11 GICS sectors** (Technology, Financials, Energy…), **sub-sectors** (Gold & Precious Metals, Banks, Uranium & Nuclear, Oil & Gas, REITs, Airlines, Insurance, Cannabis, Shipping…) and **ETF groups** (US sector SPDRs, index & assets, commodities & metals, Canada). Reach them from the new **Sectors / Industries** exchange preset or the **Sectors** shortcut button; each basket is its own checkbox, so you can scan just gold. Yahoo only reports a symbol's sector through a per-symbol call, so curated baskets scan instantly where a live sector lookup would mean thousands of round-trips before a scan could start.
 - The Heatmap's theme baskets (Semiconductors, Biotech, Cybersecurity, Fintech…) are **shared** by the Scanner rather than duplicated, so the two features can't drift apart.
 - **Per-symbol country filtering for baskets.** Sector baskets deliberately mix US and Canadian listings (gold miners trade on both), so "All USA" now narrows a basket to its US names instead of dropping the whole basket.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 588/588 pytest tests pass (new `tests/test_sectors.py` — basket contents, shared themes, name resolution, universe registration and per-symbol country filtering, plus Scanner UI exposure and grouping; new chart-axis tests in `tests/test_chart_engine_ui.py` — date/intraday/multi-year formats, blank out-of-range ticks, per-pane feed and lowest-visible-pane labelling).
@@ -303,6 +367,10 @@
 ### Fixed
 - **The Market tab no longer freezes the window.** Every download it does — the ~37-symbol dashboard refresh and charting a clicked row — ran inline on the UI thread, so Qt could not repaint until Yahoo answered: the window locked up and the cursor spun for the length of the request. Both now run on worker threads. The refresh shows a **progress bar** while it streams symbols in, the button is disabled for the duration so a second refresh can't pile on, and a symbol that fails is recorded as no-data instead of aborting the batch. Fetching and rendering are now separate, so the dashboard is drawn from one downloaded batch with no network calls in the render path.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 565/565 pytest tests pass (new market-core tests: global-index coverage and session-open ordering, medium-term momentum, `market_read`, `sector_favorability`, `rank_sectors`, US/Canada region config and benchmark labelling, on-screen criteria; plus MarketPanel UI tests for the global-indices table, the re-ranked sector table, and the US↔Canada dropdown including that switching before a refresh triggers no downloads).
 
@@ -314,6 +382,10 @@
 - **Tabs reordered to the trading workflow.** Left-panel tabs now flow the way you actually trade: Market → Heatmap → News (context) → Scanner → Watchlists → Alerts (find & watch) → AI Assist → Risk → Paper Trading (analyse, size, act) → Portfolio → Journal (track & review) → Backtest → Strategies → Replay → Plugins (research) → Notes → Links → Settings.
 - **New "News" tab.** Recent headlines by **source** — a **Symbol**, the broad **Market**, a **Sector** (any of the 11 SPDR sectors), or **Geopolitical** news (war, sanctions, tariffs, OPEC, elections…) — newest-first and de-duplicated from the market-data feed. **Macro / political** stories are flagged (⚑) and can be filtered; the Geopolitical source is inherently filtered. Double-click a headline to open it in your browser.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 528/528 pytest tests pass (new: `tests/test_broker_stops.py` — stop/stop-limit/trailing/bracket-OCO trigger & cancel logic + persistence; `tests/test_news.py` — headline parsing (old & new Yahoo shapes), macro flagging, dedupe/sort, resilience; plus paper-trading & news panel UI tests).
 
@@ -324,6 +396,10 @@
 - **All tabs stay visible.** The left tab bar now **wraps to multiple rows** (a flow layout) instead of hiding tabs behind a `»` overflow arrow — so every tab is one click away. The current tab is highlighted; drag the splitter wider to pack more per row.
 - **Chart full-screen toggle.** A **⛶ Full screen** button on the chart toolbar expands the chart to fill the whole monitor (hides the left panel and window chrome); click again or press **Esc** to retract.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 501/501 pytest tests pass (new: `tests/test_notes.py` + `tests/test_notes_panel.py` — notes save/load/autosave/shutdown-flush, the multi-row tab bar shows all tabs & wraps, and the chart full-screen toggle hides/restores the left panel).
 
@@ -331,6 +407,10 @@
 
 ### Added
 - **New "Links" tab — a personal bookmark list.** Save the research sites, broker pages, news and screeners you use: enter a **name + URL** (https:// is added automatically if you omit it) with an optional **group**. Double-click a row (or Open selected) to open it in your default browser. Select a row to edit it in place; Remove, and Import/Export CSV. Stored locally in `data/links.json` (gitignored) — it only opens links, it sends nothing.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 493/493 pytest tests pass (new: `tests/test_links.py` — URL normalization, store add/update/remove/persist, corrupt-file safety; `tests/test_links_panel.py` — add/normalize, edit-in-place, remove, and double-click opens the browser).
@@ -344,6 +424,10 @@
 ### Changed
 - `market_data.get_history()` / `get_quote_meta()` now delegate to the active provider (behaviour unchanged on the default Yahoo source). Switching source clears the in-process quote cache.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 481/481 pytest tests pass (new: `tests/test_providers.py` — registry, default/active/switch, synthetic offline history & meta determinism, cache invalidation on switch; `tests/test_settings_panel.py` — selector lists/switches providers). Existing `market_data` tests unchanged and green.
 
@@ -354,6 +438,10 @@
 - **Right-click a heatmap tile** for a context menu: **Open chart** or **Add to watchlist**. (Left-click still opens the chart.)
 - **Zoom & pan the heatmap (Finviz-style).** Scroll to **zoom** toward the cursor on dense maps, **drag** to pan, **double-click** empty space to fit. Zoom enlarges the *tiles* while the **label text stays a normal, readable size** — and tickers that were too small to show simply **appear** once their tile is big enough. Left-click still charts a tile; right-click still opens the menu.
 - **More tickers labelled on the heatmap.** Tile labels now **auto-fit** their font to the tile and are **clipped** to it, so far smaller tiles show their symbol (and % change where there's room) instead of only the big ones — handy on dense maps like mapped scan results.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 471/471 pytest tests pass (new: Scanner `result_symbols()` filters error rows, `show_results_in_heatmap()` end-to-end sets the heatmap source and fronts the tab; heatmap `set_external_symbols()` adds/selects the source and clears any theme).
@@ -367,6 +455,10 @@
   - Indicators recompute **only on revealed bars**, so there's genuinely no look-ahead.
 - (This replaces a dead, never-wired-in "Next candle" stub with a full transport.)
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 463/463 pytest tests pass (new: reveals only the start bars, step/scrub stay in bounds, auto-play pauses at the end, reset returns to the start, controls disabled until loaded).
 
@@ -379,6 +471,10 @@
   - **Portfolio sector exposure** — loads your Portfolio-tab positions and breaks them down by sector with % of book, flagging heavy concentration (≥40% in one sector).
 - Planning tool only — it places no orders.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 457/457 pytest tests pass (new: `tests/test_risk.py` — share-count math, floor rounding, fixed-$ risk, short side, max-position/buying-power caps, invalid inputs, R-target prices for long/short, sector-exposure grouping; `tests/test_risk_panel.py` — headless UI incl. live recompute and exposure handler).
 
@@ -387,6 +483,10 @@
 ### Added
 - **Click any column header in the Journal to sort** (click again to reverse) — trades table and the breakdown table. Numeric columns (Qty, Entry, P&L, P&L %, R, Days, Win %) sort by **value, not text**, so 100 doesn't land between 10 and 2. Dates sort chronologically.
 - Your chosen sort **survives a refresh/import**, so re-importing doesn't throw you back to the default. Default remains Entry date, newest first.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 437/437 pytest tests pass (new: numeric column sorts by value both directions, chosen sort persists across refresh).
@@ -398,6 +498,10 @@
 
 ### Changed
 - The trades table now lists **newest first**, so a freshly imported year of history opens on your most recent trades.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 435/435 pytest tests pass (new: date/Days columns populate, newest-first ordering).
@@ -414,6 +518,10 @@
 - If your Flex Query omits a required field (most commonly **Trade Price**), the error now **names the missing field** and tells you where to tick it, instead of a vague "none could be read".
 - When an import returns nothing, the message now says *why*: it reports how many trade rows the report actually contained and what to check (Trades section enabled, date period, Activity vs Trade Confirmation query), and saves the raw report to `logs/ibkr_flex_last.xml` for inspection.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 433/433 pytest tests pass (new: still-generating timeout raises instead of returning an empty body, all-asset-class import, option multiplier P&L, `<TradeConfirm>` parsing, level-of-detail de-duplication, row-count diagnostic).
 
@@ -421,6 +529,10 @@
 
 ### Changed
 - The **IBKR Flex** dialog now has a **Save** button that stores your token + Query ID **without** fetching — so when the token changes you can just update it in the app. Credentials are kept in the OS settings store (independent of the app folder), so they **persist across app updates/reinstalls**; you only enter them once. Added a **Show token** toggle for entry.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 427/427 pytest tests pass (new: credentials save via an injected settings store, so the real saved token is never touched).
@@ -438,6 +550,10 @@
 - **Close** open trades (enter an exit price), **edit notes**, **export to CSV**, and double-click a row to chart the symbol.
 - Journal persists to `data/journal.json` (gitignored). Analysis/practice only — nothing here places orders.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 426/426 pytest tests pass (new: `tests/test_journal.py` — P&L/R/expectancy/profit-factor math, strategy/tag breakdowns, FIFO position-level fill pairing incl. scale-outs/shorts/opens, IBKR Flex/Activity CSV parsing, Flex Web Service two-step fetch with retry + error handling and XML report parsing, store persistence; `tests/test_journal_panel.py` — headless UI incl. paper, IBKR CSV, and Flex import paths).
 
@@ -449,6 +565,10 @@
 - **World map (Finviz-style).** New **World – Large caps** market of major global companies (mostly US-listed ADRs), which auto-selects **Group by Country** — Taiwan, China, Japan, UK, Germany, India, Brazil, Canada, and more.
 - Tile tooltips now show Industry and Country too.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 389/389 pytest tests pass (new: industry/country grouping, theme baskets/choices, tiles carry industry+country, panel group-by options, theme override, World→Country default).
 
@@ -457,6 +577,10 @@
 ### Added
 - **Portfolio map.** "Portfolio" is now a Market source on the Heatmap — it maps your Portfolio-tab holdings, just like Watchlist.
 - **Performance-period dropdown (Finviz-style).** A **Period** selector — **1 Day / 1 Week / 1 Month / 3 Month / 6 Month / 1 Year / 3 Year / 5 Year / 10 Year / YTD** — chooses the window the tile colour represents. The reference close is the price N trading days back (or the prior year's last close for YTD). Long look-backs use bounded fetch spans (≤10y, never `max`) so the update stays fast (~0.5s regardless of period). Changing the period re-fetches automatically once a map is loaded, and the colour legend relabels (e.g. "1 Month change:").
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 382/382 pytest tests pass (new: 1-Day/1-Week/YTD change math, period choices, Portfolio source, period dropdown updates the legend).
@@ -470,6 +594,10 @@
 ### Fixed
 - Hardened company-name resolution so a rate-limited fund whose summary starts with filler ("In seeking to track …") no longer shows a garbage name — it falls back to the display name or ticker.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 376/376 pytest tests pass (new: ETF AUM/category resolution, filler-summary guard, ETF/index presets present).
 
@@ -477,6 +605,10 @@
 
 ### Fixed
 - **Many stocks showed only their ticker, not the company name** (KO, CAT, MO, JPM, XOM, …). Yahoo has become inconsistent about which name field it returns — these blue-chips come back **without** `longName`/`shortName`, so the lookup fell back to the ticker. Name resolution now also uses `displayName` and derives the full legal name from the business summary, so the chart header (and heatmap tooltips) show e.g. **"KO — The Coca-Cola Company"**, **"JPM — JPMorgan Chase & Co."**, **"BAC — Bank of America Corporation"**. Affects `get_quote_meta`, so the Scanner "Sector"/name columns benefit too.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 373/373 pytest tests pass (new: legal-name extraction from a business summary incl. `&`/`of` connectors, and the full longName → shortName → summary → displayName → ticker fallback chain).
@@ -486,6 +618,10 @@
 ### Added
 - **Auto-refresh timer on the Heatmap.** Tick "Auto-refresh every N s" (15 s–1 h) and the map reloads on a timer so it tracks the market through the day. Toggling it on refreshes immediately; the status line shows the last update time and an "auto-refresh on" marker. A refresh that overruns its interval is skipped rather than stacked (the loader no-ops while a fetch is in flight). The timer stops cleanly on app close.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 363/363 pytest tests pass (new: timer starts/stops with the toggle, interval changes apply live, shutdown stops the timer).
 
@@ -493,6 +629,10 @@
 
 ### Fixed
 - **The bottom of the window could be cut off / unreachable** (reported when clicking a stock in the Heatmap). Root cause: a `QTabWidget` adopts its **tallest** page as the whole tab stack's minimum height, so the tall **Scanner** tab (~1330px, its parameters + results table) forced the entire window taller than a 1080p screen — clipping the bottom of every tab and the charts. Each tab page is now wrapped in a **scroll area**, so a page still fills a tall pane but scrolls internally instead of overflowing a short one. The window's minimum height dropped from ~1360px to ~380px, so it fits any screen.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 360/360 pytest tests pass (new: window minimum height stays under a normal screen; tab panels remain accessible after the scroll-area wrap).
@@ -504,6 +644,10 @@
 - **US and Canadian presets** built in: US Mega/Large caps (NASDAQ+NYSE), NASDAQ-only, NYSE-only, Canada TSX large caps, Canada TSX (expanded), plus your **Watchlist**.
 - **Click any tile to open its chart.** Hover for a tooltip (name, sector, price, % change, size). Toggle sector grouping, choose the sizing metric, and cap the tile count for speed/readability.
 - Loads off the UI thread with a progress bar; prices come from a single batched download and cap/sector from cached metadata, so it stays responsive and still renders offline.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 358/358 pytest tests pass (new: `tests/test_heatmap.py` — squarified-treemap layout tiles the area proportionally & in-bounds, colour scale, tile/sector building, offline provider; `tests/test_heatmap_panel.py` — headless UI smoke via an injected provider).
@@ -520,6 +664,10 @@
 ### Notes
 - Analysis/practice tool only — alerts never place orders (consistent with the simulated-only safety model).
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 339/339 pytest tests pass (new: `tests/test_alerts.py` core engine — edge-trigger/once/recurring/persistence/offline-provider; `tests/test_alerts_panel.py` headless UI smoke).
 
@@ -531,6 +679,10 @@
 ### Changed
 - Links in the exported **PDF** (including the Table of Contents) render in **black**. The on-screen viewer keeps Qt's default link colour.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 322/322 pytest tests pass (new: PDF button present, PDF export writes a valid `%PDF`, shared link-recolor helper).
 
@@ -538,6 +690,10 @@
 
 ### Fixed
 - In the in-app **Help → User Manual** viewer, **Ctrl + mouse wheel** now zooms the text *and* the embedded screenshots together (browser-style page zoom). Previously only the text zoomed and the images stayed at a fixed size. Window resize/maximize scaling (added in 2.12.3) is unchanged.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 319/319 pytest tests pass (1 new in `tests/test_help_menu.py`: images grow with Ctrl+wheel zoom).
@@ -547,6 +703,10 @@
 ### Changed
 - The in-app **Help → User Manual** window now has standard title-bar controls — **minimize** and **maximize/restore** next to the close [X] — like a normal window (was a plain dialog with only a close button).
 - Embedded screenshots in the manual viewer now **scale to the window width** and re-scale on resize/maximize (new `ManualBrowser`), instead of staying at their fixed native size.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 318/318 pytest tests pass (2 new in `tests/test_help_menu.py`: window buttons present, images scale to width).
@@ -569,6 +729,10 @@
   - **Version** — an About dialog showing the app name, version, a one-line description, and the analysis/practice-only disclaimer.
 - Menu/action references are held on the window so PySide6 doesn't garbage-collect the underlying C++ objects.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 316/316 pytest tests pass (3 new in `tests/test_help_menu.py`).
 
@@ -583,6 +747,10 @@ Phase 8 delivers the safe, genuinely useful half of "IBKR-grade" connectivity: a
 
 ### Safety
 - Live trading is intentionally out of scope: this layer simulates only. It never sends orders to a broker or moves funds.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 312/312 pytest regression tests pass (16 new across `tests/test_broker.py` and `tests/test_paper_trading_panel.py`), all network-free via injected prices.
@@ -599,6 +767,10 @@ The roadmap's Phase 7 "AI Assistant" shipped as a real natural-language assistan
 ### Safety
 - The system prompt hard-constrains the model to educational/explanatory output only: no buy/sell/hold calls, no recommendation-style price targets, honest about uncertainty, and it must not invent data. This is reinforced by an in-UI disclaimer. The user supplies (and pays for) their own API key; no credentials ship with the app.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 295/295 pytest regression tests pass (15 new across `tests/test_ai_assistant.py` and `tests/test_ai_assistant_panel.py`), all with an injected fake transport — no network access in tests.
 
@@ -607,6 +779,10 @@ The roadmap's Phase 7 "AI Assistant" shipped as a real natural-language assistan
 ### Added
 - The full company name is now shown above the indicator legend in the price pane (e.g. `AAPL — Apple Inc.`), fetched via `get_quote_meta` on plot. Falls back to just the ticker when the name is unavailable.
 - Sub-pane safeguard in the Indicators dialog: the on/off toggles are relabelled "Show Volume / Show RSI / Show MACD" and visually separated (a stretch) from their period fields so a pane can't be turned off by accident while adjusting a period. A new "Show all sub-panes" button restores every hidden pane in one click.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 280/280 pytest regression tests pass (new: company-name header test and the "Show all sub-panes" safeguard test).
@@ -619,6 +795,10 @@ The Plugins tab was dead code (it only listed filenames and wasn't even register
 - `tradelab/core/plugins.py`: drop a `.py` file in the top-level `plugins/` folder defining `PLUGIN_NAME` and `compute(df) -> Series`, and it's auto-discovered and registered as an indicator field (keyed `plugin:<name>`) in `filters.FIELD_SPECS` - so it's immediately usable in the Scanner's Custom Filters and the no-code Strategy Builder with no other wiring. Bad plugins (import error, missing `PLUGIN_NAME`/`compute`) are recorded and shown, never crashing the app. Discovery runs at startup (before panels build) and on demand.
 - `plugins/sample_hl_range.py`: a working template plugin ("High-Low Range %") users can copy.
 - Plugins tab rebuilt: lists loaded (✓) and errored (✗ + reason) plugins with a Reload button; reloading refreshes the condition-field dropdowns.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 278/278 pytest regression tests pass (9 new: `tests/test_plugins.py` covering discovery, field registration, condition evaluation with a plugin field, error handling, re-discovery, and the panel).
@@ -637,6 +817,10 @@ Phase 5, plus a major push toward TradingView/IBKR-level flexibility: indicators
 - **Configurable MACD/RSI sub-panes**: RSI period and MACD fast/slow/signal are now editable (were hardcoded 14 and 12/26/9).
 - **Clickable on-chart legend**: each pane shows a colour-coded legend of its indicators in the top-left; clicking any entry opens the Indicators editor - the legend is the primary editing entry point, TradingView-style.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 269/269 pytest regression tests pass (new suites for custom strategies, the strategy-builder panel, chart indicators, plus extended filter/indicator coverage).
 - Manually tested in the real app: building an EMA-crossover custom strategy, scanning/backtesting with it, adding multi-period overlays, editing MACD/RSI periods, and editing via the legend.
@@ -651,6 +835,10 @@ The Backtest panel existed but wasn't even registered as a tab (dead code) and w
 
 ### Fixed
 - Backtest data prep did a blanket `dropna()`, discarding the first ~199 bars purely for SMA200's warmup even though no strategy signal uses SMA200 - crippling shorter backtests and walk-forward windows. Now drops only rows where the actual signal inputs (EMA/MACD/RSI, ~35 bars) are still warming up.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 225/225 pytest regression tests pass (32 new: `tests/test_backtest.py` for the engine incl. drawdown/optimize/walk-forward, `tests/test_backtest_panel.py` for the 4 sub-tabs and plain-language verdicts).
@@ -667,6 +855,10 @@ Starts Phase 3. The Market tab was a placeholder (a regime-symbol table whose ow
   - Breadth summary in the status line (e.g. "8/11 sectors up today, 9/11 above their 50-day average").
 - The existing regime-symbol table (VIX/SPY/QQQ/…) now also feeds the macro read.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 201/201 pytest regression tests pass (14 new: `tests/test_market.py` for the logic, `tests/test_market_panel.py` for the UI incl. graceful handling of a failing symbol).
 - Rendered the panel offscreen to confirm layout; refresh runs end-to-end.
@@ -675,6 +867,10 @@ Starts Phase 3. The Market tab was a placeholder (a regime-symbol table whose ow
 
 ### Fixed
 - Non-ticker junk like "41" could appear as a scan result row. `is_tradeable_symbol()` accepted any `[A-Z0-9.-]+` string, so a purely-numeric value from a bad exchange-feed line passed as a valid ticker. Now requires at least one letter (a real ticker always has one), which rejects `41`/`123`/`0` while keeping every real symbol including dotted Canadian tickers (`RY.TO`), class shares (`BRK.B`), and letter+digit tickers. Re-run "Refresh exchanges" to re-pull the lists through the corrected filter.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 187/187 pytest regression tests pass (26 new: `tests/test_universe.py`).
@@ -691,6 +887,10 @@ Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector
 - **Multi-strategy scanning**: a second real strategy, RSI Mean-Reversion (`tradelab/strategies/rsi_reversion.py`) - BUY on a bounce out of oversold, SELL on a rollover out of overbought, as opposed to EMA/MACD's trend-following logic. A small registry (`tradelab/strategies/__init__.py`) lets the Scanner's new "Strategy" dropdown pick between them; persists through Setup save/load like everything else.
 - **Confidence scoring tied to backtest stats** (`tradelab/core/confidence.py`): new "Conf%"/"Sample" columns - of the selected strategy's historical BUY signals on this symbol's already-fetched price window, what fraction were profitable 10 bars later. Reuses the indicators DataFrame scan_symbols() already computed, so it stays fast enough to run inline during a scan instead of requiring a separate backtest pass. This is deliberately a different, more transparent number than the existing heuristic point-based Score.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 161/161 pytest regression tests pass (29 new, across indicators/strategies/confidence/scanner/UI wiring).
 - Live end-to-end: real market caps and sectors confirmed (AAPL/MSFT→Technology, XOM→Energy, JNJ→Healthcare); both strategies produce different signals/scores/confidence on the same symbols; full path verified through the actual ScannerPanel UI, not just the core engine.
@@ -702,6 +902,10 @@ Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector
 - `tradelab/core/filters.py`: IBKR-style arbitrary filter conditions - pick any of 16 technical fields (price, volume, relative volume, RSI, ATR%, ADX, MACD/signal/histogram, fast/slow EMA, SMA20/50/200, Bollinger bands, price-vs-SMA20%), an operator (Above/Below/Between), and a value. Conditions AND together with each other and with the existing fixed Price/Volume/Technical/Signal filters - this is an additive layer, not a replacement.
 - `ScannerConfig.custom_filters`: list of serialized conditions, wired through `scan_symbols()`, the Setup save/load system (`current_setup_dict`/`_apply_setup_data`), and `current_config()`.
 - Scanner UI: a "Custom Filters" section with "+ Add Filter" - each row is a field dropdown, operator dropdown, value spinbox(es) (a second spinbox appears only for "Between"), and a remove button.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - BUG-005 (Stop Scanner) and BUG-006 (Canadian ticker coverage) re-verified live before starting this work: `scan_symbols` stops exactly where `should_stop()` says to, and `refresh_exchange_cache()` pulled 1087 real Canadian symbols with zero source errors. Both closed off the watch list.
@@ -718,6 +922,10 @@ Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector
 ### Changed
 - Removed each dock's native title bar. It repeated the same symbol name the new switcher row and the chart's own search box already show, directly above each other. Trade-off: dragging a dock by its title bar to float/split it is no longer available - the switcher row and Reset button cover the everyday cases.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 92/92 pytest regression tests pass (12 new across the switcher row, reset, title bar removal, and per-chart close button).
 - Manually tested in the real running app after each step of this round.
@@ -730,6 +938,10 @@ Completes the last roadmap bullet for Phase 2 - "multi-strategy scanning, sector
 
 ### Fixed
 - `new_setup()` set the name to "New Setup" and then immediately called `default_setup()`, which itself unconditionally reset the name back to "Default Setup" - the New button never actually showed "New Setup". Reordered so the name is set after the reset, not before.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 86/86 pytest regression tests pass (6 new: `tests/test_scanner_presets.py`, covering dropdown sync on save/save-as/delete, preset switching restoring saved values, and the New Setup naming fix).
@@ -750,6 +962,10 @@ Continued first manual pass over Phase 1 (Chart Engine). All of these were silen
 - MACD and RSI sub-panels now visible by default (were off, requiring a manual toggle every session).
 - Crosshair readout moved from a floating label that could obscure the very candle it described to a status bar fixed at the bottom of the chart, showing date+time (with time-of-day on intraday intervals), full OHLCV, and visible EMA/RSI/MACD values.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 80/80 pytest regression tests pass (9 new, covering scene attachment after a real replot - not just position values - plus the multi-tab dock lifecycle).
 - Manually tested in the real running app after each fix; two of these bugs (BUY/SELL markers, MACD/RSI crosshair) only surfaced because a first "fix" that passed automated + offscreen verification still didn't work when actually clicked through, which is why several fixes above needed a second pass.
@@ -764,6 +980,10 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 - **Bar-duration (Interval) selector missing from the Chart tab.** The PyQtGraph rewrite (Phase 1) only carried over a Period dropdown (3mo-max); the Interval control (1m/5m/.../1d/1wk/1mo) that the Scanner tab has always had was never wired into the standalone chart toolbar, even though the data layer already supported it. Added `interval_combo` next to Period, and `plot()` now syncs both combos when a cfg with a different period/interval is loaded externally (e.g. from a Scanner result), instead of leaving the toolbar showing stale values.
 - Default visible window on chart load reduced from 180 to 100 bars, and candle/volume/MACD-histogram bar width tightened, so bars have a real, visible gap at typical panel widths instead of compressing to sub-pixel spacing.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 71/71 pytest regression tests pass (1 new: a Y-axis-fit regression test in `test_chart_engine_ui.py`).
 - Manually tested by launching the real (non-offscreen) app after each fix.
@@ -775,6 +995,10 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 
 ### Fixed
 - Scan errors (`Signal == "ERROR"`) previously fell into the same "poor score" red tint as a genuinely weak but valid result (both had `Score == 0`), making a scan failure indistinguishable from a real low-scoring symbol at a glance. Errors now render as a distinct neutral gray, and the error message (previously computed but never shown anywhere) is now surfaced as a tooltip on the Symbol cell.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 70/70 pytest regression tests pass (16 new: `tests/test_scanner_colors.py`), including an integration test that drives `ScannerPanel.populate_table()` end-to-end and checks table cell colors/tooltip.
@@ -791,6 +1015,10 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 ### Added
 - `tests/test_launch_dependency_preflight.py`: regression tests for the preflight logic itself, plus a check that `launch_tradelab.py`'s `REQUIRED_MODULES` stays in sync with `requirements.txt` (mirrors `test_installer_consistency.py`, applied to this second location).
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 54/54 pytest regression tests pass.
 - Directly simulated a missing `pyqtgraph` module and confirmed `main.py` and `launch_tradelab.py` no longer crash at import time — the preflight check runs first and would auto-install before the app loads.
@@ -804,6 +1032,10 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 
 ### Added
 - Regression test (`tests/test_installer_consistency.py`) that fails the build if any runtime package in `requirements.txt` isn't also verified by `check_install.py` — this exact class of bug can't silently ship again.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - 49/49 pytest regression tests pass.
@@ -831,6 +1063,10 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 - Dependency versions in `requirements.txt` are now pinned exactly (was `>=`), added `pyqtgraph` and `pytest`.
 - `app.py` continues to import `ChartWorkspace`/`ChartWidget` from `tradelab.ui.chart_widget` unchanged — that module is now a thin compatibility shim re-exporting the new implementations, so no call sites elsewhere needed to change.
 
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
+
 ### Verified
 - 47/47 pytest regression tests pass (`pytest tests/ -q`).
 - Full MainWindow construction + chart workspace interaction (add panel, plot, switch all 4 chart types, add/persist/reload drawings, save/list layouts) exercised end-to-end with no exceptions.
@@ -847,6 +1083,10 @@ Phase 1 (Chart Engine) had only ever been verified by automated tests and headle
 - SCN-035 moved ETFs into My Lists as a scan list/category.
 - SCN-036 removed the confusing Custom Selection preset. Manual checkboxes are now the custom selection.
 - UI-006/UI-007 improved setup toolbar sizing and kept the setup name visible.
+
+### Fixed
+- **The tab could take the app down with it.** The look-through starts its second pass from inside the first pass's signal handler, and reassigning the worker there dropped the only reference to a `QThread` that had not yet returned from `run()` — Python freed it mid-flight and Qt ended the process with no traceback. Every analysis worker is now held until it reports `finished`.
+- **A fund inside a fund fetched a listing that doesn't exist.** A Canadian fund's holdings arrive with `.TO` appended, which is right for RY inside XIC.TO and wrong for VOO inside VFV.TO. The second pass now asks for both listings and folds in whichever answered, so VFV opens up to Apple and Microsoft instead of stopping at a dead symbol.
 
 ### Verified
 - Python compile passed.

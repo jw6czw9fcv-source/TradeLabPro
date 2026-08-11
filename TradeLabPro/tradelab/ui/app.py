@@ -1728,6 +1728,7 @@ class EtfScreenerPanel(QWidget):
         self.worker = None
         self._chart_worker = None
         self._analysis_worker = None
+        self._workers = []          # live QThreads; see _track()
         self._loading = False   # itemChanged fires while we repopulate; ignore it then
 
         layout = QVBoxLayout(self)
@@ -2243,6 +2244,26 @@ class EtfScreenerPanel(QWidget):
         worker = self._analysis_worker
         return worker is not None and worker.isRunning()
 
+    def _track(self, worker):
+        """Hold a reference until the thread has actually finished.
+
+        The look-through starts its second pass *from inside the first pass's
+        signal handler*, and `self._analysis_worker = worker` there drops the
+        only reference to a QThread that has not yet returned from run().
+        Python then frees it mid-flight and Qt takes the process down with no
+        traceback — the same failure that bit the Analytics look-through in
+        2.37.0. Keeping every live worker in a list, cleared on `finished`,
+        is what makes the hand-off safe.
+        """
+        self._workers.append(worker)
+        worker.finished.connect(lambda w=worker: self._forget(w))
+        self._analysis_worker = worker
+        return worker
+
+    def _forget(self, worker):
+        if worker in self._workers:
+            self._workers.remove(worker)
+
     def compare_selected(self):
         """Plot the selected funds against each other, rebased to a common
         start. Two or more, since one fund rebased to 100 compares nothing."""
@@ -2256,8 +2277,7 @@ class EtfScreenerPanel(QWidget):
         self.status.setText(f"Loading {len(symbols)} funds…")
         worker = _MarketRefreshWorker(sorted(set(symbols)), period=period)
         worker.done.connect(self._on_compare_loaded)
-        self._analysis_worker = worker
-        worker.start()
+        self._track(worker).start()
 
     def _on_compare_loaded(self, history):
         from tradelab.core.etf_metrics import rebased_series
@@ -2293,8 +2313,7 @@ class EtfScreenerPanel(QWidget):
         self.status.setText(f"Pricing {len(held)} holdings…")
         worker = _MarketRefreshWorker(symbols, period="6mo")
         worker.done.connect(self._on_rebalance_loaded)
-        self._analysis_worker = worker
-        worker.start()
+        self._track(worker).start()
 
     def _on_rebalance_loaded(self, history):
         from tradelab.core import portfolio_analytics as pa
@@ -2362,8 +2381,7 @@ class EtfScreenerPanel(QWidget):
         self.status.setText(f"Opening up {len(funds)} funds…")
         worker = _FundCompositionWorker([r["symbol"] for r in self._lt_rows])
         worker.done.connect(self._on_look_through_loaded)
-        self._analysis_worker = worker
-        worker.start()
+        self._track(worker).start()
 
     def _on_look_through_loaded(self, compositions, _sectors, error):
         """First pass. A fund that is a wrapper around another fund — VFV.TO
@@ -2375,21 +2393,32 @@ class EtfScreenerPanel(QWidget):
             self.status.setText(f"Could not open the funds up: {error}")
             return
         self._lt_comps = dict(compositions or {})
+        from tradelab.core.etf_metrics import alternate_listing
         nested = pass_through_symbols(self._lt_comps)
         if nested:
+            self._lt_nested = nested
+            # Ask for the US listing too. A Canadian fund's holdings arrive
+            # with .TO appended, which is right for RY inside XIC.TO and wrong
+            # for VOO inside VFV.TO - and "VOO.TO" is a quote that doesn't
+            # exist, so without this the second level fetches nothing for
+            # exactly the funds it was built for.
+            asked = list(dict.fromkeys(
+                nested + [a for a in (alternate_listing(s) for s in nested) if a]))
             self.status.setText(f"{', '.join(nested)} held whole inside a fund — opening those too…")
-            worker = _FundCompositionWorker(nested)
+            worker = _FundCompositionWorker(asked)
             worker.done.connect(self._on_look_through_second_level)
-            self._analysis_worker = worker
-            worker.start()
+            self._track(worker).start()
             return
         self._render_look_through()
 
     def _on_look_through_second_level(self, compositions, _sectors, error):
         """Second pass. A failure here is not fatal: the report still stands at
         one level, it just names the wrapper instead of what's inside it."""
+        from tradelab.core.etf_metrics import fold_alternate_listings
         if not error:
             self._lt_comps.update(compositions or {})
+            self._lt_comps = fold_alternate_listings(
+                self._lt_comps, getattr(self, "_lt_nested", []))
         self._render_look_through()
 
     def _render_look_through(self):
@@ -2444,15 +2473,18 @@ class EtfScreenerPanel(QWidget):
                          ["Company", "% of the mix", "Held via"], table, footnote).exec()
 
     def shutdown(self):
-        """Stop any in-flight refresh or chart fetch so closing the window
-        doesn't leave a thread running against a deleted panel."""
-        for attr in ("worker", "_chart_worker", "_analysis_worker"):
-            worker = getattr(self, attr, None)
-            if worker is not None and worker.isRunning():
-                if hasattr(worker, "request_stop"):
-                    worker.request_stop()
-                worker.quit()
-                worker.wait(2000)
+        """Stop every in-flight fetch so closing the window doesn't leave a
+        thread running against a deleted panel — including the tracked
+        analysis workers, which can be two deep during a look-through."""
+        workers = [getattr(self, attr, None) for attr in ("worker", "_chart_worker")]
+        workers += list(getattr(self, "_workers", []))
+        for worker in workers:
+            if worker is None or not worker.isRunning():
+                continue
+            if hasattr(worker, "request_stop"):
+                worker.request_stop()
+            worker.quit()
+            worker.wait(2000)
 
     # -- composition summary ----------------------------------------------
     def _refresh_summary(self, funds=None):

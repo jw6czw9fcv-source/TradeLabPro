@@ -40,6 +40,7 @@ def no_network(monkeypatch):
             started.append((args, kwargs))
             self.done = self
             self.progress = self
+            self.finished = self        # the panel tracks workers by it
 
         def connect(self, *_a, **_k):
             pass
@@ -493,6 +494,31 @@ def test_look_through_opens_a_fund_held_whole_inside_a_fund(panel, monkeypatch, 
     assert "second level" in shown["footnote"]
 
 
+def test_look_through_falls_back_to_the_us_listing_of_a_nested_fund(panel, monkeypatch, no_network):
+    """VFV.TO's holdings arrive as "VOO.TO" — the data layer appends .TO to a
+    bare ticker inside a Canadian fund. That listing does not exist, so the
+    second level has to ask for VOO as well or it fetches nothing for exactly
+    the funds this was built for."""
+    from tradelab.ui import app as appmod
+    shown = {}
+    monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
+                        lambda self, parent, title, headers, rows, footnote="":
+                            shown.update(rows=rows) or None)
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+
+    panel.db.etf_upsert("VFV", yahoo="VFV.TO", my_mix=1.0)
+    panel.reload()
+    panel.show_look_through()
+    panel._on_look_through_loaded({"VFV.TO": {"top_holdings": {"VOO.TO": 1.0}}}, {}, "")
+    # Both listings were requested.
+    assert set(no_network[-1][0][0]) == {"VOO.TO", "VOO"}
+    # Yahoo knows VOO, not VOO.TO.
+    panel._on_look_through_second_level(
+        {"VOO.TO": {}, "VOO": {"top_holdings": {"AAPL": 0.4, "MSFT": 0.2}}}, {}, "")
+    companies = {row[0]: row[1][2] for row in shown["rows"]}
+    assert companies["AAPL"] == pytest.approx(40.0)
+
+
 def test_look_through_still_renders_when_the_second_level_fails(panel, monkeypatch, no_network):
     from tradelab.ui import app as appmod
     shown = {}
@@ -808,6 +834,41 @@ def test_the_toolbar_wraps_instead_of_clipping_when_narrow(panel):
 
 def test_shutdown_is_safe_with_nothing_running(panel):
     panel.shutdown()              # must not raise
+
+
+def test_a_running_worker_is_held_until_it_finishes(panel):
+    """The look-through hands off to a second worker from inside the first
+    one's signal handler. Without a reference held elsewhere, that assignment
+    frees a QThread still inside run() and Qt takes the process down with no
+    traceback."""
+    from PySide6.QtCore import QThread
+
+    class _Slow(QThread):
+        def run(self):
+            self.msleep(150)
+
+    first, second = _Slow(), _Slow()
+    panel._track(first).start()
+    panel._track(second).start()            # the hand-off
+    assert first in panel._workers          # still referenced while running
+    assert panel._analysis_worker is second
+    panel.shutdown()                        # joins both
+    assert not any(w.isRunning() for w in (first, second))
+
+
+def test_a_finished_worker_is_let_go(panel):
+    from PySide6.QtCore import QThread
+    from PySide6.QtWidgets import QApplication
+
+    class _Quick(QThread):
+        def run(self):
+            return
+
+    worker = _Quick()
+    panel._track(worker).start()
+    worker.wait(2000)
+    QApplication.processEvents()            # deliver finished()
+    assert worker not in panel._workers
 
 
 def test_worker_carries_the_yahoo_symbol_not_the_ticker(panel):

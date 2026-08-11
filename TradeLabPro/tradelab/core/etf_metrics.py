@@ -176,6 +176,35 @@ def pass_through_symbols(compositions: dict, min_weight: float = PASS_THROUGH_WE
     return sorted(found)
 
 
+def alternate_listing(symbol: str) -> str | None:
+    """The other listing to try for a symbol that returned nothing.
+
+    A Canadian fund's holdings arrive with `.TO` appended to bare tickers,
+    because inside XIC.TO a bare `RY` does mean the Toronto listing. For a
+    fund-of-funds that rule is wrong in one direction: VFV.TO holds the
+    **US-listed** VOO, and asking Yahoo for VOO.TO gets "quote not found".
+    Only ever used as a fallback after the first symbol came back empty.
+    """
+    symbol = (symbol or "").strip().upper()
+    if symbol.endswith(".TO") and len(symbol) > 3:
+        return symbol[:-3]
+    return None
+
+
+def fold_alternate_listings(compositions: dict, wanted: list) -> dict:
+    """Give a symbol its alternate listing's composition when its own is
+    empty, so the caller can keep referring to the symbol the parent fund
+    actually named."""
+    out = dict(compositions or {})
+    for symbol in wanted or []:
+        if (out.get(symbol) or {}).get("top_holdings"):
+            continue
+        other = alternate_listing(symbol)
+        if other and (out.get(other) or {}).get("top_holdings"):
+            out[symbol] = out[other]
+    return out
+
+
 def expand_compositions(compositions: dict) -> dict:
     """Fold a fund-of-funds down a level.
 
