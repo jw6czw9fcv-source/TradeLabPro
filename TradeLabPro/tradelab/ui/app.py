@@ -39,6 +39,7 @@ from tradelab.strategies import strategy_choices
 from tradelab.ui.chart_widget import ChartWorkspace, ChartWidget
 from tradelab.ui.widgets.equity_curve import EquityCurveWidget
 from tradelab.ui.widgets.rebased_chart import RebasedChartWidget
+from tradelab.ui.widgets.retirement_chart import RetirementChartWidget
 from tradelab.ui import colors, theme
 from tradelab.core.backtester import backtest_ema_macd
 from tradelab.core.ai_ranker import explain_symbol
@@ -4378,6 +4379,10 @@ class MultiRowTabs(QWidget):
     multiple rows** (via FlowLayout), so all tabs stay visible with no overflow
     arrows. Implements the subset of the QTabWidget API this app uses."""
 
+    # The one QTabWidget signal the window needs: something has to know when
+    # the visible tab changed, so the right-hand pane can follow it.
+    currentChanged = Signal(int)
+
     def __init__(self):
         super().__init__()
         outer = QVBoxLayout(self)
@@ -4421,6 +4426,7 @@ class MultiRowTabs(QWidget):
         if 0 <= index < self._stack.count():
             self._stack.setCurrentIndex(index)
             self._buttons[index].setChecked(True)
+            self.currentChanged.emit(index)
 
     def currentIndex(self):
         return self._stack.currentIndex()
@@ -9594,6 +9600,9 @@ class RetirementSimPanel(QWidget):
         super().__init__()
         self.db = db
         self.rows = []
+        # Set by MainWindow; the panel does not know about the right-hand pane.
+        self.chart = None
+        self._last_series = None
         layout = QVBoxLayout(self)
 
         bar = QWidget()
@@ -9631,10 +9640,17 @@ class RetirementSimPanel(QWidget):
                                 "average cannot show sequence risk; this can.")
         trajectories.clicked.connect(self.run_paths)
         save = QPushButton("Save inputs"); save.clicked.connect(self.save)
+        save_sim = QPushButton("Save sim")
+        save_sim.setToolTip("Keep the current run on the chart as the line to compare "
+                            "against. It stays there until you press this again — "
+                            "including after the app is closed.")
+        save_sim.clicked.connect(self.save_sim)
+        clear_sim = QPushButton("Clear saved")
+        clear_sim.clicked.connect(self.clear_saved_sim)
         for widget in (QLabel("Spending"), self.spending, QLabel("  Return"),
                        self.real_return, self.volatility, QLabel("  Project"),
                        self.until_age, QLabel("  Pension"), self.splitting,
-                       self.paths, run, trajectories, save):
+                       self.paths, run, trajectories, save, save_sim, clear_sim):
             controls.addWidget(widget)
         layout.addWidget(bar)
 
@@ -9806,7 +9822,64 @@ class RetirementSimPanel(QWidget):
             self.results.setRowCount(0)
             return
         self.rows = project(plan)
+        self._last_series = {
+            "years": [row["calendar_year"] for row in self.rows],
+            "balances": [row["closing"] for row in self.rows],
+            "label": "{:,.0f}$/yr at {:.1f}% real".format(
+                self.spending.value(), self.real_return.value()),
+        }
         self.render_results()
+        self._draw()
+
+    SAVED_KEY = "saved_sim"
+
+    def saved_sim(self):
+        """The kept run, or None. Lives in settings rather than memory so it
+        survives closing the app — the point of a baseline is that it is still
+        there tomorrow."""
+        settings = app_settings()
+        settings.beginGroup(self.SETTING)
+        raw = settings.value(self.SAVED_KEY)
+        settings.endGroup()
+        try:
+            saved = json.loads(raw) if raw else None
+        except (TypeError, ValueError):
+            return None
+        return saved if saved and saved.get("years") else None
+
+    def save_sim(self):
+        """Keep what is on screen as the line to compare against."""
+        if not self._last_series:
+            self.status.setText("Run a projection first — there is nothing to save yet.")
+            return
+        settings = app_settings()
+        settings.beginGroup(self.SETTING)
+        settings.setValue(self.SAVED_KEY, json.dumps(self._last_series))
+        settings.endGroup()
+        settings.sync()
+        self._draw()
+        self.status.setText(
+            "Saved as the comparison line. It stays until you press Save sim again.")
+
+    def clear_saved_sim(self):
+        settings = app_settings()
+        settings.beginGroup(self.SETTING)
+        settings.remove(self.SAVED_KEY)
+        settings.endGroup()
+        settings.sync()
+        self._draw()
+        self.status.setText("Saved run removed from the chart.")
+
+    def _draw(self, band=None):
+        """Push the current run and the saved one at the chart."""
+        if self.chart is None:
+            return
+        self.chart.show_saved(self.saved_sim())
+        if self._last_series:
+            self.chart.show_projection(self._last_series["years"],
+                                       self._last_series["balances"],
+                                       self._last_series.get("label", "Current"),
+                                       band=band)
 
     def run_paths(self):
         """The same plan over many return orderings.
@@ -9824,7 +9897,14 @@ class RetirementSimPanel(QWidget):
         out = simulate(plan, paths=self.paths.value(),
                        mean=self.real_return.value() / 100.0,
                        sd=self.volatility.value() / 100.0, seed=1)
+        self._last_series = {
+            "years": out["calendar_years"],
+            "balances": out["percentiles"][50],
+            "label": "{:,.0f}$/yr, {:,} paths (median)".format(
+                self.spending.value(), out["paths"]),
+        }
         self.render_paths(out)
+        self._draw(band=(out["percentiles"][10], out["percentiles"][90]))
 
     def render_paths(self, out):
         self.results.setColumnCount(6)
@@ -10009,9 +10089,20 @@ class MainWindow(QMainWindow):
         tabs.setMinimumWidth(420)
         self.scanner_panel.setMinimumWidth(400)
         splitter.addWidget(tabs)
-        splitter.addWidget(self.chart)
+        # The right-hand pane shows the market chart for every tab except the
+        # retirement projection, which needs the same space for a different
+        # picture. A stack rather than a second window: the projection is read
+        # *against* the tab beside it, and a floating window would be one more
+        # thing to arrange.
+        self.retirement_chart = RetirementChartWidget()
+        self.right_pane = QStackedWidget()
+        self.right_pane.addWidget(self.chart)
+        self.right_pane.addWidget(self.retirement_chart)
+        self.retirement_sim_panel.chart = self.retirement_chart
+        splitter.addWidget(self.right_pane)
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
+        tabs.currentChanged.connect(self._on_tab_changed)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         # Give the left control column more room by default so its tab bar packs
@@ -10224,6 +10315,18 @@ class MainWindow(QMainWindow):
         # current.
         self.statusBar().showMessage(message, self.STATUS_TIMEOUT_MS)
 
+    def _on_tab_changed(self, index):
+        """Swap the right-hand pane for the tab being looked at."""
+        page = self.tabs.widget(index)
+        showing_sim = (page is not None
+                       and page.findChild(RetirementSimPanel) is not None)
+        self.right_pane.setCurrentWidget(
+            self.retirement_chart if showing_sim else self.chart)
+        if showing_sim:
+            # Bring back whatever was saved, so the comparison line is there
+            # the moment the tab opens rather than after the first run.
+            self.retirement_sim_panel._draw()
+
     def toggle_panel_fullscreen(self):
         """The mirror of `toggle_chart_fullscreen`: give the whole window to
         the tab panel by hiding the chart workspace.
@@ -10238,11 +10341,11 @@ class MainWindow(QMainWindow):
             self._panel_full = True
             self._saved_split_sizes = self.splitter.sizes()
             self._was_maximized = self.isMaximized()
-            self.chart.hide()
+            self.right_pane.hide()
             self.showFullScreen()
         else:
             self._panel_full = False
-            self.chart.show()
+            self.right_pane.show()
             try:
                 self.splitter.setSizes(self._saved_split_sizes)
             except Exception:

@@ -6,6 +6,8 @@
 - **Run many paths** on the Retirement Sim tab. The same plan over hundreds of return orderings, shown as a band — worst tenth, median, best tenth — with the share of paths still solvent each year.
 - The ledger takes a **sequence** of returns, and `simulate()` runs them. `percentile()` is written out rather than pulled from numpy, so any number on screen can be checked by hand.
 - The engine **resamples a real history** when given one, which keeps the shape of what actually happened.
+- **The projection is drawn**, in the right-hand pane where the market chart sits — that pane now follows the tab you are on. A many-path run draws its median with the 10–90 band shaded behind it.
+- **Save sim** keeps a run on the chart as the line to compare against. It stays there until you press Save sim again, **including after the app is closed**; a later run draws beside it without moving it. A baseline that shifted with every experiment would not be one. **Clear saved** removes it.
 
 ### Notes
 - **Why this exists.** Losing 20% in the first two years of withdrawing is not the same as losing it in the last two, even though the average is identical: money taken out at the bottom never comes back. Two tests carry the idea — the same pair of returns in a different order gives a different answer *while withdrawing*, and makes no difference at all when nothing is withdrawn. Sequence risk is a drawdown problem, and one line cannot show it.
@@ -13,7 +15,7 @@
 - **Normal draws have fewer very bad years than markets do.** Said on screen, which is also why resampling a real history is in the engine.
 
 ### Verified
-- Full pytest suite (1254) passes.
+- Full pytest suite (1265) passes, including a saved run outliving the panel, a later run leaving it untouched, and the right-hand pane following the tab.
 
 
 ## 2.44.0 - How long the money lasts

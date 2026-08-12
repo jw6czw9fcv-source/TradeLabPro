@@ -366,3 +366,26 @@ def test_an_empty_status_does_not_wipe_the_bar(qapp):
     win.etf_screener_panel.status.setText("something happened")
     win.etf_screener_panel.status.setText("")        # panels clear their line
     assert "something happened" in win.statusBar().currentMessage()
+
+
+def test_the_right_pane_follows_the_tab(qapp):
+    """The projection needs the same space the market chart uses, and is read
+    against the tab beside it."""
+    from tradelab.ui.app import RetirementSimPanel
+    win = _main_window(qapp)
+    assert win.right_pane.currentWidget() is win.chart
+
+    for i in range(win.tabs.count()):
+        page = win.tabs.widget(i)
+        if page.findChild(RetirementSimPanel) is not None:
+            win.tabs.setCurrentIndex(i)
+            break
+    assert win.right_pane.currentWidget() is win.retirement_chart
+
+    win.tabs.setCurrentIndex(0)
+    assert win.right_pane.currentWidget() is win.chart
+
+
+def test_the_sim_panel_is_given_the_chart(qapp):
+    win = _main_window(qapp)
+    assert win.retirement_sim_panel.chart is win.retirement_chart

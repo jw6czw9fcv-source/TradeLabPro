@@ -226,3 +226,89 @@ def test_the_volatility_widens_the_band(panel):
     wide = (float(panel.results.item(10, 4).text().replace(",", ""))
             - float(panel.results.item(10, 2).text().replace(",", "")))
     assert wide > narrow
+
+
+# -- the chart, and the run you keep beside it --------------------------------
+
+def test_nothing_is_saved_until_you_ask(panel):
+    assert panel.saved_sim() is None
+
+
+def test_saving_before_running_says_so(panel):
+    panel.save_sim()
+    assert "nothing to save" in panel.status.text()
+    assert panel.saved_sim() is None
+
+
+def test_a_saved_run_outlives_the_panel(panel, qapp, tmp_path):
+    """A baseline you have to rebuild every session is not a baseline."""
+    from tradelab.ui.app import RetirementSimPanel
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
+    panel.spending.setValue(30_000)
+    panel.run()
+    panel.save_sim()
+
+    again = RetirementSimPanel(Database(path=tmp_path / "sim.db"))
+    saved = again.saved_sim()
+    assert saved and len(saved["years"]) == len(panel.rows)
+    assert saved["balances"][0] == pytest.approx(panel.rows[0]["closing"])
+    again.clear_saved_sim()
+
+
+def test_a_later_run_does_not_move_the_saved_line(panel):
+    """It changes only on Save sim — that asymmetry is the whole point."""
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
+    panel.spending.setValue(30_000)
+    panel.run()
+    panel.save_sim()
+    kept = panel.saved_sim()["balances"][:]
+
+    panel.spending.setValue(60_000)     # a different experiment
+    panel.run()
+    assert panel.saved_sim()["balances"] == kept
+    panel.clear_saved_sim()
+
+
+def test_saving_again_replaces_it(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
+    panel.spending.setValue(30_000)
+    panel.run(); panel.save_sim()
+    first = panel.saved_sim()["balances"][-1]
+    panel.spending.setValue(10_000)
+    panel.run(); panel.save_sim()
+    assert panel.saved_sim()["balances"][-1] != first
+    panel.clear_saved_sim()
+
+
+def test_clearing_removes_the_saved_line(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
+    panel.run(); panel.save_sim()
+    panel.clear_saved_sim()
+    assert panel.saved_sim() is None
+
+
+def test_the_saved_label_says_what_it_was(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
+    panel.spending.setValue(45_000)
+    panel.real_return.setValue(3.0)
+    panel.run(); panel.save_sim()
+    assert "45,000" in panel.saved_sim()["label"]
+    panel.clear_saved_sim()
+
+
+def test_a_many_path_run_is_saved_as_its_median(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
+    panel.spending.setValue(20_000)
+    panel.until_age.setValue(80)
+    panel.paths.setValue(60)
+    panel.run(); panel.run_paths(); panel.save_sim()
+    assert "paths" in panel.saved_sim()["label"]
+    panel.clear_saved_sim()
+
+
+def test_the_chart_is_optional(panel):
+    """The panel is built before the window wires a chart to it, and the
+    tests build it with none at all."""
+    assert panel.chart is None
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
+    panel.run()             # must not raise

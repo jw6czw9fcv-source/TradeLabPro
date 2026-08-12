@@ -5,6 +5,7 @@ Current phase: ETF comparison & allocation building (done)
 
 ## Completed in 2.45.0 (The order returns arrive in)
 - `simulate()` / `sample_returns()` / `percentile()` in `core/retirement_plan.py`, and **Run many paths** in the panel. See the 2.44.0 notes below for the ledger it runs on.
+- **`ui/widgets/retirement_chart.py`** — two series: the *saved* run (dashed, muted, persisted as JSON in `QSettings` so it survives a restart) and the *current* one, plus a shaded 10-90 band for a many-path run. The right-hand pane is a `QStackedWidget` swapped by a new `MultiRowTabs.currentChanged` signal; full screen hides the stack rather than the chart. The widget holds no projection maths.
 - **Released 2.44.0 before this landed**, so it is its own version rather than being backdated into a published tag.
 
 ## Completed in 2.44.0 (How long the money lasts)
