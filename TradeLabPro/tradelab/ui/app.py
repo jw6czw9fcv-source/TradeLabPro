@@ -1936,6 +1936,10 @@ class EtfScreenerPanel(QWidget):
         self.rebalance_btn.setToolTip("Compares this allocation against the positions on your "
                                       "Portfolio tab and reports the gap in dollars.")
         self.rebalance_btn.clicked.connect(self.compare_to_portfolio)
+        self.holdings_btn = QPushButton("What each fund holds")
+        self.holdings_btn.setToolTip("Every fund and what is inside it, one row per "
+                                     "holding — all of them, not just the allocation.")
+        self.holdings_btn.clicked.connect(self.show_fund_holdings)
         self.lookthrough_btn = QPushButton("What this mix holds")
         self.lookthrough_btn.setToolTip("Opens every fund in the allocation up to the companies "
                                         "inside it, so the same name held twice shows once.")
@@ -1950,7 +1954,7 @@ class EtfScreenerPanel(QWidget):
         for widget in (self.watch_btn, self.portfolio_btn, self.compare_btn,
                        QLabel("  Allocation:"), self.composition_combo,
                        self.build_btn, self.rebalance_btn, self.lookthrough_btn,
-                       export_btn):
+                       self.holdings_btn, export_btn):
             actions.addWidget(widget)
         layout.addWidget(actions_bar)
 
@@ -2577,6 +2581,7 @@ class EtfScreenerPanel(QWidget):
         self._lt_rows = [{"symbol": fund_symbol(f), "market_value": float(f[weight_key]) * 100.0}
                          for f in funds]
         self._lt_comps = {}
+        self._lt_render = self._render_look_through
         self.status.setText(f"Opening up {len(funds)} funds…")
         worker = _FundCompositionWorker([r["symbol"] for r in self._lt_rows])
         worker.done.connect(self._on_look_through_loaded)
@@ -2608,7 +2613,7 @@ class EtfScreenerPanel(QWidget):
             worker.done.connect(self._on_look_through_second_level)
             self._track(worker).start()
             return
-        self._render_look_through()
+        self._lt_render()
 
     def _on_look_through_second_level(self, compositions, _sectors, error):
         """Second pass. A failure here is not fatal: the report still stands at
@@ -2618,7 +2623,7 @@ class EtfScreenerPanel(QWidget):
             self._lt_comps.update(compositions or {})
             self._lt_comps = fold_alternate_listings(
                 self._lt_comps, getattr(self, "_lt_nested", []))
-        self._render_look_through()
+        self._lt_render()
 
     def _render_look_through(self):
         from tradelab.core import portfolio_analytics as pa
@@ -2671,6 +2676,53 @@ class EtfScreenerPanel(QWidget):
         self.status.setText(f"{len(exposures)} companies behind that allocation.")
         _EtfReportDialog(self, "What this mix holds",
                          ["Company", "% of the mix", "Held via"], table, footnote).exec()
+
+    def show_fund_holdings(self):
+        """Every fund and what is inside it, one row per holding — the
+        look-through's question turned around: not "what do I own in total"
+        but "what is in each of these"."""
+        from tradelab.core.etf_metrics import fund_symbol
+        if self._busy():
+            return
+        funds = self.db.etf_list()
+        if not funds:
+            self.status.setText("Add some funds first.")
+            return
+        self._lt_funds = funds
+        self._lt_rows = [{"symbol": fund_symbol(f), "market_value": 1.0} for f in funds]
+        self._lt_comps = {}
+        self._lt_render = self._render_fund_holdings
+        self.status.setText(f"Reading what {len(funds)} funds contain…")
+        worker = _FundCompositionWorker([r["symbol"] for r in self._lt_rows])
+        worker.done.connect(self._on_look_through_loaded)
+        self._track(worker).start()
+
+    def _render_fund_holdings(self):
+        from tradelab.core.etf_metrics import expand_compositions, holdings_rows
+        compositions = expand_compositions(self._lt_comps)
+        rows = holdings_rows(self._lt_funds, compositions)
+        table = []
+        for row in rows:
+            if row["weight"] is None:
+                table.append([row["ticker"], ("no holdings published", theme.MUTED, None),
+                              ("", None, None)])
+                continue
+            colour = None if row["published"] else theme.MUTED
+            table.append([
+                row["ticker"],
+                (row["holding"], colour, None),
+                (f"{row['weight'] * 100:.1f}%", colour, row["weight"]),
+            ])
+        published = len({r["ticker"] for r in rows if r["published"]})
+        self.status.setText(f"{published} of {len(self._lt_funds)} funds publish holdings.")
+        _EtfReportDialog(
+            self, "What each fund contains",
+            ["Fund", "Holding", "% of the fund"], table,
+            "Each fund's published holdings, largest first, followed by the share it does "
+            "not publish — sources give only the top names, and leaving that out would "
+            "make a fund look fully accounted for when it isn't. A fund holding another "
+            "fund whole is opened one level further. Sort by Holding to find a company "
+            "that appears in several of your funds. " + theme.NOT_ADVICE).exec()
 
     def shutdown(self):
         """Stop every in-flight fetch so closing the window doesn't leave a

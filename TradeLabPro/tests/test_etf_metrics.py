@@ -8,7 +8,7 @@ from tradelab.core.etf_metrics import (
     COMPOSITION_ROWS, PERIODS, composition_summary, compute_metrics,
     alternate_listing, build_allocation, csa_level, csa_volatility,
     dividend_yield,
-    expand_compositions, fold_alternate_listings, fund_symbol,
+    expand_compositions, fold_alternate_listings, fund_symbol, holdings_rows,
     is_low_volatility, overlaps, pass_through_symbols, rebalance, risk_metrics,
     trailing_return,
 )
@@ -612,3 +612,44 @@ def test_build_allocation_of_nothing_eligible_is_empty():
     out = build_allocation(_candidates(), bands=set())
     assert out["weights"] == {}
     assert len(out["excluded"]) == 4
+
+
+# -- what each fund contains -------------------------------------------------
+
+def _two_funds():
+    return [{"ticker": "XIC", "yahoo": "XIC.TO"}, {"ticker": "VAB", "yahoo": "VAB.TO"}]
+
+
+def test_holdings_rows_list_each_fund_largest_first():
+    comps = {"XIC.TO": {"top_holdings": {"TD.TO": 0.05, "RY.TO": 0.08}}}
+    rows = holdings_rows(_two_funds(), comps)
+    xic = [r for r in rows if r["ticker"] == "XIC" and r["published"]]
+    assert [r["holding"] for r in xic] == ["RY.TO", "TD.TO"]
+
+
+def test_holdings_rows_are_grouped_by_fund_in_ticker_order():
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 1.0}},
+             "VAB.TO": {"top_holdings": {"CANADA.B": 1.0}}}
+    assert [r["ticker"] for r in holdings_rows(_two_funds(), comps)] == ["VAB", "XIC"]
+
+
+def test_the_unpublished_share_is_a_row_of_its_own():
+    """Sources give only the top names. Leaving the rest off would make a
+    fund look fully accounted for when it isn't."""
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 0.08, "TD.TO": 0.05}}}
+    rows = [r for r in holdings_rows(_two_funds(), comps) if r["ticker"] == "XIC"]
+    rest = rows[-1]
+    assert rest["published"] is False
+    assert rest["weight"] == pytest.approx(0.87)
+    assert sum(r["weight"] for r in rows) == pytest.approx(1.0)
+
+
+def test_a_fund_publishing_nothing_still_gets_a_row():
+    rows = [r for r in holdings_rows(_two_funds(), {}) if r["ticker"] == "VAB"]
+    assert len(rows) == 1
+    assert rows[0]["published"] is False
+    assert rows[0]["weight"] is None      # not zero: unknown, not empty
+
+
+def test_holdings_rows_of_nothing_is_nothing():
+    assert holdings_rows([], {}) == []

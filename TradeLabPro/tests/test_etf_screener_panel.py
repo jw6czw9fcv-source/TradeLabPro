@@ -1074,3 +1074,57 @@ def test_a_cancelled_form_does_not_change_what_is_remembered(panel):
     dialog.cap.setValue(12)
     dialog.reject()
     assert _dialog(panel, "low_risk").cap.value() == 100.0
+
+
+# -- what each fund contains --------------------------------------------------
+
+def test_fund_holdings_lists_every_fund_and_its_contents(panel, monkeypatch, no_network):
+    from tradelab.ui import app as appmod
+    shown = {}
+    monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
+                        lambda self, parent, title, headers, rows, footnote="":
+                            shown.update(rows=rows, headers=headers) or None)
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+
+    panel.db.etf_upsert("XIC", yahoo="XIC.TO")
+    panel.db.etf_upsert("VAB", yahoo="VAB.TO")
+    panel.reload()
+    panel.show_fund_holdings()
+    panel._on_look_through_loaded(
+        {"XIC.TO": {"top_holdings": {"RY.TO": 0.6, "TD.TO": 0.2}}, "VAB.TO": {}}, {}, "")
+
+    assert shown["headers"] == ["Fund", "Holding", "% of the fund"]
+    funds = [row[0] for row in shown["rows"]]
+    assert funds.count("VAB") == 1 and funds.count("XIC") == 3   # 2 holdings + remainder
+    assert "1 of 2 funds publish holdings" in panel.status.text()
+
+
+def test_fund_holdings_shows_the_unpublished_share(panel, monkeypatch, no_network):
+    from tradelab.ui import app as appmod
+    shown = {}
+    monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
+                        lambda self, parent, title, headers, rows, footnote="":
+                            shown.update(rows=rows) or None)
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+    panel.db.etf_upsert("XIC", yahoo="XIC.TO")
+    panel.reload()
+    panel.show_fund_holdings()
+    panel._on_look_through_loaded({"XIC.TO": {"top_holdings": {"RY.TO": 0.6}}}, {}, "")
+    labels = [row[1][0] for row in shown["rows"]]
+    assert "— not published —" in labels
+    assert "40.0%" in [row[2][0] for row in shown["rows"]]
+
+
+def test_fund_holdings_needs_funds(panel, no_network):
+    panel.show_fund_holdings()
+    assert "Add some funds" in panel.status.text()
+
+
+def test_the_two_views_share_one_fetch_but_render_differently(panel, no_network):
+    panel.db.etf_upsert("XIC", yahoo="XIC.TO", mid_risk=1.0)
+    panel.reload()
+    panel.composition_combo.setCurrentIndex(1)
+    panel.show_look_through()
+    assert panel._lt_render == panel._render_look_through
+    panel.show_fund_holdings()
+    assert panel._lt_render == panel._render_fund_holdings

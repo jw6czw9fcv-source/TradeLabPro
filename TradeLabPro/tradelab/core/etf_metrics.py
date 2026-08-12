@@ -530,6 +530,44 @@ def overlaps(funds: list[dict], weight_key: str = "my_mix",
     return found
 
 
+def holdings_rows(funds: list[dict], compositions: dict) -> list[dict]:
+    """One row per (fund, holding): what each fund actually contains.
+
+    The look-through answers "what do I own in total"; this answers "what is
+    in each of these". Every fund's published holdings are listed under it,
+    largest first, followed by the share it does **not** publish — sources
+    give only the top names, and leaving that share off would make each fund
+    look fully accounted for when it isn't.
+
+    A fund that publishes nothing gets one row saying so rather than being
+    dropped, because "no data" and "holds nothing" are different facts.
+    """
+    rows = []
+    for fund in sorted(funds, key=lambda f: str(f.get("ticker", ""))):
+        ticker = fund.get("ticker", "")
+        symbol = fund_symbol(fund)
+        holdings = ((compositions or {}).get(symbol) or {}).get("top_holdings") or {}
+        if not holdings:
+            rows.append({"ticker": ticker, "symbol": symbol, "holding": "",
+                         "weight": None, "published": False})
+            continue
+        covered = 0.0
+        for held, weight in sorted(holdings.items(), key=lambda kv: -float(kv[1] or 0)):
+            try:
+                weight = float(weight)
+            except (TypeError, ValueError):
+                continue
+            covered += weight
+            rows.append({"ticker": ticker, "symbol": symbol, "holding": held,
+                         "weight": weight, "published": True})
+        rest = max(0.0, 1.0 - covered)
+        if rest > 1e-6:
+            rows.append({"ticker": ticker, "symbol": symbol,
+                         "holding": "— not published —", "weight": rest,
+                         "published": False})
+    return rows
+
+
 EQUAL, INVERSE_VOL = "equal", "inverse_vol"
 
 
