@@ -24,7 +24,7 @@
 - **This classifies volatility, and only volatility.** Not credit risk, liquidity, concentration, currency, or the chance of permanent loss. A quiet bond fund rates "Low" right up until an issuer defaults.
 
 ### Verified
-- Full pytest suite (1096) passes, including the five bands at every boundary, the square-root-of-twelve annualization, the window count returned with the figure, the refusal to rate under three years, the yield agreeing with the Dividends tab's own calculation, and the schema-v5 rename preserving the weights already typed.
+- Full pytest suite (1098) passes, including the five bands at every boundary, the square-root-of-twelve annualization, the window count returned with the figure, the refusal to rate under three years, the yield agreeing with the Dividends tab's own calculation, and the schema-v5 rename preserving the weights already typed.
 - Run against the real book: **29 of 31 funds rated** (GGOV and DRAM are too young). The two measurements differ exactly as expected — VFV is **12.9%** the regulator's way and **16.5%** measured daily, which are two different bands, so reading the old column against these thresholds would have mis-rated most of the list.
 
 ## 2.41.0 - Your ETF workbook, in the app
