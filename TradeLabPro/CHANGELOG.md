@@ -20,7 +20,7 @@
 - **Only eligible pension income is split.** A wage cannot be, and RRQ has its own separate mechanism. An earlier draft treated the household as one pot and halved it, which made the tax bill roughly a third of what it should be.
 
 ### Verified
-- Full pytest suite (1256) passes, including the RRIF factors against the CRA chart at the ages that matter, the minimum coming out whether it is needed or not and following the account owner's age, the projection continuing past the year it fails, a couple taxed as two people rather than one, Québec's age amount reduced on family income, a wage refusing to be split at 50%, the calendar year advancing in step with the ages, and — the point of the whole exercise — the same two returns in a different order giving a different answer while withdrawing, and the same order making no difference when nothing is withdrawn.
+- Full pytest suite (1254) passes, including the RRIF factors against the CRA chart at the ages that matter, the minimum coming out whether it is needed or not and following the account owner's age, the projection continuing past the year it fails, a couple taxed as two people rather than one, Québec's age amount reduced on family income, a wage refusing to be split at 50%, the calendar year advancing in step with the ages, and — the point of the whole exercise — the same two returns in a different order giving a different answer while withdrawing, and the same order making no difference when nothing is withdrawn.
 
 ## 2.43.0 - Fill an allocation by a rule you set
 
