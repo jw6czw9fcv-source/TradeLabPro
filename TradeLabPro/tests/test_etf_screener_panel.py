@@ -1293,3 +1293,17 @@ def test_a_report_that_changed_shape_sizes_itself_again(qapp):
     grown = _EtfReportDialog(None, "Changing report", ["A", "B", "C"], [["a", "b", "c"]])
     assert grown.table.columnWidth(0) != 240
     grown.close()
+
+
+def test_no_report_column_is_stretched(qapp):
+    """A stretched column can't be dragged and its computed width is not one
+    anyone chose — saving one gave the next open a 1065px empty column."""
+    from PySide6.QtWidgets import QHeaderView
+    from tradelab.ui.app import _EtfReportDialog
+    long_cell = ", ".join(f"HOLDING{i} 5.0%" for i in range(20))
+    dialog = _EtfReportDialog(None, "Stretch probe", ["A", "B"], [["x", long_cell]])
+    header = dialog.table.horizontalHeader()
+    modes = {header.sectionResizeMode(c) for c in range(dialog.table.columnCount())}
+    assert QHeaderView.Stretch not in modes
+    assert dialog.table.columnWidth(1) <= 520          # still capped
+    dialog.close()

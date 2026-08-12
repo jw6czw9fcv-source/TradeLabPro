@@ -1651,13 +1651,14 @@ class _EtfReportDialog(QDialog):
         self._sizing = True
         if not self._restore_widths():
             self.table.resizeColumnsToContents()
-            # A cell listing ten holdings is longer than any sensible column;
-            # cap it and let the rest of the row have the space.
-            header = self.table.horizontalHeader()
+            # A cell listing ten holdings is longer than any sensible column,
+            # so cap it. Deliberately *not* QHeaderView.Stretch: a stretched
+            # column can't be dragged, and the width it computes to fill the
+            # window is not a width anyone chose - saving one produced a
+            # 1065px empty column on the next open.
             for column in range(self.table.columnCount()):
                 if self.table.columnWidth(column) > 520:
                     self.table.setColumnWidth(column, 520)
-                    header.setSectionResizeMode(column, QHeaderView.Stretch)
         self._sizing = False
         self.table.horizontalHeader().sectionResized.connect(
             lambda *_a: self._save_widths())

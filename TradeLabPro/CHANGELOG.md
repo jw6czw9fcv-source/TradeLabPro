@@ -26,7 +26,7 @@
 - Inverse volatility uses the **measured** volatility, so a fund that has never been refreshed is left out and named rather than guessed at.
 
 ### Verified
-- Full pytest suite (1152) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
+- Full pytest suite (1153) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
 
 
 ## 2.42.0 - One risk rating, the published one
