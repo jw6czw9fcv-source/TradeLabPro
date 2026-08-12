@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.45.0 - The order returns arrive in
+
+### Added
+- **Run many paths** on the Retirement Sim tab. The same plan over hundreds of return orderings, shown as a band — worst tenth, median, best tenth — with the share of paths still solvent each year.
+- The ledger takes a **sequence** of returns, and `simulate()` runs them. `percentile()` is written out rather than pulled from numpy, so any number on screen can be checked by hand.
+- The engine **resamples a real history** when given one, which keeps the shape of what actually happened.
+
+### Notes
+- **Why this exists.** Losing 20% in the first two years of withdrawing is not the same as losing it in the last two, even though the average is identical: money taken out at the bottom never comes back. Two tests carry the idea — the same pair of returns in a different order gives a different answer *while withdrawing*, and makes no difference at all when nothing is withdrawn. Sequence risk is a drawdown problem, and one line cannot show it.
+- **A success rate is the share of *simulated* paths under assumptions you chose**, not a probability that a retirement works. Moving the spending by five thousand shifts it more than any market will. That caveat is printed with the number, not in a footnote.
+- **Normal draws have fewer very bad years than markets do.** Said on screen, which is also why resampling a real history is in the engine.
+
+### Verified
+- Full pytest suite (1254) passes.
+
+
 ## 2.44.0 - How long the money lasts
 
 ### Added
@@ -8,11 +24,8 @@
 - New `core/retirement_plan.py` (Qt-free): the year-by-year ledger, the CRA's prescribed RRIF factors, and the deferral rules for RRQ (+0.7%/month to 72) and PSV (+0.6%/month to 70).
 - New `core/tax_quebec.py` (Qt-free): brackets and the credits that actually bite on retirement income — personal amounts, the age amount at 65, pension income, Québec's reduction of the age amount on **family** net income, the abatement, and pension splitting.
 
-- **Run many paths.** The same plan over hundreds of return orderings, reported as a band — worst tenth, median, best tenth — plus the share of paths still solvent each year. One average return cannot show sequence risk; this can.
 
 ### Notes — what it does and does not do
-- **A success rate is the share of *simulated* paths under assumptions you chose**, not a probability that a retirement works. Moving the spending by five thousand shifts it more than any market will.
-- **Returns are drawn from a normal curve**, which has fewer very bad years than markets actually do. The engine also resamples a real history when given one, which keeps that shape.
 - **It computes; it does not advise.** Spending, return, the age each pension starts, how much pension income is split, the order accounts are drawn from — every judgement is an input. Nothing in it picks a strategy, recommends a withdrawal rate, or says whether a plan is good.
 - **Everything is in today's dollars.** "$210,000 in 2048" is not a figure anyone can weigh. Real terms hold because brackets, RRQ and PSV are all indexed — and if indexation ever stops, the projection is optimistic. That is stated, not buried.
 - **A single return path is not a forecast.** It says nothing about the *order* returns arrive in, and a bad first few years of drawing down hurts far more than the same average later.
@@ -20,7 +33,7 @@
 - **Only eligible pension income is split.** A wage cannot be, and RRQ has its own separate mechanism. An earlier draft treated the household as one pot and halved it, which made the tax bill roughly a third of what it should be.
 
 ### Verified
-- Full pytest suite (1254) passes, including the RRIF factors against the CRA chart at the ages that matter, the minimum coming out whether it is needed or not and following the account owner's age, the projection continuing past the year it fails, a couple taxed as two people rather than one, Québec's age amount reduced on family income, a wage refusing to be split at 50%, the calendar year advancing in step with the ages, and — the point of the whole exercise — the same two returns in a different order giving a different answer while withdrawing, and the same order making no difference when nothing is withdrawn.
+- Full pytest suite (1238) passes, including the RRIF factors against the CRA chart at the ages that matter, the minimum coming out whether it is needed or not and following the account owner's age, the projection continuing past the year it fails, a couple taxed as two people rather than one, Québec's age amount reduced on family income, a wage refusing to be split at 50%, and the calendar year advancing in step with the ages.
 
 ## 2.43.0 - Fill an allocation by a rule you set
 

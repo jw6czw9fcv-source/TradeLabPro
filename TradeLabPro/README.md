@@ -3,7 +3,7 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
-2.44.0 - How long the money lasts - a Retirement Sim tab that projects a household year by year to the age you name: incomes, the forced RRIF minimum, real Quebec and federal tax, and what has to come out of capital
+2.45.0 - The order returns arrive in - the retirement projection runs over hundreds of return orderings instead of one average, because a bad first few years of drawing down hurts far more than the same average later
 
 ## Run
 1. Run `install_requirements.bat` if needed.

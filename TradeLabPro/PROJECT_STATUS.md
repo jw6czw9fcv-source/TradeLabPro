@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.44.0
+Current version: 2.45.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.45.0 (The order returns arrive in)
+- `simulate()` / `sample_returns()` / `percentile()` in `core/retirement_plan.py`, and **Run many paths** in the panel. See the 2.44.0 notes below for the ledger it runs on.
+- **Released 2.44.0 before this landed**, so it is its own version rather than being backdated into a published tag.
 
 ## Completed in 2.44.0 (How long the money lasts)
 - **`core/retirement_plan.py`** (Qt-free): year-by-year ledger. Income tracked **per person** (a wage cannot move to a spouse; only eligible pension can), forced RRIF minimum taxed to the **account owner** and following that owner's age, projection **continues past failure**, `tax_fn` injected, everything in **today's dollars**, `calendar_year` alongside the index. CRA prescribed factors verified at source; `deferred_amount()` for RRQ (+0.7%/mo to 72) and PSV (+0.6%/mo to 70).
