@@ -1256,3 +1256,40 @@ def test_the_suite_never_writes_to_the_real_settings(panel):
     path = app_settings().fileName()
     assert "tradelab_test_settings_" in path
     assert "HKEY" not in path.upper()
+
+
+def test_a_report_remembers_its_column_widths(qapp):
+    """Widening a column in a report — usually after going full screen to get
+    the room — has to survive closing the window."""
+    from tradelab.ui.app import _EtfReportDialog
+    rows = [["a", "b", "c"]]
+    first = _EtfReportDialog(None, "Holdings probe", ["A", "B", "C"], rows)
+    first.table.setColumnWidth(1, 333)
+    first.close()
+
+    second = _EtfReportDialog(None, "Holdings probe", ["A", "B", "C"], rows)
+    assert second.table.columnWidth(1) == 333
+    second.close()
+
+
+def test_reports_keep_their_own_widths(qapp):
+    from tradelab.ui.app import _EtfReportDialog
+    rows = [["a", "b", "c"]]
+    holdings = _EtfReportDialog(None, "Report one", ["A", "B", "C"], rows)
+    holdings.table.setColumnWidth(0, 250)
+    holdings.close()
+    other = _EtfReportDialog(None, "Report two", ["A", "B", "C"], rows)
+    assert other.table.columnWidth(0) != 250
+    other.close()
+
+
+def test_a_report_that_changed_shape_sizes_itself_again(qapp):
+    """Stretching yesterday's widths over a different set of columns is worse
+    than sizing to the contents."""
+    from tradelab.ui.app import _EtfReportDialog
+    first = _EtfReportDialog(None, "Changing report", ["A", "B"], [["a", "b"]])
+    first.table.setColumnWidth(0, 240)
+    first.close()
+    grown = _EtfReportDialog(None, "Changing report", ["A", "B", "C"], [["a", "b", "c"]])
+    assert grown.table.columnWidth(0) != 240
+    grown.close()

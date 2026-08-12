@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import re
 import traceback
 import time
 from pathlib import Path
@@ -1643,14 +1644,23 @@ class _EtfReportDialog(QDialog):
                 self.table.setItem(r, c, item)
         self.table.setSortingEnabled(True)
         self.table.setWordWrap(True)
-        self.table.resizeColumnsToContents()
-        # A cell listing ten holdings is longer than any sensible column; let
-        # it wrap and give the rows the height to show it.
-        header = self.table.horizontalHeader()
-        for column in range(self.table.columnCount()):
-            if self.table.columnWidth(column) > 520:
-                self.table.setColumnWidth(column, 520)
-                header.setSectionResizeMode(column, QHeaderView.Stretch)
+        # Remembered per report, so widening a column here survives closing
+        # the window — including the trip through full screen, which is when
+        # you most want to give a column room.
+        self._settings_key = "EtfReport/" + re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
+        self._sizing = True
+        if not self._restore_widths():
+            self.table.resizeColumnsToContents()
+            # A cell listing ten holdings is longer than any sensible column;
+            # cap it and let the rest of the row have the space.
+            header = self.table.horizontalHeader()
+            for column in range(self.table.columnCount()):
+                if self.table.columnWidth(column) > 520:
+                    self.table.setColumnWidth(column, 520)
+                    header.setSectionResizeMode(column, QHeaderView.Stretch)
+        self._sizing = False
+        self.table.horizontalHeader().sectionResized.connect(
+            lambda *_a: self._save_widths())
         self.table.resizeRowsToContents()
         layout.addWidget(self.table, 1)
         if footnote:
@@ -1668,6 +1678,37 @@ class _EtfReportDialog(QDialog):
         buttons.addStretch(1)
         buttons.addWidget(close)
         layout.addLayout(buttons)
+
+    def _save_widths(self):
+        if getattr(self, "_sizing", False):
+            return
+        try:
+            settings = app_settings()
+            settings.beginGroup(self._settings_key)
+            settings.setValue("widths", json.dumps(
+                [self.table.columnWidth(c) for c in range(self.table.columnCount())]))
+            settings.endGroup()
+        except Exception:
+            pass
+
+    def _restore_widths(self) -> bool:
+        try:
+            settings = app_settings()
+            settings.beginGroup(self._settings_key)
+            widths = json.loads(settings.value("widths", "[]"))
+            settings.endGroup()
+        except Exception:
+            return False
+        if len(widths) != self.table.columnCount():
+            # The report changed shape since it was last saved; sizing to the
+            # contents beats stretching yesterday's widths over new columns.
+            return False
+        applied = False
+        for column, width in enumerate(widths):
+            if int(width) > 20:
+                self.table.setColumnWidth(column, int(width))
+                applied = True
+        return applied
 
     def toggle_fullscreen(self):
         """The table is wide and the dialog opens small. Same gesture and the
