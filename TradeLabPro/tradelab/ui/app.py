@@ -1605,7 +1605,16 @@ class _EtfReportDialog(QDialog):
                     item.setForeground(QColor(colour))
                 self.table.setItem(r, c, item)
         self.table.setSortingEnabled(True)
+        self.table.setWordWrap(True)
         self.table.resizeColumnsToContents()
+        # A cell listing ten holdings is longer than any sensible column; let
+        # it wrap and give the rows the height to show it.
+        header = self.table.horizontalHeader()
+        for column in range(self.table.columnCount()):
+            if self.table.columnWidth(column) > 520:
+                self.table.setColumnWidth(column, 520)
+                header.setSectionResizeMode(column, QHeaderView.Stretch)
+        self.table.resizeRowsToContents()
         layout.addWidget(self.table, 1)
         if footnote:
             note = QLabel(footnote)
@@ -2698,31 +2707,38 @@ class EtfScreenerPanel(QWidget):
         self._track(worker).start()
 
     def _render_fund_holdings(self):
-        from tradelab.core.etf_metrics import expand_compositions, holdings_rows
+        """One row per fund, its holdings listed in that row — thirty-one
+        lines to scan rather than three hundred to scroll."""
+        from tradelab.core.etf_metrics import expand_compositions, holdings_summary
         compositions = expand_compositions(self._lt_comps)
-        rows = holdings_rows(self._lt_funds, compositions)
+        summaries = holdings_summary(self._lt_funds, compositions)
         table = []
-        for row in rows:
-            if row["weight"] is None:
-                table.append([row["ticker"], ("no holdings published", theme.MUTED, None),
-                              ("", None, None)])
+        for fund in summaries:
+            if not fund["count"]:
+                table.append([fund["ticker"],
+                              ("no holdings published", theme.MUTED, None),
+                              ("", None, None), ("", None, None)])
                 continue
-            colour = None if row["published"] else theme.MUTED
+            published = fund["published"]
             table.append([
-                row["ticker"],
-                (row["holding"], colour, None),
-                (f"{row['weight'] * 100:.1f}%", colour, row["weight"]),
+                fund["ticker"],
+                (fund["text"], None, None),
+                (str(fund["count"]), None, fund["count"]),
+                # Amber whenever the source names less than half the fund: the
+                # line reads as a description of it, and past a point it isn't.
+                (f"{published * 100:.0f}%",
+                 None if published >= 0.5 else theme.NEUTRAL, published),
             ])
-        published = len({r["ticker"] for r in rows if r["published"]})
-        self.status.setText(f"{published} of {len(self._lt_funds)} funds publish holdings.")
+        named = sum(1 for f in summaries if f["count"])
+        self.status.setText(f"{named} of {len(summaries)} funds publish holdings.")
         _EtfReportDialog(
             self, "What each fund contains",
-            ["Fund", "Holding", "% of the fund"], table,
-            "Each fund's published holdings, largest first, followed by the share it does "
-            "not publish — sources give only the top names, and leaving that out would "
-            "make a fund look fully accounted for when it isn't. A fund holding another "
-            "fund whole is opened one level further. Sort by Holding to find a company "
-            "that appears in several of your funds. " + theme.NOT_ADVICE).exec()
+            ["Fund", "What it holds", "Names", "Published"], table,
+            "One line per fund: its published holdings, largest first. **Published** is "
+            "how much of the fund those names actually account for — sources give only "
+            "the top ten or so, so the rest is real money this line does not describe. "
+            "A fund held whole inside another is opened one level further. "
+            + theme.NOT_ADVICE).exec()
 
     def shutdown(self):
         """Stop every in-flight fetch so closing the window doesn't leave a

@@ -568,6 +568,37 @@ def holdings_rows(funds: list[dict], compositions: dict) -> list[dict]:
     return rows
 
 
+def holdings_summary(funds: list[dict], compositions: dict) -> list[dict]:
+    """One entry per fund: everything it holds, on one line.
+
+    The same facts as `holdings_rows` folded so a fund is a single row —
+    thirty-one lines instead of three hundred, which is the difference between
+    scanning the list and scrolling it. `published` is the share the source
+    actually names, kept separate rather than implied, so a fund detailing 45%
+    of itself can't read as a complete description.
+    """
+    out = []
+    for fund in sorted(funds, key=lambda f: str(f.get("ticker", ""))):
+        symbol = fund_symbol(fund)
+        holdings = ((compositions or {}).get(symbol) or {}).get("top_holdings") or {}
+        pairs = []
+        for held, weight in sorted(holdings.items(), key=lambda kv: -float(kv[1] or 0)):
+            try:
+                pairs.append((held, float(weight)))
+            except (TypeError, ValueError):
+                continue
+        published = sum(w for _s, w in pairs)
+        out.append({
+            "ticker": fund.get("ticker", ""),
+            "symbol": symbol,
+            "holdings": pairs,
+            "published": published if pairs else None,
+            "count": len(pairs),
+            "text": ", ".join(f"{s} {w * 100:.1f}%" for s, w in pairs),
+        })
+    return out
+
+
 EQUAL, INVERSE_VOL = "equal", "inverse_vol"
 
 

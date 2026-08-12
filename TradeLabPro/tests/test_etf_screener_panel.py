@@ -1078,7 +1078,7 @@ def test_a_cancelled_form_does_not_change_what_is_remembered(panel):
 
 # -- what each fund contains --------------------------------------------------
 
-def test_fund_holdings_lists_every_fund_and_its_contents(panel, monkeypatch, no_network):
+def test_fund_holdings_puts_each_fund_on_one_line(panel, monkeypatch, no_network):
     from tradelab.ui import app as appmod
     shown = {}
     monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
@@ -1093,13 +1093,17 @@ def test_fund_holdings_lists_every_fund_and_its_contents(panel, monkeypatch, no_
     panel._on_look_through_loaded(
         {"XIC.TO": {"top_holdings": {"RY.TO": 0.6, "TD.TO": 0.2}}, "VAB.TO": {}}, {}, "")
 
-    assert shown["headers"] == ["Fund", "Holding", "% of the fund"]
-    funds = [row[0] for row in shown["rows"]]
-    assert funds.count("VAB") == 1 and funds.count("XIC") == 3   # 2 holdings + remainder
+    assert shown["headers"] == ["Fund", "What it holds", "Names", "Published"]
+    # One row per fund, not one per holding.
+    assert [row[0] for row in shown["rows"]] == ["VAB", "XIC"]
+    xic = [row for row in shown["rows"] if row[0] == "XIC"][0]
+    assert xic[1][0] == "RY.TO 60.0%, TD.TO 20.0%"      # largest first
+    assert xic[2][0] == "2"
     assert "1 of 2 funds publish holdings" in panel.status.text()
 
 
-def test_fund_holdings_shows_the_unpublished_share(panel, monkeypatch, no_network):
+def test_fund_holdings_says_how_much_of_the_fund_is_described(panel, monkeypatch, no_network):
+    """A line naming 60% of a fund is not a description of the fund."""
     from tradelab.ui import app as appmod
     shown = {}
     monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
@@ -1110,9 +1114,21 @@ def test_fund_holdings_shows_the_unpublished_share(panel, monkeypatch, no_networ
     panel.reload()
     panel.show_fund_holdings()
     panel._on_look_through_loaded({"XIC.TO": {"top_holdings": {"RY.TO": 0.6}}}, {}, "")
-    labels = [row[1][0] for row in shown["rows"]]
-    assert "— not published —" in labels
-    assert "40.0%" in [row[2][0] for row in shown["rows"]]
+    assert shown["rows"][0][3][0] == "60%"
+
+
+def test_a_fund_publishing_nothing_keeps_its_line(panel, monkeypatch, no_network):
+    from tradelab.ui import app as appmod
+    shown = {}
+    monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
+                        lambda self, parent, title, headers, rows, footnote="":
+                            shown.update(rows=rows) or None)
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+    panel.db.etf_upsert("VAB", yahoo="VAB.TO")
+    panel.reload()
+    panel.show_fund_holdings()
+    panel._on_look_through_loaded({"VAB.TO": {}}, {}, "")
+    assert shown["rows"][0][1][0] == "no holdings published"
 
 
 def test_fund_holdings_needs_funds(panel, no_network):

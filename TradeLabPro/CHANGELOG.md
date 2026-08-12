@@ -4,7 +4,7 @@
 
 ### Added
 - **A Build… button on the ETF Screener.** It fills Low / Mid / High risk from a rule instead of by hand: which **published risk bands** count as eligible, **equal weight or inverse volatility**, a **cap per fund**, and whether to keep only one of two funds that buy the same market. A live preview shows exactly what it would write before it writes anything, and every cell stays editable afterwards — the rule produces a starting point, not a decision.
-- **A "What each fund holds" view**: every fund with its published holdings underneath it, largest first — the look-through's question turned around. Not "what do I own in total" but "what is in each of these". Sort by Holding to find a company that turns up in several of your funds.
+- **A "What each fund holds" view**: **one line per fund**, its published holdings listed on that line, largest first — the look-through's question turned around. Not "what do I own in total" but "what is in each of these". Thirty-one lines to read down rather than three hundred to scroll.
 - The duplicate rule keeps the **cheaper** of a matching pair (same exposure, less cost), with the ticker breaking a tie so the result is repeatable rather than dependent on row order.
 
 ### Fixed
@@ -16,11 +16,11 @@
 ### Notes
 - **The app picks nothing.** It applies arithmetic to columns already in the table. The bands are pre-ticked to those whose *names* match the column being filled, which is a naming correspondence and not a view on what anyone should hold — change them freely. Nothing here is financial advice.
 - **The column is replaced, not merged.** A weight left over from an earlier run would otherwise survive into a mix the rule no longer puts that fund in. The other two allocations are untouched.
-- **Each fund's unpublished share gets its own row.** Sources give only the top holdings, so a fund whose listed names reach 60% shows the other 40% as "not published" rather than appearing fully accounted for. A fund that publishes nothing gets a row saying so — "no data" and "holds nothing" are different facts.
+- **Each line says how much of the fund it describes.** Sources give only the top ten or so names, so a **Published** column states what they add up to — amber below half. A line naming 45% of a fund is not a description of that fund, and the rest is real money it says nothing about. A fund that publishes nothing keeps its line saying so, because "no data" and "holds nothing" are different facts.
 - Inverse volatility uses the **measured** volatility, so a fund that has never been refreshed is left out and named rather than guessed at.
 
 ### Verified
-- Full pytest suite (1132) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
+- Full pytest suite (1136) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
 
 
 ## 2.42.0 - One risk rating, the published one

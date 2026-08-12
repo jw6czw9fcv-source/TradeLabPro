@@ -8,7 +8,7 @@ from tradelab.core.etf_metrics import (
     COMPOSITION_ROWS, PERIODS, composition_summary, compute_metrics,
     alternate_listing, build_allocation, csa_level, csa_volatility,
     dividend_yield,
-    expand_compositions, fold_alternate_listings, fund_symbol, holdings_rows,
+    expand_compositions, fold_alternate_listings, fund_symbol, holdings_rows, holdings_summary,
     is_low_volatility, overlaps, pass_through_symbols, rebalance, risk_metrics,
     trailing_return,
 )
@@ -653,3 +653,25 @@ def test_a_fund_publishing_nothing_still_gets_a_row():
 
 def test_holdings_rows_of_nothing_is_nothing():
     assert holdings_rows([], {}) == []
+
+
+def test_holdings_summary_is_one_entry_per_fund():
+    comps = {"XIC.TO": {"top_holdings": {"TD.TO": 0.05, "RY.TO": 0.08}}}
+    out = holdings_summary(_two_funds(), comps)
+    assert [f["ticker"] for f in out] == ["VAB", "XIC"]
+    xic = out[1]
+    assert xic["text"] == "RY.TO 8.0%, TD.TO 5.0%"      # largest first
+    assert xic["count"] == 2
+
+
+def test_holdings_summary_reports_how_much_is_named():
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 0.08, "TD.TO": 0.05}}}
+    xic = [f for f in holdings_summary(_two_funds(), comps) if f["ticker"] == "XIC"][0]
+    assert xic["published"] == pytest.approx(0.13)
+
+
+def test_holdings_summary_of_a_silent_fund_is_unknown_not_zero():
+    vab = [f for f in holdings_summary(_two_funds(), {}) if f["ticker"] == "VAB"][0]
+    assert vab["published"] is None
+    assert vab["count"] == 0
+    assert vab["text"] == ""
