@@ -1307,3 +1307,30 @@ def test_no_report_column_is_stretched(qapp):
     assert QHeaderView.Stretch not in modes
     assert dialog.table.columnWidth(1) <= 520          # still capped
     dialog.close()
+
+
+def test_the_status_line_says_when_a_drag_was_saved(panel):
+    """"It doesn't come back" is impossible to tell from "it was never saved"
+    without the app saying which happened."""
+    panel.db.etf_upsert("VFV")
+    panel.reload()
+    panel.table.setColumnWidth(_col(panel, "name"), 288)
+    assert "Column widths saved" in panel.status.text()
+
+
+def test_the_status_line_says_when_a_layout_was_restored(panel, qapp, tmp_path):
+    from tradelab.ui.app import EtfScreenerPanel
+    panel.db.etf_upsert("VFV")
+    panel.reload()
+    panel.table.setColumnWidth(_col(panel, "notes"), 291)
+    fresh = EtfScreenerPanel(Database(path=tmp_path / "again.db"))
+    assert fresh._restored_widths is True
+    assert "Column widths restored" in fresh.status.text()
+
+
+def test_a_first_run_does_not_claim_to_have_restored_anything(panel, monkeypatch):
+    monkeypatch.setattr(type(panel), "restore_layout", lambda self: False)
+    panel.db.etf_upsert("VFV")
+    panel.reload()
+    assert panel._restored_widths is False
+    assert "restored" not in panel.status.text()

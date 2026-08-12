@@ -2178,6 +2178,8 @@ class EtfScreenerPanel(QWidget):
             settings.beginGroup(self.TABLE_SETTING)
             settings.setValue("widths", json.dumps(widths))
             settings.endGroup()
+            settings.sync()          # don't wait for Qt to flush it
+            self.status.setText(f"Column widths saved ({self.table.columnCount()} columns).")
         except Exception:
             pass
 
@@ -2215,7 +2217,8 @@ class EtfScreenerPanel(QWidget):
         # Only size to the contents when nothing was remembered: otherwise a
         # reload would quietly undo every column you widened.
         self._sizing = True
-        if not self.restore_layout():
+        self._restored_widths = self.restore_layout()
+        if not self._restored_widths:
             self.table.resizeColumnsToContents()
         self._sizing = False
         frozen = getattr(self, "frozen", None)
@@ -2224,8 +2227,13 @@ class EtfScreenerPanel(QWidget):
         self._rebuild_filter_choices(funds)
         self._render_totals(funds)
         self._loading = False
+        # Say out loud whether the saved layout was found. "The widths don't
+        # come back" is otherwise impossible to tell apart from "they were
+        # never saved", and the difference is the whole diagnosis.
+        restored = " Column widths restored." if self._restored_widths else ""
         self.status.setText(
-            f"{len(funds)} funds. Click a cell to edit it, double-click a ticker to chart it.")
+            f"{len(funds)} funds. Click a cell to edit it, double-click a ticker "
+            f"to chart it.{restored}")
         self._refresh_summary(funds)
         self.apply_filter()   # a reload must not un-hide rows the filter excluded
 
