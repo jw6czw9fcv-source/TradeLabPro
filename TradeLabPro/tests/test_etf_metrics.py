@@ -6,7 +6,8 @@ import pytest
 
 from tradelab.core.etf_metrics import (
     COMPOSITION_ROWS, PERIODS, composition_summary, compute_metrics,
-    alternate_listing, csa_level, csa_volatility, dividend_yield,
+    alternate_listing, build_allocation, csa_level, csa_volatility,
+    dividend_yield,
     expand_compositions, fold_alternate_listings, fund_symbol,
     is_low_volatility, overlaps, pass_through_symbols, rebalance, risk_metrics,
     trailing_return,
@@ -505,3 +506,89 @@ def test_dividend_yield_needs_a_real_price():
     divs = _dividends([0.25, 0.25, 0.25, 0.25])
     assert dividend_yield(divs, 0) is None
     assert dividend_yield(divs, None) is None
+
+
+# -- building an allocation from a rule --------------------------------------
+
+def _candidates():
+    """Four funds with published ratings, two of them the same exposure."""
+    canada = {"pct_can": 1.0, "pct_us": 0.0, "pct_intl": 0.0, "pct_bond": 0.0,
+              "pct_alt": 0.0, "category": "Canadian equity"}
+    return [
+        {"ticker": "VAB", "csa_level": "Low", "volatility": 0.06, "mer": 0.0009,
+         "category": "Bonds", "pct_bond": 1.0, "pct_can": 0.0, "pct_us": 0.0,
+         "pct_intl": 0.0, "pct_alt": 0.0},
+        {"ticker": "VCN", "csa_level": "Medium", "volatility": 0.15, "mer": 0.0005, **canada},
+        {"ticker": "XIC", "csa_level": "Medium", "volatility": 0.15, "mer": 0.0006, **canada},
+        {"ticker": "SMH", "csa_level": "High", "volatility": 0.33, "mer": 0.0035,
+         "category": "US semiconductors", "pct_us": 1.0, "pct_can": 0.0,
+         "pct_intl": 0.0, "pct_bond": 0.0, "pct_alt": 0.0},
+    ]
+
+
+def test_build_allocation_equal_weights_the_eligible_funds():
+    out = build_allocation(_candidates(), bands={"Low", "Medium"},
+                           method="equal", drop_duplicates=False)
+    assert out["weights"] == {"VAB": pytest.approx(1 / 3, abs=1e-3),
+                              "VCN": pytest.approx(1 / 3, abs=1e-3),
+                              "XIC": pytest.approx(1 / 3, abs=1e-3)}
+    assert sum(out["weights"].values()) == pytest.approx(1.0, abs=1e-3)
+
+
+def test_build_allocation_excludes_the_bands_you_did_not_pick():
+    out = build_allocation(_candidates(), bands={"Low"}, drop_duplicates=False)
+    assert list(out["weights"]) == ["VAB"]
+    assert ("SMH", "rated High") in out["excluded"]
+
+
+def test_build_allocation_says_a_fund_has_no_rating_yet():
+    funds = _candidates() + [{"ticker": "NEW"}]
+    out = build_allocation(funds, bands={"Low"}, drop_duplicates=False)
+    assert ("NEW", "not rated yet") in out["excluded"]
+
+
+def test_build_allocation_drops_one_of_a_duplicate_pair_by_cost():
+    """VCN and XIC buy the same market; the cheaper one is kept, which is a
+    rule rather than a preference."""
+    out = build_allocation(_candidates(), bands={"Medium"}, drop_duplicates=True)
+    assert list(out["weights"]) == ["VCN"]          # 0.05% vs 0.06% MER
+    assert ("XIC", "same exposure as VCN") in out["excluded"]
+
+
+def test_build_allocation_keeps_both_when_you_ask_it_to():
+    out = build_allocation(_candidates(), bands={"Medium"}, drop_duplicates=False)
+    assert set(out["weights"]) == {"VCN", "XIC"}
+
+
+def test_inverse_volatility_gives_the_calmer_fund_more():
+    out = build_allocation(_candidates(), bands={"Low", "Medium"},
+                           method="inverse_vol", drop_duplicates=True)
+    assert out["weights"]["VAB"] > out["weights"]["VCN"]      # 6% vol vs 15%
+    assert sum(out["weights"].values()) == pytest.approx(1.0, abs=1e-3)
+
+
+def test_inverse_volatility_skips_a_fund_with_nothing_measured():
+    funds = _candidates() + [{"ticker": "GGOV", "csa_level": "Low"}]
+    out = build_allocation(funds, bands={"Low"}, method="inverse_vol")
+    assert "GGOV" not in out["weights"]
+    assert ("GGOV", "no volatility measured") in out["excluded"]
+
+
+def test_a_cap_moves_the_excess_to_the_others():
+    out = build_allocation(_candidates(), bands={"Low", "Medium"},
+                           method="equal", cap=0.40, drop_duplicates=False)
+    assert max(out["weights"].values()) <= 0.40 + 1e-3
+    assert sum(out["weights"].values()) == pytest.approx(1.0, abs=1e-3)
+
+
+def test_a_cap_below_an_equal_share_leaves_everything_at_the_cap():
+    # Three funds cannot each stay under 20%; the rule stops rather than loop.
+    out = build_allocation(_candidates(), bands={"Low", "Medium"},
+                           method="equal", cap=0.20, drop_duplicates=False)
+    assert all(w == pytest.approx(0.20, abs=1e-3) for w in out["weights"].values())
+
+
+def test_build_allocation_of_nothing_eligible_is_empty():
+    out = build_allocation(_candidates(), bands=set())
+    assert out["weights"] == {}
+    assert len(out["excluded"]) == 4

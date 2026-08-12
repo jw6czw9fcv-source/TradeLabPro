@@ -1633,6 +1633,110 @@ class _EtfCompareDialog(QDialog):
         layout.addWidget(close)
 
 
+class _BuildAllocationDialog(QDialog):
+    """The form behind "Build…": which published risk bands count, how to
+    weight them, and a cap.
+
+    Every choice is on screen and every one is yours. The app supplies
+    arithmetic over columns already in the table — it does not decide which
+    bands belong in your low-risk mix, and it fills a column you can then edit
+    like any other.
+    """
+
+    def __init__(self, parent, compositions, current_key, funds):
+        super().__init__(parent)
+        from tradelab.core.etf_metrics import CSA_BANDS, CSA_HIGH, EQUAL, INVERSE_VOL
+        self.setWindowTitle("Build an allocation")
+        self.funds = funds
+        layout = QFormLayout(self)
+
+        self.target = QComboBox()
+        for label, key in compositions:
+            self.target.addItem(label, key)
+        index = self.target.findData(current_key)
+        self.target.setCurrentIndex(index if index >= 0 else 0)
+        layout.addRow("Fill which column", self.target)
+
+        # Pre-ticked to the bands whose *names* match the column being filled.
+        # A naming correspondence, not a view on what you should hold - change
+        # it freely.
+        self.bands, band_box = {}, QGroupBox("Include funds rated")
+        band_layout = QVBoxLayout(band_box)
+        suggested = {
+            "low_risk": {"Low", "Low to medium"},
+            "mid_risk": {"Low to medium", "Medium"},
+            "high_risk": {"Medium to high", CSA_HIGH},
+        }.get(current_key, set())
+        for _ceiling, label in CSA_BANDS:
+            self.bands[label] = QCheckBox(label)
+            band_layout.addWidget(self.bands[label])
+        self.bands[CSA_HIGH] = QCheckBox(CSA_HIGH)
+        band_layout.addWidget(self.bands[CSA_HIGH])
+        for label, box in self.bands.items():
+            box.setChecked(label in suggested)
+            box.stateChanged.connect(self._update_preview)
+        layout.addRow(band_box)
+
+        self.method = QComboBox()
+        self.method.addItem("Equal weight", EQUAL)
+        self.method.addItem("Inverse volatility (calmer funds get more)", INVERSE_VOL)
+        self.method.currentIndexChanged.connect(self._update_preview)
+        layout.addRow("Weighting", self.method)
+
+        self.cap = QDoubleSpinBox()
+        self.cap.setRange(0.0, 100.0); self.cap.setDecimals(0); self.cap.setSuffix(" %")
+        self.cap.setValue(100.0)
+        self.cap.setToolTip("Most any single fund may take. 100% means no cap.")
+        self.cap.valueChanged.connect(self._update_preview)
+        layout.addRow("Cap per fund", self.cap)
+
+        self.drop_duplicates = QCheckBox(
+            "Skip a fund that buys what another already buys (keeps the cheaper)")
+        self.drop_duplicates.setChecked(True)
+        self.drop_duplicates.stateChanged.connect(self._update_preview)
+        layout.addRow(self.drop_duplicates)
+
+        self.preview = QLabel()
+        self.preview.setWordWrap(True)
+        layout.addRow(self.preview)
+
+        row = QHBoxLayout()
+        self.apply_btn = QPushButton("Fill the column")
+        self.apply_btn.clicked.connect(self.accept)
+        cancel = QPushButton("Cancel"); cancel.clicked.connect(self.reject)
+        row.addWidget(self.apply_btn); row.addWidget(cancel)
+        layout.addRow(row)
+        self._update_preview()
+
+    def selected_bands(self) -> set:
+        return {label for label, box in self.bands.items() if box.isChecked()}
+
+    def result_allocation(self) -> dict:
+        from tradelab.core.etf_metrics import build_allocation
+        cap = self.cap.value() / 100.0
+        return build_allocation(
+            self.funds, self.selected_bands(), method=self.method.currentData(),
+            cap=None if cap >= 1.0 else cap,
+            drop_duplicates=self.drop_duplicates.isChecked())
+
+    def _update_preview(self):
+        out = self.result_allocation()
+        weights = out["weights"]
+        self.apply_btn.setEnabled(bool(weights))
+        if not weights:
+            self.preview.setText("No fund matches — tick a band that some of your funds "
+                                 "are rated in, or refresh returns & risk first.")
+            return
+        listed = ", ".join(f"{t} {w * 100:.1f}%" for t, w in
+                           sorted(weights.items(), key=lambda kv: -kv[1]))
+        skipped = [f"{t} ({why})" for t, why in out["excluded"]
+                   if "rated" not in why or "not rated" in why]
+        text = f"<b>{len(weights)} funds:</b> {listed}"
+        if skipped:
+            text += "<br><br>Left out: " + ", ".join(skipped)
+        self.preview.setText(text)
+
+
 class EtfScreenerPanel(QWidget):
     """Compare funds and build a target allocation — a fund-comparison
     workbook, in the app and backed by SQLite instead of a spreadsheet.
@@ -1781,9 +1885,9 @@ class EtfScreenerPanel(QWidget):
         self.filter_choice.setToolTip("Narrow to one category, region, account or currency. "
                                       "Built from what the table actually contains.")
         self.filter_choice.currentIndexChanged.connect(lambda _i: self.apply_filter())
-        for widget in (self.ticker_edit, self.yahoo_edit, add_btn, remove_btn,
-                       self.filter_choice, self.filter_edit,
-                       self.refresh_btn, self.stop_btn, self.fullscreen_btn):
+        for widget in (self.fullscreen_btn, self.ticker_edit, self.yahoo_edit,
+                       add_btn, remove_btn, self.filter_choice, self.filter_edit,
+                       self.refresh_btn, self.stop_btn):
             controls.addWidget(widget)
         layout.addWidget(bar)
 
@@ -1803,6 +1907,11 @@ class EtfScreenerPanel(QWidget):
         self.compare_btn.setToolTip("Plots the selected funds on one chart, each restated to "
                                     "100 at the first date they all share.")
         self.compare_btn.clicked.connect(self.compare_selected)
+        self.build_btn = QPushButton("Build…")
+        self.build_btn.setToolTip("Fill the selected allocation column by a rule you set: "
+                                  "which risk bands count, equal or inverse-volatility "
+                                  "weighting, a cap per fund.")
+        self.build_btn.clicked.connect(self.build_allocation)
         self.rebalance_btn = QPushButton("Target vs held")
         self.rebalance_btn.setToolTip("Compares this allocation against the positions on your "
                                       "Portfolio tab and reports the gap in dollars.")
@@ -1820,7 +1929,8 @@ class EtfScreenerPanel(QWidget):
         self.composition_combo.currentIndexChanged.connect(lambda _i: self._refresh_summary())
         for widget in (self.watch_btn, self.portfolio_btn, self.compare_btn,
                        QLabel("  Allocation:"), self.composition_combo,
-                       self.rebalance_btn, self.lookthrough_btn, export_btn):
+                       self.build_btn, self.rebalance_btn, self.lookthrough_btn,
+                       export_btn):
             actions.addWidget(widget)
         layout.addWidget(actions_bar)
 
@@ -2301,6 +2411,37 @@ class EtfScreenerPanel(QWidget):
     def _forget(self, worker):
         if worker in self._workers:
             self._workers.remove(worker)
+
+    def build_allocation(self):
+        """Fill the selected allocation column from a rule, then let you edit
+        it like any other column — the rule produces a starting point, it does
+        not own the numbers."""
+        funds = self.db.etf_list()
+        if not funds:
+            self.status.setText("Add some funds first.")
+            return
+        dialog = _BuildAllocationDialog(self, self.COMPOSITIONS,
+                                        self.current_weight_key(), funds)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        key = dialog.target.currentData()
+        weights = dialog.result_allocation()["weights"]
+        if not weights:
+            return
+        # Everything in the column is replaced, including funds the rule left
+        # out - a leftover weight from a previous run would quietly survive
+        # into a mix it no longer belongs to.
+        for fund in funds:
+            ticker = fund["ticker"]
+            self.db.etf_upsert(ticker, **{key: weights.get(ticker)})
+        index = self.composition_combo.findData(key)
+        if index >= 0:
+            self.composition_combo.setCurrentIndex(index)
+        self.reload()
+        label = dict((k, l) for l, k in self.COMPOSITIONS).get(key, key)
+        self.status.setText(
+            f"{label} filled with {len(weights)} funds by your rule. Edit any cell to "
+            f"change it — the rule wrote a starting point, not a decision.")
 
     def compare_selected(self):
         """Plot the selected funds against each other, rebased to a common
@@ -9448,14 +9589,26 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self.showMaximized()
-        try:
-            self.etf_screener_panel.set_fullscreen_label(self._panel_full)
-        except Exception:
-            pass
+        self.etf_screener_panel.set_fullscreen_label(self._panel_full)
+        # Every tab page lives in a scroll area. Scroll down to work on the
+        # table and the toolbar leaves the top of the view - so does the only
+        # button that comes back out of full screen. Bring it into view on
+        # both directions of the toggle.
+        self._scroll_panel_to_top(self.etf_screener_panel)
+
+    @staticmethod
+    def _scroll_panel_to_top(panel):
+        parent = panel.parentWidget()
+        while parent is not None:
+            if isinstance(parent, QScrollArea):
+                parent.verticalScrollBar().setValue(0)
+                return
+            parent = parent.parentWidget()
 
     def keyPressEvent(self, event):
         # Esc is reserved for the chart tools (return to the plain cursor);
-        # full-screen is left/entered with the ⤢ / ⛶ toolbar button instead.
+        # full-screen is left/entered with the ⤢ / ⛶ toolbar button instead,
+        # for the chart and for the table alike.
         super().keyPressEvent(event)
 
     def _on_strategies_changed(self):

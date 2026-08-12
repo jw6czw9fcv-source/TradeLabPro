@@ -3,7 +3,7 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
-2.42.0 - One risk rating, the published one - the ETF Screener rates risk the way every Canadian fund must: the NI 81-102 standard deviation bands, computed from the same prices, so the app's number can be checked against the fund's own Fund Facts
+2.43.0 - Fill an allocation by a rule you set - the ETF Screener builds Low/Mid/High risk from criteria you choose (which published risk bands, equal or inverse-volatility weighting, a cap per fund) instead of by hand
 
 ## Run
 1. Run `install_requirements.bat` if needed.

@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.42.0**
+**Version 2.43.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
 **Home** dashboard showing your book, a chart of its year so far, the market
@@ -436,6 +436,22 @@ your allocations are yours.
 **Each allocation column totals under the table** — green when it reaches 100%,
 amber while it doesn't. The **⛶ Full screen** button hands the whole window to
 the table by hiding the chart; click it again to put the chart back.
+
+**Build… fills a column by a rule.** Rather than typing thirty weights, pick
+the column, tick which **published risk bands** count as eligible, choose
+**equal weight** or **inverse volatility** (calmer funds get more), set a cap
+per fund, and decide whether to keep only one of two funds that buy the same
+market — the cheaper one, since same exposure at less cost is a rule and not a
+preference. A preview shows exactly what it would write before it writes
+anything.
+
+Everything the rule uses is a column already in the table, and every choice is
+yours: the app applies arithmetic, it does not pick funds. The bands come
+pre-ticked to those whose *names* match the column you're filling, which is a
+naming correspondence and nothing more — change them. Afterwards every cell is
+editable as usual, and the whole column is replaced rather than merged, so a
+weight left from an earlier run can't survive into a mix the rule no longer
+puts that fund in.
 
 **Three allocations, side by side.** **Low risk**, **Mid risk** and **High
 risk** are weight columns for you to fill in, totalled under the table: what

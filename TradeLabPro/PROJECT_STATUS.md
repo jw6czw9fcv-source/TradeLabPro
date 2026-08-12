@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.42.0
+Current version: 2.43.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.43.0 (Fill an allocation by a rule)
+- **`etf_metrics.build_allocation(funds, bands, method, cap, drop_duplicates)`** -> `{"weights", "excluded"}`. Eligibility by **published CSA band**, `EQUAL` or `INVERSE_VOL` weighting, an iterative cap that redistributes the excess (and stops when every fund is capped rather than looping), and duplicate removal via `overlaps(..., weight_key=None)` keeping the **lower MER** with the ticker as tie-break so it's repeatable. It selects nothing on its own - every input is the user's.
+- `overlaps()` gained `weight_key=None` ("compare every fund", for building from scratch) and `keep`/`drop` per pair.
+- `_BuildAllocationDialog` previews the result live and disables Apply when nothing matches. Bands are pre-ticked by **name** correspondence to the target column, labelled in the code as such. Writing **replaces** the whole column (a stale weight must not survive into a mix the rule no longer includes) and leaves the other two allocations alone.
+- **Full-screen fix:** tab pages live in a `QScrollArea`; scrolled down to the table, the toolbar and the only exit button were off the top. `toggle_panel_fullscreen` now scrolls the panel to the top, and the button is first on the bar. **Esc was tried and removed** - the user wants the button, matching the chart.
 
 ## Completed in 2.42.0 (One risk rating, the published one)
 - **`csa_volatility()` / `csa_level()` in `core/etf_metrics.py`** — NI 81-102 Appendix F: annualized standard deviation of **month-end** returns over **10 years** (monthly sd x sqrt(12)), banded 0-6 Low / 6-11 Low to medium / 11-16 Medium / 16-20 Medium to high / 20+ High. Bands verified against the AIMA Canada & CAIA guidelines quoting Appendix F, not written from memory. Returns `(stdev, months)`: **the window is reported with the figure**, because a level standing on 4 years is not the regulator's 10-year level. `CSA_MIN_MONTHS = 36` — under three years nothing is rated. The regulation fills a short history with a reference index; **we do not**, and the tooltip says so, so a young fund can differ from its own Fund Facts.

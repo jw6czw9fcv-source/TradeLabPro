@@ -951,3 +951,91 @@ def test_the_button_asks_the_window_and_the_label_flips(panel):
 
 def test_the_button_is_inert_without_a_window(panel):
     panel.fullscreen_btn.click()        # on_toggle_fullscreen is None here
+
+
+# -- building an allocation from a rule --------------------------------------
+
+def _rated(panel):
+    panel.db.etf_upsert("VAB", csa_level="Low", volatility=0.06, mer=0.0009,
+                        category="Bonds", pct_bond=1.0, pct_can=0.0, pct_us=0.0,
+                        pct_intl=0.0, pct_alt=0.0)
+    panel.db.etf_upsert("VCN", csa_level="Medium", volatility=0.15, mer=0.0005,
+                        category="Canadian equity", pct_can=1.0, pct_us=0.0,
+                        pct_intl=0.0, pct_bond=0.0, pct_alt=0.0)
+    panel.db.etf_upsert("SMH", csa_level="High", volatility=0.33, mer=0.0035,
+                        category="US semis", pct_us=1.0, pct_can=0.0,
+                        pct_intl=0.0, pct_bond=0.0, pct_alt=0.0)
+    panel.reload()
+
+
+def _dialog(panel, key="low_risk"):
+    from tradelab.ui.app import _BuildAllocationDialog
+    return _BuildAllocationDialog(panel, panel.COMPOSITIONS, key, panel.db.etf_list())
+
+
+def test_the_form_pre_ticks_the_bands_named_like_the_column(panel):
+    """A naming correspondence, not a view on what you should hold."""
+    _rated(panel)
+    assert _dialog(panel, "low_risk").selected_bands() == {"Low", "Low to medium"}
+    assert _dialog(panel, "high_risk").selected_bands() == {"Medium to high", "High"}
+
+
+def test_the_form_previews_what_it_would_write(panel):
+    _rated(panel)
+    dialog = _dialog(panel, "low_risk")
+    assert "VAB" in dialog.preview.text()
+    assert "SMH" not in dialog.preview.text()          # rated High, not ticked
+
+
+def test_the_form_refuses_to_fill_when_nothing_matches(panel):
+    _rated(panel)
+    dialog = _dialog(panel, "low_risk")
+    for box in dialog.bands.values():
+        box.setChecked(False)
+    assert dialog.apply_btn.isEnabled() is False
+    assert "No fund matches" in dialog.preview.text()
+
+
+def test_the_rule_writes_the_column_and_the_total_reaches_100(panel, monkeypatch):
+    from tradelab.ui import app as appmod
+    _rated(panel)
+    monkeypatch.setattr(appmod.QDialog, "exec", lambda self: appmod.QDialog.Accepted)
+    panel.composition_combo.setCurrentIndex(0)          # Low risk
+    panel.build_allocation()
+    assert panel.db.etf_get("VAB")["low_risk"] == pytest.approx(1.0)
+    assert _total_cell(panel, "low_risk").text() == "100.0%"
+
+
+def test_the_rule_clears_a_fund_it_left_out(panel, monkeypatch):
+    """A weight left from an earlier run must not survive into a mix the rule
+    no longer puts that fund in."""
+    from tradelab.ui import app as appmod
+    _rated(panel)
+    panel.db.etf_upsert("SMH", low_risk=0.5)            # stale weight
+    monkeypatch.setattr(appmod.QDialog, "exec", lambda self: appmod.QDialog.Accepted)
+    panel.composition_combo.setCurrentIndex(0)
+    panel.build_allocation()
+    assert panel.db.etf_get("SMH")["low_risk"] is None
+
+
+def test_the_rule_leaves_the_other_allocations_alone(panel, monkeypatch):
+    from tradelab.ui import app as appmod
+    _rated(panel)
+    panel.db.etf_upsert("VCN", high_risk=0.42)
+    monkeypatch.setattr(appmod.QDialog, "exec", lambda self: appmod.QDialog.Accepted)
+    panel.composition_combo.setCurrentIndex(0)
+    panel.build_allocation()
+    assert panel.db.etf_get("VCN")["high_risk"] == pytest.approx(0.42)
+
+
+def test_cancelling_writes_nothing(panel, monkeypatch):
+    from tradelab.ui import app as appmod
+    _rated(panel)
+    monkeypatch.setattr(appmod.QDialog, "exec", lambda self: appmod.QDialog.Rejected)
+    panel.build_allocation()
+    assert panel.db.etf_get("VAB")["low_risk"] is None
+
+
+def test_building_with_no_funds_says_so(panel):
+    panel.build_allocation()
+    assert "Add some funds" in panel.status.text()

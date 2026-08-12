@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.43.0 - Fill an allocation by a rule you set
+
+### Added
+- **A Build… button on the ETF Screener.** It fills Low / Mid / High risk from a rule instead of by hand: which **published risk bands** count as eligible, **equal weight or inverse volatility**, a **cap per fund**, and whether to keep only one of two funds that buy the same market. A live preview shows exactly what it would write before it writes anything, and every cell stays editable afterwards — the rule produces a starting point, not a decision.
+- The duplicate rule keeps the **cheaper** of a matching pair (same exposure, less cost), with the ticker breaking a tie so the result is repeatable rather than dependent on row order.
+
+### Fixed
+- **No way out of the table's full screen.** Every tab page sits in a scroll area, so working on the table put the toolbar — and the only button that comes back — off the top of the view. The toggle now scrolls the panel back to the top, and the button is the **first** control on the bar rather than the last on a row that wraps.
+
+### Notes
+- **The app picks nothing.** It applies arithmetic to columns already in the table. The bands are pre-ticked to those whose *names* match the column being filled, which is a naming correspondence and not a view on what anyone should hold — change them freely. Nothing here is financial advice.
+- **The column is replaced, not merged.** A weight left over from an earlier run would otherwise survive into a mix the rule no longer puts that fund in. The other two allocations are untouched.
+- Inverse volatility uses the **measured** volatility, so a fund that has never been refreshed is left out and named rather than guessed at.
+
+### Verified
+- Full pytest suite (1118) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
+
+
 ## 2.42.0 - One risk rating, the published one
 
 ### Added

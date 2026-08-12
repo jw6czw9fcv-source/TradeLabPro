@@ -310,3 +310,29 @@ def test_table_fullscreen_hides_the_chart_and_restores_it(qapp):
 def test_the_screener_button_is_wired_to_the_window(qapp):
     win = _main_window(qapp)
     assert win.etf_screener_panel.on_toggle_fullscreen == win.toggle_panel_fullscreen
+
+
+def test_the_way_back_is_the_first_control_on_the_bar(qapp):
+    win = _main_window(qapp)
+    panel = win.etf_screener_panel
+    bar = panel.fullscreen_btn.parentWidget()
+    assert bar.layout().itemAt(0).widget() is panel.fullscreen_btn
+
+
+def test_full_screen_brings_the_toolbar_back_into_view(qapp):
+    """Every tab page is in a scroll area. Scrolled down to the table, the
+    toolbar — and the only way out of full screen — is off the top."""
+    from PySide6.QtWidgets import QScrollArea
+    win = _main_window(qapp)
+    panel = win.etf_screener_panel
+    area = panel.parentWidget()
+    while area is not None and not isinstance(area, QScrollArea):
+        area = area.parentWidget()
+    assert area is not None, "the panel should sit in a scroll area"
+
+    area.verticalScrollBar().setRange(0, 500)
+    area.verticalScrollBar().setValue(500)      # scrolled down to the table
+    win.toggle_panel_fullscreen()
+    assert area.verticalScrollBar().value() == 0
+    assert win.etf_screener_panel.fullscreen_btn.text().startswith("⤢")
+    win.toggle_panel_fullscreen()

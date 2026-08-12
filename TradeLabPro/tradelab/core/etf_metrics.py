@@ -492,7 +492,10 @@ def overlaps(funds: list[dict], weight_key: str = "my_mix",
     filled in is compared on category alone, and a pair with neither is not
     guessed at.
     """
-    weighted = [f for f in funds if _weight(f, weight_key) > 0]
+    # weight_key=None means "compare every fund", used when building an
+    # allocation from scratch - there are no weights yet to filter on.
+    weighted = (list(funds) if weight_key is None
+                else [f for f in funds if _weight(f, weight_key) > 0])
     found = []
     for i, a in enumerate(weighted):
         for b in weighted[i + 1:]:
@@ -508,13 +511,98 @@ def overlaps(funds: list[dict], weight_key: str = "my_mix",
                 reason = "same category"
             else:
                 continue
+            # Which of the pair a rule should keep: same exposure, lower
+            # cost. Ticker breaks a tie so the choice is repeatable rather
+            # than dependent on row order.
+            cost_a, cost_b = a.get("mer"), b.get("mer")
+            if cost_a is not None and cost_b is not None and cost_a != cost_b:
+                keep, drop = ((a, b) if float(cost_a) < float(cost_b) else (b, a))
+            else:
+                keep, drop = sorted((a, b), key=lambda f: f.get("ticker", ""))
             found.append({
                 "a": a.get("ticker", ""), "b": b.get("ticker", ""),
                 "reason": reason, "distance": distance,
-                "combined_weight": _weight(a, weight_key) + _weight(b, weight_key),
+                "keep": keep.get("ticker", ""), "drop": drop.get("ticker", ""),
+                "combined_weight": (0.0 if weight_key is None else
+                                    _weight(a, weight_key) + _weight(b, weight_key)),
             })
     found.sort(key=lambda o: o["combined_weight"], reverse=True)
     return found
+
+
+EQUAL, INVERSE_VOL = "equal", "inverse_vol"
+
+
+def build_allocation(funds: list[dict], bands, method: str = EQUAL,
+                     cap: float | None = None, drop_duplicates: bool = True) -> dict:
+    """Fill an allocation column by a rule instead of by judgement.
+
+    Every input is the caller's: which published risk bands count as eligible,
+    equal weight or inverse volatility, a cap per fund, and whether to keep
+    only one of two funds that buy the same thing. This function picks
+    nothing — it applies arithmetic to the columns already in the table and
+    reports what it did.
+
+    Returns `{"weights": {ticker: fraction}, "excluded": [(ticker, reason)]}`,
+    weights summing to 1.0 (or empty when nothing qualified).
+    """
+    bands = set(bands or ())
+    eligible, excluded = [], []
+    for fund in funds:
+        level = fund.get("csa_level")
+        if not level:
+            excluded.append((fund.get("ticker", ""), "not rated yet"))
+        elif level not in bands:
+            excluded.append((fund.get("ticker", ""), f"rated {level}"))
+        else:
+            eligible.append(fund)
+
+    if drop_duplicates:
+        # Two funds tracking one market would each take a slot. Keep the
+        # cheaper one — same exposure, less cost — which is a rule, not a
+        # preference; ticker breaks a tie so the result is repeatable.
+        for pair in overlaps(eligible, weight_key=None):
+            keep, drop = pair["keep"], pair["drop"]
+            if any(f.get("ticker") == drop for f in eligible):
+                eligible = [f for f in eligible if f.get("ticker") != drop]
+                excluded.append((drop, f"same exposure as {keep}"))
+
+    if method == INVERSE_VOL:
+        priced = []
+        for fund in eligible:
+            vol = fund.get("volatility")
+            if not vol:
+                excluded.append((fund.get("ticker", ""), "no volatility measured"))
+                continue
+            priced.append((fund, 1.0 / float(vol)))
+        raw = {f.get("ticker", ""): score for f, score in priced}
+    else:
+        raw = {f.get("ticker", ""): 1.0 for f in eligible}
+
+    total = sum(raw.values())
+    if not total:
+        return {"weights": {}, "excluded": excluded}
+    weights = {t: v / total for t, v in raw.items()}
+
+    if cap:
+        # Trim whatever sits above the cap and hand the excess to the rest,
+        # repeatedly, since redistributing can push another fund over.
+        for _pass in range(len(weights) + 1):
+            over = {t: w for t, w in weights.items() if w > cap + 1e-9}
+            if not over:
+                break
+            spare = sum(w - cap for w in over.values())
+            room = {t: w for t, w in weights.items() if t not in over}
+            under_total = sum(room.values())
+            for ticker in over:
+                weights[ticker] = cap
+            if not under_total:
+                break
+            for ticker in room:
+                weights[ticker] += spare * (room[ticker] / under_total)
+
+    return {"weights": {t: round(w, 4) for t, w in weights.items()},
+            "excluded": excluded}
 
 
 def _weight(fund: dict, weight_key: str) -> float:
