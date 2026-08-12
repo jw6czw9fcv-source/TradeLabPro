@@ -267,3 +267,25 @@ def test_a_forced_withdrawal_is_taxed_to_the_account_owner():
     assert seen["by_owner"]["elle"] == 0
     # And it is pension income, which is what the pension credit is for.
     assert seen["pension"]["lui"] == pytest.approx(5_280)
+
+
+# -- calendar years ----------------------------------------------------------
+
+def test_rows_carry_a_calendar_year_not_just_an_index():
+    """"2033" is something you can hold against a birthday; "year 7" is
+    arithmetic the reader has to do."""
+    rows = project(_plan(start_year=2026, years=3))
+    assert [r["calendar_year"] for r in rows] == [2026, 2027, 2028]
+    assert [r["year"] for r in rows] == [0, 1, 2]
+
+
+def test_the_calendar_year_defaults_to_this_year():
+    from datetime import date
+    rows = project(_plan(years=1))
+    assert rows[0]["calendar_year"] == date.today().year
+
+
+def test_the_year_and_the_ages_advance_together():
+    rows = project(_plan(people=[Person("me", 64)], start_year=2026, years=4))
+    for row in rows:
+        assert row["ages"]["me"] == 64 + (row["calendar_year"] - 2026)

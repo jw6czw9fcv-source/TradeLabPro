@@ -151,3 +151,12 @@ def test_splitting_a_rrif_withdrawal_lowers_the_bill(panel):
     panel.splitting.setValue(50)
     panel.run()
     assert panel.rows[0]["tax"] < without
+
+
+def test_the_results_show_calendar_years(panel):
+    from datetime import date
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 500_000, "Pierre"]])
+    panel.spending.setValue(0)
+    panel.run()
+    assert panel.results.item(0, 0).text() == str(date.today().year)
+    assert panel.results.item(1, 0).text() == str(date.today().year + 1)

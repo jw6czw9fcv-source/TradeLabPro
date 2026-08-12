@@ -23,6 +23,7 @@ Qt-free and offline-testable; no network, no I/O.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 # Account kinds. The difference that matters is how a withdrawal is taxed and
 # whether it can be forced:
@@ -150,6 +151,10 @@ class Plan:
     # default is simply the order the accounts were given in.
     withdrawal_order: list[str] | None = None
     years: int = 35
+    # The calendar year row 0 stands for. Defaults to the year the projection
+    # is run: "2033" is something you can hold against a birthday, "year 7"
+    # is arithmetic the reader has to do themselves.
+    start_year: int | None = None
     # Tax on the year's taxable income. Called with ({owner: taxable},
     # {owner: age}, {owner: pension_income}) - per person, not as one
     # household total, because two people are taxed as two people and only
@@ -176,6 +181,7 @@ def project(plan: Plan) -> list[dict]:
     """
     balances = {a.name: float(a.balance) for a in plan.accounts}
     ages = {p.name: p.age for p in plan.people}
+    start_year = plan.start_year or date.today().year
     accounts = _order(plan)
     rows = []
 
@@ -233,6 +239,7 @@ def project(plan: Plan) -> list[dict]:
 
         rows.append({
             "year": year,
+            "calendar_year": start_year + year,
             "ages": dict(ages),
             "opening": opening,
             "income": gross_income,

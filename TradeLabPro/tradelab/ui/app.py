@@ -9797,7 +9797,7 @@ class RetirementSimPanel(QWidget):
         self.results.setRowCount(len(rows))
         for r, row in enumerate(rows):
             ages = ", ".join(str(a) for a in row["ages"].values())
-            cells = [str(row["year"]), ages,
+            cells = [str(row["calendar_year"]), ages,
                      "{:,.0f}".format(row["income"]),
                      "{:,.0f}".format(row["forced_withdrawal"]),
                      "{:,.0f}".format(row["tax"]),
