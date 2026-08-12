@@ -7,6 +7,9 @@
 - The duplicate rule keeps the **cheaper** of a matching pair (same exposure, less cost), with the ticker breaking a tie so the result is repeatable rather than dependent on row order.
 
 ### Fixed
+- **The cap could be breached by the rule enforcing it.** Redistributing an over-cap fund's excess handed some of it straight back to funds already capped, so the shares bounced instead of settling and the run stopped wherever it happened to be — with a fund above the cap it was given. A capped fund is now fixed there and only the uncapped share the excess.
+- **An impossible cap is refused, not approximated.** Three funds capped at 30% reach 90%, never 100%. The form says so and names the lowest cap that would work, rather than returning weights that don't obey the rule.
+- **The form kept forgetting your rule.** It reopened at equal weight and no cap every time, so trying the same bands at a different cap meant retyping everything. It remembers the last one for the session.
 - **No way out of the table's full screen.** Every tab page sits in a scroll area, so working on the table put the toolbar — and the only button that comes back — off the top of the view. The toggle now scrolls the panel back to the top, and the button is the **first** control on the bar rather than the last on a row that wraps.
 
 ### Notes
@@ -15,7 +18,7 @@
 - Inverse volatility uses the **measured** volatility, so a fund that has never been refreshed is left out and named rather than guessed at.
 
 ### Verified
-- Full pytest suite (1118) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
+- Full pytest suite (1123) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
 
 
 ## 2.42.0 - One risk rating, the published one

@@ -1643,6 +1643,10 @@ class _BuildAllocationDialog(QDialog):
     like any other.
     """
 
+    # Remembered between openings, per session: re-typing the same rule to try
+    # a different cap is how it looks like the form "reset itself".
+    LAST = {}
+
     def __init__(self, parent, compositions, current_key, funds):
         super().__init__(parent)
         from tradelab.core.etf_metrics import CSA_BANDS, CSA_HIGH, EQUAL, INVERSE_VOL
@@ -1672,27 +1676,30 @@ class _BuildAllocationDialog(QDialog):
             band_layout.addWidget(self.bands[label])
         self.bands[CSA_HIGH] = QCheckBox(CSA_HIGH)
         band_layout.addWidget(self.bands[CSA_HIGH])
+        remembered = self.LAST.get("bands")
         for label, box in self.bands.items():
-            box.setChecked(label in suggested)
+            box.setChecked(label in (remembered if remembered is not None else suggested))
             box.stateChanged.connect(self._update_preview)
         layout.addRow(band_box)
 
         self.method = QComboBox()
         self.method.addItem("Equal weight", EQUAL)
         self.method.addItem("Inverse volatility (calmer funds get more)", INVERSE_VOL)
+        index = self.method.findData(self.LAST.get("method", EQUAL))
+        self.method.setCurrentIndex(index if index >= 0 else 0)
         self.method.currentIndexChanged.connect(self._update_preview)
         layout.addRow("Weighting", self.method)
 
         self.cap = QDoubleSpinBox()
         self.cap.setRange(0.0, 100.0); self.cap.setDecimals(0); self.cap.setSuffix(" %")
-        self.cap.setValue(100.0)
+        self.cap.setValue(float(self.LAST.get("cap", 100.0)))
         self.cap.setToolTip("Most any single fund may take. 100% means no cap.")
         self.cap.valueChanged.connect(self._update_preview)
         layout.addRow("Cap per fund", self.cap)
 
         self.drop_duplicates = QCheckBox(
             "Skip a fund that buys what another already buys (keeps the cheaper)")
-        self.drop_duplicates.setChecked(True)
+        self.drop_duplicates.setChecked(bool(self.LAST.get("duplicates", True)))
         self.drop_duplicates.stateChanged.connect(self._update_preview)
         layout.addRow(self.drop_duplicates)
 
@@ -1719,10 +1726,23 @@ class _BuildAllocationDialog(QDialog):
             cap=None if cap >= 1.0 else cap,
             drop_duplicates=self.drop_duplicates.isChecked())
 
+    def remember(self):
+        type(self).LAST = {
+            "bands": self.selected_bands(), "method": self.method.currentData(),
+            "cap": self.cap.value(), "duplicates": self.drop_duplicates.isChecked(),
+        }
+
+    def accept(self):
+        self.remember()
+        super().accept()
+
     def _update_preview(self):
         out = self.result_allocation()
         weights = out["weights"]
         self.apply_btn.setEnabled(bool(weights))
+        if out.get("problem"):
+            self.preview.setText(f"<b>Can't do that:</b> {out['problem']}")
+            return
         if not weights:
             self.preview.setText("No fund matches — tick a band that some of your funds "
                                  "are rated in, or refresh returns & risk first.")

@@ -581,11 +581,31 @@ def test_a_cap_moves_the_excess_to_the_others():
     assert sum(out["weights"].values()) == pytest.approx(1.0, abs=1e-3)
 
 
-def test_a_cap_below_an_equal_share_leaves_everything_at_the_cap():
-    # Three funds cannot each stay under 20%; the rule stops rather than loop.
+def test_an_impossible_cap_is_refused_rather_than_breached():
+    """Three funds capped at 20% reach 60%, never 100%. The first version of
+    this oscillated and returned a fund at 40% — over the cap it was given."""
     out = build_allocation(_candidates(), bands={"Low", "Medium"},
                            method="equal", cap=0.20, drop_duplicates=False)
-    assert all(w == pytest.approx(0.20, abs=1e-3) for w in out["weights"].values())
+    assert out["weights"] == {}
+    assert "20% cap over 3 funds" in out["problem"]
+    assert "at least 33%" in out["problem"]
+
+
+def test_no_weight_ever_exceeds_a_feasible_cap():
+    out = build_allocation(_candidates(), bands={"Low", "Medium"},
+                           method="inverse_vol", cap=0.40, drop_duplicates=False)
+    assert out["weights"], out["problem"]
+    assert max(out["weights"].values()) <= 0.40 + 1e-3
+    assert sum(out["weights"].values()) == pytest.approx(1.0, abs=1e-3)
+
+
+def test_a_capped_fund_stays_capped_while_the_rest_absorb_the_excess():
+    # VAB is much calmer than the others, so inverse volatility sends it well
+    # past the cap and the redistribution has to settle, not bounce.
+    out = build_allocation(_candidates(), bands={"Low", "Medium"},
+                           method="inverse_vol", cap=0.34, drop_duplicates=False)
+    assert out["weights"]["VAB"] == pytest.approx(0.34, abs=1e-3)
+    assert sum(out["weights"].values()) == pytest.approx(1.0, abs=1e-3)
 
 
 def test_build_allocation_of_nothing_eligible_is_empty():

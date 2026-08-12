@@ -1039,3 +1039,38 @@ def test_cancelling_writes_nothing(panel, monkeypatch):
 def test_building_with_no_funds_says_so(panel):
     panel.build_allocation()
     assert "Add some funds" in panel.status.text()
+
+
+def test_the_form_explains_an_impossible_cap(panel):
+    _rated(panel)
+    dialog = _dialog(panel, "low_risk")
+    for label, box in dialog.bands.items():
+        box.setChecked(label in {"Low", "Medium"})
+    dialog.cap.setValue(20)                      # 3 funds x 20% = 60%
+    assert "Can't do that" in dialog.preview.text()
+    assert dialog.apply_btn.isEnabled() is False
+
+
+def test_the_form_remembers_the_last_rule(panel):
+    from tradelab.ui.app import _BuildAllocationDialog
+    _BuildAllocationDialog.LAST = {}
+    _rated(panel)
+    first = _dialog(panel, "low_risk")
+    first.method.setCurrentIndex(1)              # inverse volatility
+    first.cap.setValue(45)
+    first.accept()
+
+    second = _dialog(panel, "low_risk")
+    assert second.method.currentData() == "inverse_vol"
+    assert second.cap.value() == 45
+    _BuildAllocationDialog.LAST = {}
+
+
+def test_a_cancelled_form_does_not_change_what_is_remembered(panel):
+    from tradelab.ui.app import _BuildAllocationDialog
+    _BuildAllocationDialog.LAST = {}
+    _rated(panel)
+    dialog = _dialog(panel, "low_risk")
+    dialog.cap.setValue(12)
+    dialog.reject()
+    assert _dialog(panel, "low_risk").cap.value() == 100.0

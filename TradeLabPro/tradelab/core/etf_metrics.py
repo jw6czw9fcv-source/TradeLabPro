@@ -581,28 +581,42 @@ def build_allocation(funds: list[dict], bands, method: str = EQUAL,
 
     total = sum(raw.values())
     if not total:
-        return {"weights": {}, "excluded": excluded}
+        return {"weights": {}, "excluded": excluded, "problem": ""}
     weights = {t: v / total for t, v in raw.items()}
 
     if cap:
-        # Trim whatever sits above the cap and hand the excess to the rest,
-        # repeatedly, since redistributing can push another fund over.
-        for _pass in range(len(weights) + 1):
-            over = {t: w for t, w in weights.items() if w > cap + 1e-9}
+        # A cap can be arithmetically impossible: five funds capped at 10%
+        # reach 50%, never 100%. Say so instead of returning something that
+        # quietly breaches the cap it was given.
+        if cap * len(weights) < 1.0 - 1e-9:
+            return {"weights": {}, "excluded": excluded,
+                    "problem": (f"A {cap * 100:.0f}% cap over {len(weights)} funds tops "
+                                f"out at {cap * len(weights) * 100:.0f}%. Raise the cap "
+                                f"to at least {100 / len(weights):.0f}%, or include more "
+                                f"funds.")}
+        # Trim whatever sits above the cap and share the excess among the funds
+        # not yet capped. A fund that has been capped is *fixed* there: handing
+        # it more on the next pass is what made this oscillate instead of
+        # settle.
+        capped = set()
+        while True:
+            free = [t for t in weights if t not in capped]
+            over = [t for t in free if weights[t] > cap + 1e-9]
             if not over:
                 break
-            spare = sum(w - cap for w in over.values())
-            room = {t: w for t, w in weights.items() if t not in over}
-            under_total = sum(room.values())
             for ticker in over:
                 weights[ticker] = cap
-            if not under_total:
+                capped.add(ticker)
+            free = [t for t in weights if t not in capped]
+            base = sum(weights[t] for t in free)
+            if not free or base <= 0:
                 break
-            for ticker in room:
-                weights[ticker] += spare * (room[ticker] / under_total)
+            spare = 1.0 - sum(weights.values())
+            for ticker in free:
+                weights[ticker] += spare * (weights[ticker] / base)
 
     return {"weights": {t: round(w, 4) for t, w in weights.items()},
-            "excluded": excluded}
+            "excluded": excluded, "problem": ""}
 
 
 def _weight(fund: dict, weight_key: str) -> float:
