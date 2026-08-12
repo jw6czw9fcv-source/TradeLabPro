@@ -1245,3 +1245,14 @@ def test_a_fresh_install_sizes_to_the_contents(panel, monkeypatch):
     panel.db.etf_upsert("VFV", name="A very long fund name to widen the column")
     panel.reload()                                   # must not raise
     assert panel.table.columnWidth(_col(panel, "name")) > 20
+
+
+def test_the_suite_never_writes_to_the_real_settings(panel):
+    """Regression: saving a column width wrote into the app's real registry
+    key, so running the tests replaced whatever layout the person had set."""
+    import os
+    from tradelab.ui.app import app_settings, SETTINGS_FILE_ENV
+    assert os.environ.get(SETTINGS_FILE_ENV), "conftest must redirect settings"
+    path = app_settings().fileName()
+    assert "tradelab_test_settings_" in path
+    assert "HKEY" not in path.upper()

@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import traceback
@@ -46,6 +47,23 @@ from tradelab.core.logging_config import get_logger
 # (the startup refresh, for one) run outside it and need their own handle -
 # an error handler that itself raises NameError defeats the point.
 log = get_logger(__name__)
+
+
+# Where the app's preferences live. One factory rather than eight
+# constructors, because the tests have to be able to point it somewhere else:
+# app_settings() is the real Windows registry key, so
+# a test saving a column width was writing into the settings of the app the
+# person actually uses. setDefaultFormat() does not redirect this constructor
+# on Windows, so the override is explicit - and matches how TRADELAB_DATA_DIR
+# and TRADELAB_LOG_DIR already keep the suite out of real data and logs.
+SETTINGS_FILE_ENV = "TRADELAB_SETTINGS_FILE"
+
+
+def app_settings() -> QSettings:
+    override = os.environ.get(SETTINGS_FILE_ENV)
+    if override:
+        return QSettings(override, QSettings.IniFormat)
+    return QSettings("TradeLabPro", "TradeLabPro")
 
 
 def fmt_large(v):
@@ -964,7 +982,7 @@ class ScannerPanel(QWidget):
 
     def save_scanner_layout(self):
         try:
-            settings = QSettings("TradeLabPro", "TradeLabPro")
+            settings = app_settings()
             settings.beginGroup("ScannerTable")
             widths = [self.table.columnWidth(i) for i in range(self.table.columnCount())]
             hidden = [self.table.isColumnHidden(i) for i in range(self.table.columnCount())]
@@ -978,7 +996,7 @@ class ScannerPanel(QWidget):
 
     def restore_scanner_layout(self):
         try:
-            settings = QSettings("TradeLabPro", "TradeLabPro")
+            settings = app_settings()
             settings.beginGroup("ScannerTable")
             widths = json.loads(settings.value("widths", "[]"))
             hidden = json.loads(settings.value("hidden", "[]"))
@@ -2106,7 +2124,7 @@ class EtfScreenerPanel(QWidget):
     def _settings():
         """The app's own store. A bare QSettings() has no organization, writes
         somewhere else and reads back nothing."""
-        return QSettings("TradeLabPro", "TradeLabPro")
+        return app_settings()
 
     def save_layout(self):
         """Remember the column widths — unless we are the ones setting them."""
@@ -3104,7 +3122,7 @@ class PortfolioPanel(QWidget):
     def fetch_ibkr_positions(self):
         if self._ibkr_worker is not None and self._ibkr_worker.isRunning():
             return
-        settings = QSettings("TradeLabPro", "TradeLabPro")
+        settings = app_settings()
         token = str(settings.value("ibkr/flex_token", "") or "").strip()
         query = str(settings.value("ibkr/flex_query", "") or "").strip()
         if not token or not query:
@@ -4794,7 +4812,7 @@ class AIAssistantPanel(QWidget):
 
     def __init__(self):
         super().__init__()
-        self._settings = QSettings("TradeLabPro", "TradeLabPro")
+        self._settings = app_settings()
         self._history = []          # [{"role","content"}] chat turns for the API
         self._context = None        # optional symbol indicator snapshot
         self._worker = None
@@ -4980,7 +4998,7 @@ class CoachPanel(QWidget):
     def __init__(self, journal=None):
         super().__init__()
         self.journal = journal or Journal()
-        self._settings = QSettings("TradeLabPro", "TradeLabPro")
+        self._settings = app_settings()
         self._history = []          # [{"role","content"}] chat turns
         self._worker = None
         self._trade_by_row = []
@@ -6642,7 +6660,7 @@ class JournalPanel(QWidget):
 
     @staticmethod
     def _flex_settings():
-        return QSettings("TradeLabPro", "TradeLabPro")
+        return app_settings()
 
     def _save_flex_credentials(self, token, query, settings=None):
         """Persist the Flex token + query id. QSettings lives in the OS store
@@ -7243,7 +7261,7 @@ class SettingsPanel(QWidget):
     def __init__(self, db: Database, settings=None):
         super().__init__()
         self.db = db
-        self._settings = settings or QSettings("TradeLabPro", "TradeLabPro")
+        self._settings = settings or app_settings()
         from tradelab.data import providers
         layout = QVBoxLayout(self)
 
@@ -9487,7 +9505,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} - {APP_VERSION}")
         self.resize(1600, 950)
-        self._settings = QSettings("TradeLabPro", "TradeLabPro")
+        self._settings = app_settings()
         self.db = Database()
         self.cfg = ScannerConfig()
         # Apply the saved data source before any panel fetches data.

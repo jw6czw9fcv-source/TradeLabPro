@@ -35,6 +35,17 @@ os.environ.setdefault(
     tempfile.mkdtemp(prefix="tradelab_test_data_"),
 )
 
+# And out of the real QSettings store. Panels persist layout and preferences
+# under QSettings("TradeLabPro", "TradeLabPro") — the Windows registry — so a
+# test that saved a column width was writing into the settings of the app the
+# person actually uses, and the next launch read the test's values back.
+# QSettings.setDefaultFormat() does not redirect that constructor on Windows,
+# so ui/app.app_settings() honours this variable instead.
+os.environ.setdefault(
+    "TRADELAB_SETTINGS_FILE",
+    str(Path(tempfile.mkdtemp(prefix="tradelab_test_settings_")) / "settings.ini"),
+)
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
