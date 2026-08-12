@@ -9617,11 +9617,24 @@ class RetirementSimPanel(QWidget):
         self.splitting.setToolTip("How much eligible pension income to move to the lower "
                                   "earner. Only pension income can move — a wage cannot, "
                                   "and RRQ has its own separate mechanism.")
+        self.volatility = QDoubleSpinBox()
+        self.volatility.setRange(0, 40); self.volatility.setDecimals(0)
+        self.volatility.setSuffix(" % vol")
+        self.volatility.setToolTip("How much the return varies year to year. This is what "
+                                   "turns one projection into a range - and what makes the "
+                                   "order of the returns matter.")
+        self.paths = QSpinBox(); self.paths.setRange(50, 5000); self.paths.setSingleStep(50)
+        self.paths.setPrefix("paths ")
         run = QPushButton("Run projection"); run.clicked.connect(self.run)
+        trajectories = QPushButton("Run many paths")
+        trajectories.setToolTip("Run the same plan over hundreds of return orderings. One "
+                                "average cannot show sequence risk; this can.")
+        trajectories.clicked.connect(self.run_paths)
         save = QPushButton("Save inputs"); save.clicked.connect(self.save)
         for widget in (QLabel("Spending"), self.spending, QLabel("  Return"),
-                       self.real_return, QLabel("  Project"), self.until_age,
-                       QLabel("  Pension"), self.splitting, run, save):
+                       self.real_return, self.volatility, QLabel("  Project"),
+                       self.until_age, QLabel("  Pension"), self.splitting,
+                       self.paths, run, trajectories, save):
             controls.addWidget(widget)
         layout.addWidget(bar)
 
@@ -9687,6 +9700,8 @@ class RetirementSimPanel(QWidget):
         self.real_return.setValue(float(settings.value("real_return", 3.0)))
         self.until_age.setValue(int(settings.value("until_age", 95)))
         self.splitting.setValue(float(settings.value("splitting", 0)))
+        self.volatility.setValue(float(settings.value("volatility", 10)))
+        self.paths.setValue(int(settings.value("paths", 500)))
         settings.endGroup()
 
     def save(self):
@@ -9699,6 +9714,8 @@ class RetirementSimPanel(QWidget):
         settings.setValue("real_return", self.real_return.value())
         settings.setValue("until_age", self.until_age.value())
         settings.setValue("splitting", self.splitting.value())
+        settings.setValue("volatility", self.volatility.value())
+        settings.setValue("paths", self.paths.value())
         settings.endGroup()
         settings.sync()
         self.status.setText("Saved " + str(written) + " rows.")
@@ -9791,7 +9808,67 @@ class RetirementSimPanel(QWidget):
         self.rows = project(plan)
         self.render_results()
 
+    def run_paths(self):
+        """The same plan over many return orderings.
+
+        One average return hides the thing that decides a drawdown: losing
+        20% in the first two years of withdrawing is not the same as losing
+        it in the last two, because money taken out at the bottom never comes
+        back. Only many orderings can show that.
+        """
+        from tradelab.core.retirement_plan import simulate
+        plan = self.build_plan()
+        if plan is None:
+            self.status.setText("Add at least one person and one account first.")
+            return
+        out = simulate(plan, paths=self.paths.value(),
+                       mean=self.real_return.value() / 100.0,
+                       sd=self.volatility.value() / 100.0, seed=1)
+        self.render_paths(out)
+
+    def render_paths(self, out):
+        self.results.setColumnCount(6)
+        self.results.setHorizontalHeaderLabels(
+            ["Year", "Ages", "Worst 10%", "Median", "Best 10%", "Still solvent"])
+        years = out["calendar_years"]
+        self.results.setRowCount(len(years))
+        ages = [row["ages"] for row in self.rows] if self.rows else []
+        for r, year in enumerate(years):
+            age_text = ", ".join(str(a) for a in ages[r].values()) if r < len(ages) else ""
+            low = out["percentiles"][10][r]
+            solvent = sum(1 for a in out["depletion_ages"]
+                          if a is None or (r < len(ages) and a > max(ages[r].values())))
+            cells = [str(year), age_text,
+                     "{:,.0f}".format(low),
+                     "{:,.0f}".format(out["percentiles"][50][r]),
+                     "{:,.0f}".format(out["percentiles"][90][r]),
+                     "{:.0f}%".format(solvent / out["paths"] * 100)]
+            for c, text in enumerate(cells):
+                item = table_item(text)
+                if c == 2 and low <= 0:
+                    item.setForeground(QColor(theme.DOWN))
+                self.results.setItem(r, c, item)
+        self.results.resizeColumnsToContents()
+
+        rate = out["success_rate"] * 100
+        worst = out["worst_decile_age"]
+        message = ("Of {:,} paths, the money lasted the whole way in {:.0f}%."
+                   .format(out["paths"], rate))
+        if worst is not None:
+            message += (" In the worst tenth of the ones that failed it ran out by age "
+                        "{:.0f}.".format(worst))
+        message += (" That percentage is the share of *simulated* paths under assumptions "
+                    "you chose, not a probability that a retirement works — move the "
+                    "spending by five thousand and it shifts more than any market will. "
+                    "Returns are drawn from a normal curve, which has fewer very bad "
+                    "years than markets actually do.")
+        self.status.setText(message)
+
     def render_results(self):
+        self.results.setColumnCount(8)
+        self.results.setHorizontalHeaderLabels(
+            ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
+             "Unfunded", "Closing"])
         from tradelab.core.retirement_plan import depletion_year
         rows = self.rows
         self.results.setRowCount(len(rows))

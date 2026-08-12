@@ -146,6 +146,11 @@ class Plan:
     # Real return, i.e. after inflation. 0.03 means "three points above
     # inflation", not "three percent".
     real_return: float = 0.03
+    # One return per year, when the caller has a sequence rather than an
+    # average. This is what makes sequence risk visible: the same numbers in a
+    # different order are a different retirement, and a single average cannot
+    # say so.
+    returns: list | None = None
     # Which accounts to draw from first. Order is a decision with real tax
     # consequences and it belongs to the person, not to this module; the
     # default is simply the order the accounts were given in.
@@ -234,8 +239,11 @@ def project(plan: Plan) -> list[dict]:
             shortfall -= take
 
         # 4. Growth applies to what is left at the end of the year.
+        growth = plan.real_return
+        if plan.returns:
+            growth = plan.returns[year] if year < len(plan.returns) else plan.returns[-1]
         for name in balances:
-            balances[name] *= (1.0 + plan.real_return)
+            balances[name] *= (1.0 + growth)
 
         rows.append({
             "year": year,
@@ -250,6 +258,7 @@ def project(plan: Plan) -> list[dict]:
             # What the plan could not fund this year. The whole point of the
             # projection is this number turning positive.
             "unfunded": shortfall,
+            "return": growth,
             "closing": sum(balances.values()),
             "balances": dict(balances),
         })
@@ -267,3 +276,94 @@ def depletion_year(rows: list[dict]) -> int | None:
         if row["unfunded"] > 0.01:
             return row["year"]
     return None
+
+
+# --- many paths instead of one ---------------------------------------------
+#
+# A single average return says nothing about the *order* returns arrive in,
+# and order is what decides a drawdown. Losing 20% in the first two years of
+# withdrawing is not the same as losing it in the last two, even though the
+# average is identical - money taken out at the bottom never recovers. That is
+# sequence risk, and running the same plan over many orderings is the only way
+# to see it.
+
+def sample_returns(years: int, paths: int, mean: float = 0.03,
+                   sd: float = 0.10, history=None, seed: int | None = None):
+    """`paths` sequences of `years` real returns.
+
+    With `history` — a series of past real annual returns — this resamples it
+    with replacement, which keeps the shape of what actually happened,
+    including the bad years a normal curve smooths away. Without it, returns
+    are drawn from a normal distribution around `mean`, which is easier to
+    reason about and **understates the tails**: real markets have more very
+    bad years than a bell curve allows.
+    """
+    import random
+    rng = random.Random(seed)
+    out = []
+    for _path in range(paths):
+        if history:
+            out.append([rng.choice(list(history)) for _ in range(years)])
+        else:
+            out.append([rng.gauss(mean, sd) for _ in range(years)])
+    return out
+
+
+def percentile(values: list, p: float) -> float:
+    """The p-th percentile (0-100) by linear interpolation. Written out rather
+    than pulled from numpy so the number can be checked by hand."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return float(ordered[0])
+    position = (len(ordered) - 1) * (p / 100.0)
+    low = int(position)
+    high = min(low + 1, len(ordered) - 1)
+    weight = position - low
+    return float(ordered[low] * (1 - weight) + ordered[high] * weight)
+
+
+def simulate(plan: Plan, paths: int = 500, mean: float | None = None,
+             sd: float = 0.10, history=None, seed: int | None = None) -> dict:
+    """Run `plan` over many return sequences and report the spread.
+
+    Returns the share of paths that never ran short, the age each failing path
+    ran short at, and percentile bands of the closing balance per year.
+
+    A success rate here is **the share of simulated paths under assumptions
+    you chose** — not a probability that a retirement works. Change the
+    spending by five thousand and it moves more than any market ever will.
+    """
+    mean = plan.real_return if mean is None else mean
+    sequences = sample_returns(plan.years, paths, mean, sd, history, seed)
+
+    balances_by_year = [[] for _ in range(plan.years)]
+    depletion_ages, survived = [], 0
+    calendar_years, first_rows = [], None
+    for sequence in sequences:
+        run = Plan(**{**vars(plan), "returns": sequence})
+        rows = project(run)
+        if first_rows is None:
+            first_rows = rows
+            calendar_years = [row["calendar_year"] for row in rows]
+        failed = depletion_year(rows)
+        if failed is None:
+            survived += 1
+            depletion_ages.append(None)
+        else:
+            depletion_ages.append(max(rows[failed]["ages"].values()))
+        for i, row in enumerate(rows):
+            balances_by_year[i].append(row["closing"])
+
+    failed_ages = [age for age in depletion_ages if age is not None]
+    return {
+        "paths": paths,
+        "success_rate": survived / paths if paths else 0.0,
+        "depletion_ages": depletion_ages,
+        "median_depletion_age": (percentile(failed_ages, 50) if failed_ages else None),
+        "worst_decile_age": (percentile(failed_ages, 10) if failed_ages else None),
+        "calendar_years": calendar_years,
+        "percentiles": {p: [percentile(year, p) for year in balances_by_year]
+                        for p in (10, 25, 50, 75, 90)},
+    }

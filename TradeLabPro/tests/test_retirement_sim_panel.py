@@ -160,3 +160,69 @@ def test_the_results_show_calendar_years(panel):
     panel.run()
     assert panel.results.item(0, 0).text() == str(date.today().year)
     assert panel.results.item(1, 0).text() == str(date.today().year + 1)
+
+
+# -- many paths --------------------------------------------------------------
+
+def test_many_paths_reports_a_share_not_a_certainty(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 2_000_000, "Pierre"]])
+    panel.spending.setValue(20_000)
+    panel.until_age.setValue(80)
+    panel.paths.setValue(60)
+    panel.run()                       # for the ages column
+    panel.run_paths()
+    text = panel.status.text()
+    assert "paths" in text
+    assert "not a probability" in text          # the caveat travels with the number
+
+
+def test_many_paths_shows_a_band_not_a_line(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 500_000, "Pierre"]])
+    panel.spending.setValue(30_000)
+    panel.until_age.setValue(85)
+    panel.paths.setValue(60)
+    panel.volatility.setValue(12)
+    panel.run()
+    panel.run_paths()
+    headers = [panel.results.horizontalHeaderItem(c).text()
+               for c in range(panel.results.columnCount())]
+    assert headers == ["Year", "Ages", "Worst 10%", "Median", "Best 10%", "Still solvent"]
+    # And the band really is a band.
+    worst = float(panel.results.item(5, 2).text().replace(",", ""))
+    best = float(panel.results.item(5, 4).text().replace(",", ""))
+    assert worst < best
+
+
+def test_switching_back_to_one_path_restores_the_detailed_columns(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 500_000, "Pierre"]])
+    panel.spending.setValue(20_000)
+    panel.paths.setValue(60)
+    panel.run()
+    panel.run_paths()
+    panel.run()
+    headers = [panel.results.horizontalHeaderItem(c).text()
+               for c in range(panel.results.columnCount())]
+    assert "Tax" in headers and "RRIF minimum" in headers
+
+
+def test_many_paths_needs_inputs_too(panel):
+    panel.run_paths()
+    assert "at least one person" in panel.status.text()
+
+
+def test_the_volatility_widens_the_band(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 500_000, "Pierre"]])
+    panel.spending.setValue(20_000)
+    panel.until_age.setValue(85)
+    panel.paths.setValue(80)
+    panel.run()
+
+    panel.volatility.setValue(2)
+    panel.run_paths()
+    narrow = (float(panel.results.item(10, 4).text().replace(",", ""))
+              - float(panel.results.item(10, 2).text().replace(",", "")))
+    panel.volatility.setValue(20)
+    panel.run_paths()
+    wide = (float(panel.results.item(10, 4).text().replace(",", ""))
+            - float(panel.results.item(10, 2).text().replace(",", "")))
+    assert wide > narrow

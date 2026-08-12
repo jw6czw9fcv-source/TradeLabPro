@@ -289,3 +289,97 @@ def test_the_year_and_the_ages_advance_together():
     rows = project(_plan(people=[Person("me", 64)], start_year=2026, years=4))
     for row in rows:
         assert row["ages"]["me"] == 64 + (row["calendar_year"] - 2026)
+
+
+# -- many paths instead of one -----------------------------------------------
+
+def test_a_return_sequence_is_used_year_by_year():
+    from tradelab.core.retirement_plan import Plan
+    plan = _plan(returns=[0.10, 0.0, -0.10], years=3)
+    rows = project(plan)
+    assert rows[0]["closing"] == pytest.approx(110_000)
+    assert rows[1]["closing"] == pytest.approx(110_000)
+    assert rows[2]["closing"] == pytest.approx(99_000)
+
+
+def test_a_short_sequence_holds_its_last_value():
+    rows = project(_plan(returns=[0.10], years=3))
+    assert rows[2]["closing"] == pytest.approx(133_100)
+
+
+def test_order_changes_the_outcome_when_you_are_withdrawing():
+    """Sequence risk in one assertion: the same two returns, the same average,
+    a different answer — because money taken out at the bottom never
+    recovers. This is the whole reason for running many paths."""
+    bad_first = project(_plan(returns=[-0.30, 0.30], spending=20_000, years=2))
+    good_first = project(_plan(returns=[0.30, -0.30], spending=20_000, years=2))
+    assert bad_first[-1]["closing"] < good_first[-1]["closing"]
+
+
+def test_order_does_not_matter_when_nothing_is_withdrawn():
+    """And the contrast that proves the point: with no withdrawals the order
+    is irrelevant, so sequence risk is a *drawdown* problem."""
+    a = project(_plan(returns=[-0.30, 0.30], spending=0, years=2))
+    b = project(_plan(returns=[0.30, -0.30], spending=0, years=2))
+    assert a[-1]["closing"] == pytest.approx(b[-1]["closing"])
+
+
+def test_percentile_is_checkable_by_hand():
+    from tradelab.core.retirement_plan import percentile
+    assert percentile([1, 2, 3, 4, 5], 50) == pytest.approx(3)
+    assert percentile([1, 2, 3, 4, 5], 0) == pytest.approx(1)
+    assert percentile([1, 2, 3, 4, 5], 100) == pytest.approx(5)
+    assert percentile([10, 20], 50) == pytest.approx(15)     # interpolated
+    assert percentile([], 50) == 0
+
+
+def test_sampling_is_repeatable_with_a_seed():
+    from tradelab.core.retirement_plan import sample_returns
+    a = sample_returns(5, 3, seed=42)
+    b = sample_returns(5, 3, seed=42)
+    assert a == b
+    assert len(a) == 3 and len(a[0]) == 5
+
+
+def test_bootstrapping_only_ever_draws_years_that_happened():
+    """Resampling history keeps the bad years a bell curve smooths away."""
+    from tradelab.core.retirement_plan import sample_returns
+    history = [-0.37, 0.26, 0.15, -0.09]
+    paths = sample_returns(20, 5, history=history, seed=1)
+    assert all(r in history for path in paths for r in path)
+
+
+def test_a_comfortable_plan_survives_most_paths():
+    from tradelab.core.retirement_plan import simulate
+    out = simulate(_plan(accounts=[Account("CELI", TFSA, 2_000_000, "me")],
+                         spending=20_000, years=20),
+                   paths=60, mean=0.03, sd=0.10, seed=7)
+    assert out["success_rate"] > 0.95
+    assert out["median_depletion_age"] is None
+
+
+def test_a_stretched_plan_fails_in_most_paths_and_says_when():
+    from tradelab.core.retirement_plan import simulate
+    out = simulate(_plan(accounts=[Account("CELI", TFSA, 100_000, "me")],
+                         spending=40_000, years=20),
+                   paths=60, mean=0.03, sd=0.10, seed=7)
+    assert out["success_rate"] < 0.2
+    assert out["median_depletion_age"] is not None
+
+
+def test_the_bands_are_ordered_and_cover_every_year():
+    from tradelab.core.retirement_plan import simulate
+    out = simulate(_plan(accounts=[Account("CELI", TFSA, 500_000, "me")],
+                         spending=20_000, years=15),
+                   paths=40, mean=0.03, sd=0.12, seed=3)
+    for year in range(15):
+        assert (out["percentiles"][10][year] <= out["percentiles"][50][year]
+                <= out["percentiles"][90][year])
+    assert len(out["calendar_years"]) == 15
+
+
+def test_the_simulation_does_not_disturb_the_plan_it_was_given():
+    from tradelab.core.retirement_plan import simulate
+    plan = _plan(years=5)
+    simulate(plan, paths=5, seed=1)
+    assert plan.returns is None
