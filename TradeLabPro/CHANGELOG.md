@@ -6,6 +6,12 @@
 - **A Risk column that means something specific.** Every fund and ETF sold in Canada must rate its risk with one measure — the annualized standard deviation of **monthly** returns over **ten years**, banded into five levels — and print it in its Fund Facts. The Screener now computes that same figure from the same prices, so the rating in the app can be checked against the fund's own document rather than being one more opinion. Hovering the cell says what it was computed from.
 - **A distribution yield column** (`Div %/yr`): trailing twelve months of distributions over the current price, using the same `ttm_per_share` the Dividends tab uses, so the two can never disagree about the same fund. Weighted yield joins the allocation summary.
 
+- **A totals row under the table.** Each allocation column adds up beneath itself — green at 100%, amber while it doesn't. It sits *under* the table rather than as a last row inside it, so it can't be sorted among the funds or hidden by a filter.
+- **Full screen for the table.** The ⛶ button gives the whole window to the Screener by hiding the chart, and puts it back — the same gesture the chart already had, for the tab that most needs the width at thirty-one columns.
+
+### Fixed
+- **The pinned Ticker column drifted half a row out of step when scrolling.** The two views were counting different things: a table scrolls per item until rows differ in height and then switches to per-pixel, so forwarding one scrollbar's value to the other stopped meaning the same thing. Both are pinned to per-pixel now, and the pinned column inherits the table's row height rather than its own default.
+
 ### Changed
 - **The hand-typed 1–5 Risk rating is off the table**, replaced by the computed one. It disagreed with the app's own measurements in places — a fund rated 2 sat at 13.9% volatility, another rated 3 at 19.6%. The old ratings are still in the database, just not on screen.
 - **Sharpe is gone.** It is a performance measure, not a risk factor: it folds return in, it punishes a sharp rise exactly as hard as a sharp fall, and ours was computed over each fund's own history, so a two-year fund's Sharpe and an eleven-year fund's were never comparable.
@@ -18,7 +24,7 @@
 - **This classifies volatility, and only volatility.** Not credit risk, liquidity, concentration, currency, or the chance of permanent loss. A quiet bond fund rates "Low" right up until an issuer defaults.
 
 ### Verified
-- Full pytest suite (1086) passes, including the five bands at every boundary, the square-root-of-twelve annualization, the window count returned with the figure, the refusal to rate under three years, the yield agreeing with the Dividends tab's own calculation, and the schema-v5 rename preserving the weights already typed.
+- Full pytest suite (1096) passes, including the five bands at every boundary, the square-root-of-twelve annualization, the window count returned with the figure, the refusal to rate under three years, the yield agreeing with the Dividends tab's own calculation, and the schema-v5 rename preserving the weights already typed.
 - Run against the real book: **29 of 31 funds rated** (GGOV and DRAM are too young). The two measurements differ exactly as expected — VFV is **12.9%** the regulator's way and **16.5%** measured daily, which are two different bands, so reading the old column against these thresholds would have mis-rated most of the list.
 
 ## 2.41.0 - Your ETF workbook, in the app

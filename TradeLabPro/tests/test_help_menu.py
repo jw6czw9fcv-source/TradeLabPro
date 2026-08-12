@@ -285,3 +285,28 @@ def test_packaged_build_ships_what_the_history_viewer_reads():
     spec = (ROOT / "TradeLabPro.spec").read_text(encoding="utf-8")
     assert '"docs/VERSIONS.md"' in spec
     assert '"CHANGELOG.md"' in spec
+
+
+def test_table_fullscreen_hides_the_chart_and_restores_it(qapp):
+    """The mirror of the chart's own full screen: the ETF Screener is 31
+    columns wide and shares its width with a chart."""
+    win = _main_window(qapp)
+
+    win.toggle_panel_fullscreen()
+    assert win._panel_full is True
+    assert not win.chart.isVisible()
+    assert win.tabs.isVisible()                       # the tabs keep the window
+    assert win.etf_screener_panel.fullscreen_btn.text().startswith("⤢")
+
+    win.toggle_panel_fullscreen()
+    assert win._panel_full is False
+    assert win.chart.isVisible()
+    # Both panes are back; exact pixel sizes are Qt's to decide once the
+    # window changes state, so don't assert them on a never-shown window.
+    assert all(size > 0 for size in win.splitter.sizes())
+    assert win.etf_screener_panel.fullscreen_btn.text().startswith("⛶")
+
+
+def test_the_screener_button_is_wired_to_the_window(qapp):
+    win = _main_window(qapp)
+    assert win.etf_screener_panel.on_toggle_fullscreen == win.toggle_panel_fullscreen

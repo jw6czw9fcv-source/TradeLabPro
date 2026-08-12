@@ -433,6 +433,10 @@ Yahoo doesn't recognise is counted and skipped rather than stopping the run.
 **The refresh never touches what you typed**: category, weights, risk, notes and
 your allocations are yours.
 
+**Each allocation column totals under the table** — green when it reaches 100%,
+amber while it doesn't. The **⛶ Full screen** button hands the whole window to
+the table by hiding the chart; click it again to put the chart back.
+
 **Three allocations, side by side.** **Low risk**, **Mid risk** and **High
 risk** are weight columns for you to fill in, totalled under the table: what
 each one holds by region, its weighted MER, its weighted distribution yield,

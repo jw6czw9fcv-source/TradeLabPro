@@ -1466,6 +1466,15 @@ class _FrozenFirstColumn(QTableView):
         for column in range(1, table.columnCount()):
             self.setColumnHidden(column, True)
 
+        # Both views must scroll in the *same unit*. A QTableView scrolls per
+        # item by default but switches to per-pixel once rows have differing
+        # heights, so one view was counting rows while the other counted
+        # pixels: forwarding the scrollbar value between them then parked the
+        # pinned column half a row out of step. Pinning both to per-pixel
+        # makes the forwarded value mean one thing.
+        for view in (table, self):
+            view.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+
         table.viewport().stackUnder(self)
         # One wheel/scrollbar has to move both views, or the pinned column
         # drifts out of step with the rows beside it.
@@ -1506,6 +1515,11 @@ class _FrozenFirstColumn(QTableView):
         table = self.table
         width = table.columnWidth(0)
         self.setColumnWidth(0, width)
+        # Default first: a row the host never sized explicitly still has to
+        # line up, and copying only the explicit heights leaves the rest to
+        # this view's own default.
+        self.verticalHeader().setDefaultSectionSize(
+            table.verticalHeader().defaultSectionSize())
         for row in range(table.rowCount()):
             self.setRowHeight(row, table.rowHeight(row))
         frame = table.frameWidth()
@@ -1685,6 +1699,10 @@ class EtfScreenerPanel(QWidget):
     FILTER_COLUMNS = ("ticker", "name", "category", "region", "notes",
                       "suggested_account")
 
+    # Same glyphs the chart workspace uses for the same gesture.
+    FULLSCREEN_ENTER = "⛶ Full screen"
+    FULLSCREEN_EXIT = "⤢ Retract"
+
     # Which weight column each summary column reads.
     COMPOSITIONS = [("Low risk", "low_risk"), ("Mid risk", "mid_risk"),
                     ("High risk", "high_risk")]
@@ -1713,6 +1731,8 @@ class EtfScreenerPanel(QWidget):
         self.cfg = cfg
         self.on_watchlist_changed = None
         self.on_portfolio_changed = None
+        # Wired by MainWindow; the panel doesn't know about the window.
+        self.on_toggle_fullscreen = None
         self.worker = None
         self._chart_worker = None
         self._analysis_worker = None
@@ -1744,6 +1764,10 @@ class EtfScreenerPanel(QWidget):
         self.refresh_btn.clicked.connect(self.refresh_metrics)
         self.stop_btn = QPushButton("Stop"); self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_refresh)
+        self.fullscreen_btn = QPushButton(self.FULLSCREEN_ENTER)
+        self.fullscreen_btn.setToolTip("Give the whole window to this table, hiding the "
+                                       "chart. Click again to put it back.")
+        self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
         self.filter_edit = QLineEdit(); self.filter_edit.setPlaceholderText("Filter…")
         self.filter_edit.setFixedWidth(160)
         self.filter_edit.setClearButtonEnabled(True)
@@ -1759,7 +1783,7 @@ class EtfScreenerPanel(QWidget):
         self.filter_choice.currentIndexChanged.connect(lambda _i: self.apply_filter())
         for widget in (self.ticker_edit, self.yahoo_edit, add_btn, remove_btn,
                        self.filter_choice, self.filter_edit,
-                       self.refresh_btn, self.stop_btn):
+                       self.refresh_btn, self.stop_btn, self.fullscreen_btn):
             controls.addWidget(widget)
         layout.addWidget(bar)
 
@@ -1814,8 +1838,29 @@ class EtfScreenerPanel(QWidget):
         layout.addWidget(self.table, 1)
 
         # Thirty columns scroll a long way right; the ticker column is pinned
-        # so you can still tell which fund a Sharpe ratio belongs to.
+        # so you can still tell which fund a figure belongs to.
         self.frozen = _FrozenFirstColumn(self.table)
+
+        # A footer row under the table, not a last row inside it: a total row
+        # in the table itself would sort with the funds and disappear under a
+        # filter. This one tracks the table's column widths and horizontal
+        # scroll so each total stays under its own column.
+        self.totals = QTableWidget(1, len(self.COLUMNS))
+        self.totals.horizontalHeader().setVisible(False)
+        self.totals.verticalHeader().setVisible(False)
+        self.totals.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.totals.setSelectionMode(QAbstractItemView.NoSelection)
+        self.totals.setFocusPolicy(Qt.NoFocus)
+        self.totals.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.totals.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.totals.setFixedHeight(self.totals.rowHeight(0) + 4)
+        self.totals.setToolTip("Each allocation column adds up here. 100% means fully "
+                               "allocated.")
+        self.table.horizontalHeader().sectionResized.connect(
+            lambda section, _old, width: self.totals.setColumnWidth(section, width))
+        self.table.horizontalScrollBar().valueChanged.connect(
+            self.totals.horizontalScrollBar().setValue)
+        layout.addWidget(self.totals)
 
         self.status = QLabel("Double-click a ticker to chart it.")
         layout.addWidget(self.status)
@@ -1871,11 +1916,31 @@ class EtfScreenerPanel(QWidget):
         if frozen is not None:
             frozen.sync()
         self._rebuild_filter_choices(funds)
+        self._render_totals(funds)
         self._loading = False
         self.status.setText(
             f"{len(funds)} funds. Click a cell to edit it, double-click a ticker to chart it.")
         self._refresh_summary(funds)
         self.apply_filter()   # a reload must not un-hide rows the filter excluded
+
+    def _render_totals(self, funds):
+        """Sum each allocation column under itself. Green at 100%, amber
+        otherwise — a target that doesn't add up isn't wrong yet, it's just
+        unfinished, so it warns rather than alarms."""
+        self.totals.clearContents()
+        weights = {key for _label, key in self.COMPOSITIONS}
+        for column, (key, _label, _editable) in enumerate(self.COLUMNS):
+            self.totals.setColumnWidth(column, self.table.columnWidth(column))
+            if column == 0:
+                self.totals.setItem(0, 0, table_item("Total"))
+                continue
+            if key not in weights:
+                continue
+            total = sum(float(f.get(key) or 0) for f in funds)
+            item = table_item(f"{total * 100:.1f}%")
+            item.setForeground(QColor(theme.UP if abs(total - 1.0) < 0.005
+                                      else theme.NEUTRAL))
+            self.totals.setItem(0, column, item)
 
     def _make_item(self, key, value, editable, fund=None):
         item = table_item(
@@ -2016,6 +2081,16 @@ class EtfScreenerPanel(QWidget):
             item.sort_value = value if key in self.NUMERIC_COLUMNS else None
         self._loading = False
         self._refresh_summary()
+        self._render_totals(self.db.etf_list())
+
+    def toggle_fullscreen(self):
+        """Hand the request to the window. Inert when the panel is built on
+        its own (tests, or any future embedding)."""
+        if self.on_toggle_fullscreen:
+            self.on_toggle_fullscreen()
+
+    def set_fullscreen_label(self, full: bool):
+        self.fullscreen_btn.setText(self.FULLSCREEN_EXIT if full else self.FULLSCREEN_ENTER)
 
     # -- filtering and selection -------------------------------------------
     # Which columns the dropdown offers a value list for, and what to call them.
@@ -9098,6 +9173,7 @@ class MainWindow(QMainWindow):
         # it refreshes exist.
         self.etf_screener_panel.on_watchlist_changed = self.watch_panel.refresh
         self.etf_screener_panel.on_portfolio_changed = self.portfolio_panel.refresh
+        self.etf_screener_panel.on_toggle_fullscreen = self.toggle_panel_fullscreen
         self.alerts_panel = AlertsPanel(symbol_provider=self.db.watch_symbols)
         self.heatmap_panel = HeatmapPanel(self.db, self.chart, self.cfg)
         self._heatmap_page = _scroll_tab(self.heatmap_panel)
@@ -9347,6 +9423,35 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self.showMaximized()
+
+    def toggle_panel_fullscreen(self):
+        """The mirror of `toggle_chart_fullscreen`: give the whole window to
+        the tab panel by hiding the chart workspace.
+
+        The ETF Screener is thirty-one columns wide and shares its width with
+        a chart, which is exactly the tab that needs the whole monitor.
+        Reusing the window-level mechanism rather than reparenting the table
+        keeps the pinned column and the totals row intact — both are laid out
+        against the table's own geometry and would have to be rebuilt if the
+        table moved to another window."""
+        if not getattr(self, "_panel_full", False):
+            self._panel_full = True
+            self._saved_split_sizes = self.splitter.sizes()
+            self._was_maximized = self.isMaximized()
+            self.chart.hide()
+            self.showFullScreen()
+        else:
+            self._panel_full = False
+            self.chart.show()
+            try:
+                self.splitter.setSizes(self._saved_split_sizes)
+            except Exception:
+                pass
+            self.showMaximized()
+        try:
+            self.etf_screener_panel.set_fullscreen_label(self._panel_full)
+        except Exception:
+            pass
 
     def keyPressEvent(self, event):
         # Esc is reserved for the chart tools (return to the plain cursor);

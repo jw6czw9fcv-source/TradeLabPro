@@ -858,3 +858,96 @@ def test_worker_carries_the_yahoo_symbol_not_the_ticker(panel):
     rows = [(f["ticker"], f["yahoo"] or f["ticker"]) for f in panel.db.etf_list()]
     worker = EtfMetricsWorker(rows)
     assert worker.rows == [("VFV", "VFV.TO")]
+
+
+# -- the totals row under the table ------------------------------------------
+
+def _total_cell(panel, key):
+    return panel.totals.item(0, _col(panel, key))
+
+
+def test_each_allocation_column_is_totalled_beneath_it(panel):
+    panel.db.etf_upsert("VFV", mid_risk=0.6, low_risk=0.25)
+    panel.db.etf_upsert("VAB", mid_risk=0.4, low_risk=0.75)
+    panel.reload()
+    assert _total_cell(panel, "mid_risk").text() == "100.0%"
+    assert _total_cell(panel, "low_risk").text() == "100.0%"
+    assert panel.totals.item(0, 0).text() == "Total"
+
+
+def test_a_column_that_is_not_an_allocation_has_no_total(panel):
+    panel.db.etf_upsert("VFV", pct_us=1.0, mer=0.0009, mid_risk=1.0)
+    panel.reload()
+    for key in ("pct_us", "mer", "volatility", "notes"):
+        assert _total_cell(panel, key) is None, key
+
+
+def test_the_total_updates_when_a_weight_is_edited(panel):
+    panel.db.etf_upsert("VFV")
+    panel.reload()
+    _cell(panel, 0, "high_risk").setText("40")
+    assert _total_cell(panel, "high_risk").text() == "40.0%"
+
+
+def test_an_incomplete_total_is_flagged_by_colour(panel):
+    from tradelab.ui import theme
+    panel.db.etf_upsert("VFV", mid_risk=0.6, low_risk=1.0)
+    panel.reload()
+    assert _total_cell(panel, "mid_risk").foreground().color().name() == theme.NEUTRAL
+    assert _total_cell(panel, "low_risk").foreground().color().name() == theme.UP
+
+
+def test_the_totals_row_tracks_the_table_columns(panel):
+    panel.db.etf_upsert("VFV", mid_risk=1.0)
+    panel.reload()
+    column = _col(panel, "mid_risk")
+    assert panel.totals.columnWidth(column) == panel.table.columnWidth(column)
+    panel.table.setColumnWidth(column, 140)
+    assert panel.totals.columnWidth(column) == 140
+
+
+def test_the_totals_row_is_not_a_fund(panel):
+    """It lives under the table, not as a last row inside it — a total row in
+    the table would sort with the funds and vanish under a filter."""
+    panel.db.etf_upsert("VFV", mid_risk=1.0)
+    panel.reload()
+    assert panel.table.rowCount() == 1
+    panel.filter_edit.setText("zzz")            # matches nothing
+    assert _total_cell(panel, "mid_risk").text() == "100.0%"
+
+
+# -- the pinned column stays in step -----------------------------------------
+
+def test_both_views_scroll_in_the_same_unit(panel):
+    """Forwarding a scrollbar value between two views only works if they
+    count the same thing — mixing per-item and per-pixel parked the pinned
+    column half a row out of step."""
+    from PySide6.QtWidgets import QAbstractItemView
+    assert panel.table.verticalScrollMode() == QAbstractItemView.ScrollPerPixel
+    assert panel.frozen.verticalScrollMode() == QAbstractItemView.ScrollPerPixel
+
+
+def test_the_pinned_column_uses_the_tables_row_height(panel):
+    panel.table.verticalHeader().setDefaultSectionSize(37)
+    panel.db.etf_upsert("VFV")
+    panel.reload()
+    assert panel.frozen.verticalHeader().defaultSectionSize() == 37
+    assert panel.frozen.rowHeight(0) == panel.table.rowHeight(0)
+
+
+# -- full screen for the table ------------------------------------------------
+
+def test_the_button_asks_the_window_and_the_label_flips(panel):
+    calls = []
+    panel.on_toggle_fullscreen = lambda: calls.append(1)
+    assert panel.fullscreen_btn.text() == panel.FULLSCREEN_ENTER
+    panel.fullscreen_btn.click()
+    assert calls == [1]
+    panel.set_fullscreen_label(True)
+    assert panel.fullscreen_btn.text() == panel.FULLSCREEN_EXIT
+    panel.set_fullscreen_label(False)
+    assert panel.fullscreen_btn.text() == panel.FULLSCREEN_ENTER
+
+
+def test_the_button_is_inert_without_a_window(panel):
+    panel.fullscreen_btn.click()        # on_toggle_fullscreen is None here
