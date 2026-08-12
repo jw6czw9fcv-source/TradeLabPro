@@ -138,10 +138,37 @@ ALTER TABLE etf_screener ADD COLUMN csa_months INTEGER;
 ALTER TABLE etf_screener ADD COLUMN dividend_yield REAL;
 """
 
-MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5]
+# v6: the retirement simulator's inputs. Accounts and incomes are rows rather
+# than a blob because they are edited one line at a time, and because a
+# projection nobody can audit line by line is not worth running.
+SCHEMA_V6 = """
+CREATE TABLE IF NOT EXISTS retirement_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'registered',
+    balance REAL NOT NULL DEFAULT 0,
+    owner TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS retirement_people (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    age INTEGER NOT NULL DEFAULT 65
+);
+CREATE TABLE IF NOT EXISTS retirement_incomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    owner TEXT NOT NULL DEFAULT '',
+    annual REAL NOT NULL DEFAULT 0,
+    starts_at_age INTEGER NOT NULL DEFAULT 65,
+    ends_at_age INTEGER
+);
+"""
+
+MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
+                         SCHEMA_V6]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
-SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5
+SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
 
 
 class Database:
@@ -331,6 +358,45 @@ class Database:
     def etf_delete(self, ticker: str):
         self.conn.execute("DELETE FROM etf_screener WHERE ticker=?", (ticker.upper(),))
         self.conn.commit()
+
+    # -- Retirement simulator inputs -----------------------------------------
+    RETIREMENT_TABLES = {"people": ("retirement_people", ("name", "age")),
+                         "accounts": ("retirement_accounts",
+                                      ("name", "kind", "balance", "owner")),
+                         "incomes": ("retirement_incomes",
+                                     ("name", "owner", "annual", "starts_at_age",
+                                      "ends_at_age"))}
+
+    def retirement_rows(self, what: str) -> list[dict]:
+        table, _cols = self.RETIREMENT_TABLES[what]
+        return [dict(r) for r in
+                self.conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()]
+
+    # What a missing key means, rather than letting None hit a NOT NULL column
+    # and blow up on a row someone simply typed sparsely.
+    RETIREMENT_DEFAULTS = {"kind": "registered", "owner": "", "balance": 0.0,
+                           "annual": 0.0, "starts_at_age": 65, "ends_at_age": None,
+                           "age": 65}
+
+    def set_retirement_rows(self, what: str, rows: list[dict]) -> int:
+        """Replace the whole set. These are edited as a table, and a partial
+        update would leave a deleted line behind."""
+        table, cols = self.RETIREMENT_TABLES[what]
+        self.conn.execute(f"DELETE FROM {table}")
+        written = 0
+        for row in rows:
+            if not str(row.get("name", "")).strip():
+                continue
+            placeholders = ",".join("?" for _ in cols)
+            self.conn.execute(f"INSERT INTO {table}({','.join(cols)}) "
+                              f"VALUES ({placeholders})",
+                              [row.get(c, self.RETIREMENT_DEFAULTS.get(c))
+                               if row.get(c) is not None
+                               else self.RETIREMENT_DEFAULTS.get(c)
+                               for c in cols])
+            written += 1
+        self.conn.commit()
+        return written
 
     def etf_update_metrics(self, ticker: str, metrics: dict):
         """Write back the computed columns only. A None is dropped rather than

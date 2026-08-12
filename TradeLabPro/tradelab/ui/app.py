@@ -9567,6 +9567,266 @@ class HomePanel(QWidget):
             setattr(self, attr, None)
 
 
+class RetirementSimPanel(QWidget):
+    """How long the money lasts, given what you hold and what you assume.
+
+    The Retirement tab beside this one *tracks* a plan — what it was worth,
+    what it returned. This one projects: incomes, the forced RRIF minimum,
+    real Québec + federal tax, and what has to come out of capital to cover
+    the spending, year by year to the age you name.
+
+    It computes and does not advise. Spending, return, the age each pension
+    starts, how much pension income is split, the order accounts are drawn
+    from — all of it is typed here by the person whose plan it is. Nothing in
+    this panel picks a strategy or says whether a plan is good.
+    """
+
+    SETTING = "RetirementSim"
+    SPECS = {
+        "people": (["Name", "Age"], ["name", "age"]),
+        "accounts": (["Account", "Kind", "Balance", "Owner"],
+                     ["name", "kind", "balance", "owner"]),
+        "incomes": (["Income", "Owner", "Per year", "Starts", "Ends"],
+                    ["name", "owner", "annual", "starts_at_age", "ends_at_age"]),
+    }
+
+    def __init__(self, db: Database):
+        super().__init__()
+        self.db = db
+        self.rows = []
+        layout = QVBoxLayout(self)
+
+        bar = QWidget()
+        policy = bar.sizePolicy(); policy.setHeightForWidth(True); bar.setSizePolicy(policy)
+        controls = FlowLayout(bar, hspacing=6, vspacing=4)
+        self.spending = QDoubleSpinBox()
+        self.spending.setRange(0, 1_000_000); self.spending.setDecimals(0)
+        self.spending.setPrefix("$"); self.spending.setSingleStep(1_000)
+        self.spending.setToolTip("Household spending per year, in today's dollars — the "
+                                 "input that moves the answer more than any other.")
+        self.real_return = QDoubleSpinBox()
+        self.real_return.setRange(-10, 15); self.real_return.setDecimals(1)
+        self.real_return.setSuffix(" % real")
+        self.real_return.setToolTip("Return *after* inflation. 3 means three points above "
+                                    "inflation, not three percent.")
+        self.until_age = QSpinBox(); self.until_age.setRange(66, 110)
+        self.until_age.setPrefix("to age ")
+        self.splitting = QDoubleSpinBox()
+        self.splitting.setRange(0, 50); self.splitting.setDecimals(0)
+        self.splitting.setSuffix(" % split")
+        self.splitting.setToolTip("How much eligible pension income to move to the lower "
+                                  "earner. Only pension income can move — a wage cannot, "
+                                  "and RRQ has its own separate mechanism.")
+        run = QPushButton("Run projection"); run.clicked.connect(self.run)
+        save = QPushButton("Save inputs"); save.clicked.connect(self.save)
+        for widget in (QLabel("Spending"), self.spending, QLabel("  Return"),
+                       self.real_return, QLabel("  Project"), self.until_age,
+                       QLabel("  Pension"), self.splitting, run, save):
+            controls.addWidget(widget)
+        layout.addWidget(bar)
+
+        self.tables = {}
+        inputs = QHBoxLayout()
+        for key, (headers, _fields) in self.SPECS.items():
+            box = QGroupBox(key.capitalize())
+            inner = QVBoxLayout(box)
+            table = QTableWidget(0, len(headers))
+            table.setHorizontalHeaderLabels(headers)
+            table.setMinimumHeight(150)
+            inner.addWidget(table)
+            buttons = QHBoxLayout()
+            add = QPushButton("Add")
+            add.clicked.connect(lambda _c=False, k=key: self._add_row(k))
+            remove = QPushButton("Remove")
+            remove.clicked.connect(lambda _c=False, k=key: self._remove_row(k))
+            buttons.addWidget(add); buttons.addWidget(remove)
+            inner.addLayout(buttons)
+            self.tables[key] = table
+            inputs.addWidget(box)
+        layout.addLayout(inputs)
+
+        self.status = StatusLabel("Fill in the tables, then Run projection.")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+
+        self.results = QTableWidget(0, 8)
+        self.results.setHorizontalHeaderLabels(
+            ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
+             "Unfunded", "Closing"])
+        self.results.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.results.setAlternatingRowColors(True)
+        self.results.setMinimumHeight(260)
+        layout.addWidget(self.results, 1)
+
+        note = QLabel(
+            "Everything is in today's dollars: the tax brackets, RRQ and PSV are all "
+            "indexed, so real terms hold — if indexation ever stops, this is optimistic. "
+            "And a single return path says nothing about the order returns arrive in: a "
+            "bad first few years of drawing down hurts far more than the same average "
+            "later. " + theme.NOT_ADVICE)
+        note.setWordWrap(True)
+        note.setStyleSheet("color: " + theme.MUTED + "; font-size: 11px;")
+        layout.addWidget(note)
+
+        self.load()
+
+    # -- the input tables ---------------------------------------------------
+    def load(self):
+        for key, (_headers, fields) in self.SPECS.items():
+            rows = self.db.retirement_rows(key)
+            table = self.tables[key]
+            table.setRowCount(len(rows))
+            for r, row in enumerate(rows):
+                for c, field in enumerate(fields):
+                    value = row.get(field)
+                    table.setItem(r, c, table_item("" if value is None else value))
+            table.resizeColumnsToContents()
+        settings = app_settings()
+        settings.beginGroup(self.SETTING)
+        self.spending.setValue(float(settings.value("spending", 50_000)))
+        self.real_return.setValue(float(settings.value("real_return", 3.0)))
+        self.until_age.setValue(int(settings.value("until_age", 95)))
+        self.splitting.setValue(float(settings.value("splitting", 0)))
+        settings.endGroup()
+
+    def save(self):
+        written = 0
+        for key in self.SPECS:
+            written += self.db.set_retirement_rows(key, self._read(key))
+        settings = app_settings()
+        settings.beginGroup(self.SETTING)
+        settings.setValue("spending", self.spending.value())
+        settings.setValue("real_return", self.real_return.value())
+        settings.setValue("until_age", self.until_age.value())
+        settings.setValue("splitting", self.splitting.value())
+        settings.endGroup()
+        settings.sync()
+        self.status.setText("Saved " + str(written) + " rows.")
+
+    def _read(self, key) -> list:
+        _headers, fields = self.SPECS[key]
+        table = self.tables[key]
+        rows = []
+        for r in range(table.rowCount()):
+            row = {}
+            for c, field in enumerate(fields):
+                item = table.item(r, c)
+                text = item.text().strip() if item else ""
+                if field in ("age", "starts_at_age", "ends_at_age"):
+                    row[field] = int(float(text)) if text else None
+                elif field in ("balance", "annual"):
+                    cleaned = text.replace(",", "").replace("$", "").replace(" ", "")
+                    row[field] = float(cleaned) if cleaned else 0.0
+                else:
+                    row[field] = text
+            rows.append(row)
+        return rows
+
+    def _add_row(self, key):
+        table = self.tables[key]
+        table.insertRow(table.rowCount())
+
+    def _remove_row(self, key):
+        table = self.tables[key]
+        rows = sorted({i.row() for i in table.selectedIndexes()}, reverse=True)
+        if not rows and table.rowCount():
+            rows = [table.rowCount() - 1]
+        for row in rows:
+            table.removeRow(row)
+
+    # -- the projection -----------------------------------------------------
+    def build_plan(self):
+        from tradelab.core.retirement_plan import Account, Income, Person, Plan
+        people = [Person(r["name"], int(r["age"] or 65))
+                  for r in self._read("people") if r["name"]]
+        accounts = [Account(r["name"], (r["kind"] or "registered").lower(),
+                            float(r["balance"] or 0), r["owner"])
+                    for r in self._read("accounts") if r["name"]]
+        incomes = [Income(r["name"], r["owner"], float(r["annual"] or 0),
+                          int(r["starts_at_age"] or 0), r["ends_at_age"])
+                   for r in self._read("incomes") if r["name"]]
+        if not people or not accounts:
+            return None
+        oldest = max(p.age for p in people)
+        return Plan(people=people, accounts=accounts, incomes=incomes,
+                    spending=self.spending.value(),
+                    real_return=self.real_return.value() / 100.0,
+                    years=max(1, self.until_age.value() - oldest + 1),
+                    tax_fn=self.tax_fn())
+
+    def tax_fn(self):
+        """Real Québec + federal tax, each person taxed as a person.
+
+        Only the eligible pension part moves between spouses, and only by the
+        fraction you set. A wage cannot be split and RRQ has its own separate
+        mechanism; treating the household as one pot and halving it — which
+        an earlier draft did — made the tax bill far too small.
+        """
+        from tradelab.core.tax_quebec import household_tax, split_pension
+        fraction = self.splitting.value() / 100.0
+
+        def tax_fn(by_owner, ages, pension_by_owner):
+            incomes = dict(by_owner)
+            pensions = dict(pension_by_owner)
+            names = sorted(incomes, key=lambda n: -incomes.get(n, 0.0))
+            if fraction and len(names) >= 2:
+                higher, lower = names[0], names[1]
+                movable = min(pensions.get(higher, 0.0), incomes.get(higher, 0.0))
+                kept, _given = split_pension(movable, 0.0, fraction)
+                moved = movable - kept
+                incomes[higher] -= moved
+                incomes[lower] = incomes.get(lower, 0.0) + moved
+                pensions[higher] -= moved
+                pensions[lower] = pensions.get(lower, 0.0) + moved
+            return household_tax(incomes, ages, pensions)
+        return tax_fn
+
+    def run(self):
+        from tradelab.core.retirement_plan import project
+        plan = self.build_plan()
+        if plan is None:
+            self.status.setText("Add at least one person and one account first.")
+            self.results.setRowCount(0)
+            return
+        self.rows = project(plan)
+        self.render_results()
+
+    def render_results(self):
+        from tradelab.core.retirement_plan import depletion_year
+        rows = self.rows
+        self.results.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            ages = ", ".join(str(a) for a in row["ages"].values())
+            cells = [str(row["year"]), ages,
+                     "{:,.0f}".format(row["income"]),
+                     "{:,.0f}".format(row["forced_withdrawal"]),
+                     "{:,.0f}".format(row["tax"]),
+                     "{:,.0f}".format(row["drawn_from_capital"]),
+                     "{:,.0f}".format(row["unfunded"]),
+                     "{:,.0f}".format(row["closing"])]
+            for c, text in enumerate(cells):
+                item = table_item(text)
+                if row["unfunded"] > 0.01:
+                    item.setForeground(QColor(theme.DOWN))
+                self.results.setItem(r, c, item)
+        self.results.resizeColumnsToContents()
+
+        failed = depletion_year(rows)
+        last = rows[-1]
+        oldest = max(last["ages"].values())
+        if failed is None:
+            self.status.setText(
+                "The money lasts to age {} — {:,.0f}$ left at the end. That is this one "
+                "return path, not a promise: the same average arriving in a worse order "
+                "can end differently.".format(oldest, last["closing"]))
+        else:
+            age = max(rows[failed]["ages"].values())
+            self.status.setText(
+                "Runs short at age {}, first year {:,.0f}$ under the spending. The years "
+                "after it are still shown rather than cut off.".format(
+                    age, rows[failed]["unfunded"]))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -9597,6 +9857,7 @@ class MainWindow(QMainWindow):
         # actually works through them (see below).
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
         self.etf_screener_panel = EtfScreenerPanel(self.db, self.chart, self.cfg)
+        self.retirement_sim_panel = RetirementSimPanel(self.db)
         self.portfolio_panel = PortfolioPanel(self.db, self.chart, self.cfg)
         self.analytics_panel = PortfolioAnalyticsPanel(self.db, self.chart, self.cfg)
         self.dividends_panel = DividendsPanel(self.db, self.chart, self.cfg)
@@ -9654,6 +9915,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(self.analytics_panel), "Analytics")   # book-level risk
         tabs.addTab(_scroll_tab(self.dividends_panel), "Dividends")   # income the book pays
         tabs.addTab(_scroll_tab(self.retirement_panel), "Retirement")  # the plan you can't import
+        tabs.addTab(_scroll_tab(self.retirement_sim_panel), "Retirement Sim")  # how long it lasts
         tabs.addTab(_scroll_tab(self.journal_panel), "Journal")       # review results
         tabs.addTab(_scroll_tab(self.coach_panel), "Coach")           # grade my process
         tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")     # research: test ideas

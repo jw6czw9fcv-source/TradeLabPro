@@ -189,7 +189,7 @@ def test_tax_is_injected_not_assumed():
     without one and so the tax rules can change without touching this."""
     plan = _plan(people=[Person("me", 71)],
                  accounts=[Account("REER", REGISTERED, 100_000, "me")],
-                 spending=0.0, years=1, tax_fn=lambda taxable, ages: taxable * 0.30)
+                 spending=0.0, years=1, tax_fn=lambda by_owner, ages, pension: sum(by_owner.values()) * 0.30)
     rows = project(plan)
     assert rows[0]["tax"] == pytest.approx(5_280 * 0.30)
 
@@ -199,6 +199,71 @@ def test_tax_makes_the_plan_draw_more_capital():
                             incomes=[Income("RRQ", "me", 10_000, starts_at_age=65)]))
     with_tax = project(_plan(spending=10_000,
                              incomes=[Income("RRQ", "me", 10_000, starts_at_age=65)],
-                             tax_fn=lambda taxable, ages: taxable * 0.25))
+                             tax_fn=lambda by_owner, ages, pension: sum(by_owner.values()) * 0.25))
     assert without[0]["drawn_from_capital"] == 0
     assert with_tax[0]["drawn_from_capital"] == pytest.approx(2_500)
+
+
+# -- deferring a public pension ----------------------------------------------
+
+def test_taking_a_pension_at_65_is_the_base_amount():
+    from tradelab.core.retirement_plan import DEFERRAL, deferred_amount
+    assert deferred_amount(1_000, 65, DEFERRAL["RRQ"]) == pytest.approx(1_000)
+
+
+def test_rrq_grows_by_seven_tenths_of_a_percent_a_month():
+    """Retraite Québec: +0.7%/month, so +8.4% for a year's wait."""
+    from tradelab.core.retirement_plan import DEFERRAL, deferred_amount
+    assert deferred_amount(1_000, 66, DEFERRAL["RRQ"]) == pytest.approx(1_084)
+
+
+def test_rrq_stops_growing_at_72():
+    from tradelab.core.retirement_plan import DEFERRAL, deferred_amount
+    at_72 = deferred_amount(1_000, 72, DEFERRAL["RRQ"])
+    assert at_72 == pytest.approx(1_588)                 # +58.8%
+    assert deferred_amount(1_000, 75, DEFERRAL["RRQ"]) == pytest.approx(at_72)
+
+
+def test_psv_grows_more_slowly_and_stops_at_70():
+    """canada.ca: +0.6%/month, capped at 60 months."""
+    from tradelab.core.retirement_plan import DEFERRAL, deferred_amount
+    assert deferred_amount(1_000, 70, DEFERRAL["PSV"]) == pytest.approx(1_360)
+    assert deferred_amount(1_000, 72, DEFERRAL["PSV"]) == pytest.approx(1_360)
+
+
+def test_taking_it_early_is_not_guessed_at():
+    """Taking a pension before 65 reduces it by a different rule; returning
+    the base unchanged is honest, inventing a reduction is not."""
+    from tradelab.core.retirement_plan import DEFERRAL, deferred_amount
+    assert deferred_amount(1_000, 60, DEFERRAL["RRQ"]) == pytest.approx(1_000)
+
+
+def test_income_is_tracked_per_person_not_as_one_household_total():
+    """A wage belongs to whoever earned it and cannot be moved to a spouse;
+    only eligible pension income can. A single household figure forces the
+    tax model to assume a split the rules do not allow."""
+    plan = _plan(
+        people=[Person("lui", 66), Person("elle", 66)],
+        accounts=[Account("CELI", TFSA, 10_000, "lui")],
+        incomes=[Income("Travail", "lui", 30_000),
+                 Income("RRQ", "elle", 9_000, starts_at_age=65)],
+        years=1)
+    row = project(plan)[0]
+    assert row["income_by_owner"] == {"lui": pytest.approx(30_000),
+                                      "elle": pytest.approx(9_000)}
+
+
+def test_a_forced_withdrawal_is_taxed_to_the_account_owner(): 
+    seen = {}
+    def tax_fn(by_owner, ages, pension):
+        seen.update(by_owner=dict(by_owner), pension=dict(pension))
+        return 0.0
+    plan = _plan(
+        people=[Person("lui", 71), Person("elle", 65)],
+        accounts=[Account("REER", REGISTERED, 100_000, "lui")],
+        years=1, tax_fn=tax_fn)
+    project(plan)
+    assert seen["by_owner"]["lui"] == pytest.approx(5_280)
+    assert seen["by_owner"]["elle"] == 0
+    # And it is pension income, which is what the pension credit is for.
+    assert seen["pension"]["lui"] == pytest.approx(5_280)

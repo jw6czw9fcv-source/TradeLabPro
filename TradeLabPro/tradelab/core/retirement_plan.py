@@ -69,6 +69,33 @@ def rrif_minimum_factor(age: int) -> float:
     return 1.0 / (90 - age)
 
 
+# Deferring a public pension raises it permanently, by a published rate per
+# month of delay. These are the rules, not a view on whether to use them:
+# whether a larger cheque later beats a smaller one sooner depends on how long
+# you live, what the survivor keeps, and what you need in the meantime - none
+# of which this module knows.
+#
+# RRQ:  +0.7%/month after 65, stopping at 72 (+58.8%). Source: Retraite Québec.
+# PSV:  +0.6%/month after 65, stopping at 70 (+36%).  Source: canada.ca.
+DEFERRAL = {
+    "RRQ": {"rate_per_month": 0.007, "from_age": 65, "max_age": 72},
+    "PSV": {"rate_per_month": 0.006, "from_age": 65, "max_age": 70},
+}
+
+
+def deferred_amount(base_at_65: float, start_age: int, rule: dict) -> float:
+    """What a benefit becomes if taken at `start_age` instead of 65.
+
+    Taking it *before* 65 also changes it, by a different rule that is not
+    modelled here — this returns the base unchanged rather than guessing.
+    """
+    from_age, max_age = rule["from_age"], rule["max_age"]
+    if start_age <= from_age:
+        return float(base_at_65)
+    months = (min(start_age, max_age) - from_age) * 12
+    return float(base_at_65) * (1.0 + months * rule["rate_per_month"])
+
+
 @dataclass
 class Account:
     """One holding. `owner` matters because registered withdrawals are the
@@ -123,9 +150,12 @@ class Plan:
     # default is simply the order the accounts were given in.
     withdrawal_order: list[str] | None = None
     years: int = 35
-    # Tax on registered withdrawals and other taxable income. Injected so the
-    # ledger can be tested without a tax model, and so the tax model can be
-    # replaced without touching the ledger.
+    # Tax on the year's taxable income. Called with ({owner: taxable},
+    # {owner: age}, {owner: pension_income}) - per person, not as one
+    # household total, because two people are taxed as two people and only
+    # *eligible pension* income can be moved between them. Injected so the
+    # ledger can be tested without a tax model and the rules can change
+    # without touching it.
     tax_fn: object = None
 
 
@@ -152,14 +182,20 @@ def project(plan: Plan) -> list[dict]:
     for year in range(plan.years):
         opening = sum(balances.values())
 
-        # 1. Income that arrives whether or not it is wanted.
-        gross_income = 0.0
+        # 1. Income that arrives whether or not it is wanted, kept per person:
+        #    a wage belongs to whoever earned it and cannot be moved.
+        by_owner = {name: 0.0 for name in ages}
         for income in plan.incomes:
-            gross_income += income.amount_at(ages.get(income.owner, 0))
+            owner = income.owner
+            by_owner[owner] = by_owner.get(owner, 0.0) + income.amount_at(
+                ages.get(owner, 0))
+        gross_income = sum(by_owner.values())
 
-        # 2. The registered minimum. It is forced, it is taxable, and it lands
-        #    in the household's hands whether the spending needed it or not.
+        # 2. The registered minimum. It is forced, it is taxable to the
+        #    account's *owner*, and it lands in the household's hands whether
+        #    the spending needed it or not.
         forced = 0.0
+        pension_by_owner = {name: 0.0 for name in ages}
         for account in accounts:
             if account.kind != REGISTERED:
                 continue
@@ -170,9 +206,13 @@ def project(plan: Plan) -> list[dict]:
                        balances[account.name] * rrif_minimum_factor(age))
             balances[account.name] -= take
             forced += take
+            by_owner[account.owner] = by_owner.get(account.owner, 0.0) + take
+            # A RRIF withdrawal is what the pension income amount is for.
+            pension_by_owner[account.owner] = pension_by_owner.get(
+                account.owner, 0.0) + take
 
         taxable = gross_income + forced
-        tax = float(plan.tax_fn(taxable, ages)) if plan.tax_fn else 0.0
+        tax = float(plan.tax_fn(by_owner, ages, pension_by_owner)) if plan.tax_fn else 0.0
         available = taxable - tax
 
         # 3. Whatever the spending still needs comes out of capital, in the
@@ -196,6 +236,7 @@ def project(plan: Plan) -> list[dict]:
             "ages": dict(ages),
             "opening": opening,
             "income": gross_income,
+            "income_by_owner": dict(by_owner),
             "forced_withdrawal": forced,
             "tax": tax,
             "drawn_from_capital": drawn,

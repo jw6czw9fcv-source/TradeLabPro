@@ -6,7 +6,7 @@ from tradelab.data.database import Database
 def test_fresh_database_applies_all_migrations(tmp_db_path):
     db = Database(path=tmp_db_path)
     row = db.conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
-    assert row["v"] == 5  # SCHEMA_V1..V5 currently defined
+    assert row["v"] == 6  # SCHEMA_V1..V6 currently defined
 
 
 def test_default_watchlist_created(tmp_db_path):
@@ -20,7 +20,7 @@ def test_reopening_database_does_not_reapply_migrations(tmp_db_path):
     db1.conn.close()
     db2 = Database(path=tmp_db_path)  # should not raise / duplicate anything
     count = db2.conn.execute("SELECT COUNT(*) AS n FROM schema_version").fetchone()["n"]
-    assert count == 5
+    assert count == 6
 
 
 def test_save_and_load_chart_layout(tmp_db_path):
@@ -164,3 +164,44 @@ def test_etf_update_metrics_on_empty_dict_does_not_stamp(tmp_db_path):
     db.etf_upsert("VFV")
     db.etf_update_metrics("VFV", {})
     assert db.etf_get("VFV")["updated_at"] is None
+
+
+# -- Retirement simulator inputs ---------------------------------------------
+
+def test_retirement_accounts_round_trip(tmp_db_path):
+    db = Database(path=tmp_db_path)
+    db.set_retirement_rows("accounts", [
+        {"name": "REER", "kind": "registered", "balance": 164_000, "owner": "Pierre"},
+        {"name": "CELI", "kind": "tfsa", "balance": 28_000, "owner": "Pierre"}])
+    rows = db.retirement_rows("accounts")
+    assert [r["name"] for r in rows] == ["REER", "CELI"]
+    assert rows[0]["balance"] == pytest.approx(164_000)
+
+
+def test_saving_replaces_rather_than_appends(tmp_db_path):
+    """These are edited as a table; a partial update would leave a line you
+    deleted still in the projection."""
+    db = Database(path=tmp_db_path)
+    db.set_retirement_rows("accounts", [{"name": "A", "balance": 1, "owner": "x"}])
+    db.set_retirement_rows("accounts", [{"name": "B", "balance": 2, "owner": "x"}])
+    assert [r["name"] for r in db.retirement_rows("accounts")] == ["B"]
+
+
+def test_a_nameless_row_is_dropped(tmp_db_path):
+    db = Database(path=tmp_db_path)
+    written = db.set_retirement_rows("accounts", [
+        {"name": "  ", "balance": 5, "owner": "x"},
+        {"name": "REER", "balance": 5, "owner": "x"}])
+    assert written == 1
+
+
+def test_incomes_keep_their_start_and_end_ages(tmp_db_path):
+    db = Database(path=tmp_db_path)
+    db.set_retirement_rows("incomes", [
+        {"name": "Travail", "owner": "Pierre", "annual": 30_000,
+         "starts_at_age": 0, "ends_at_age": 69},
+        {"name": "RRQ", "owner": "Pierre", "annual": 13_128,
+         "starts_at_age": 65, "ends_at_age": None}])
+    rows = db.retirement_rows("incomes")
+    assert rows[0]["ends_at_age"] == 69
+    assert rows[1]["ends_at_age"] is None      # for life, not "ends at zero"
