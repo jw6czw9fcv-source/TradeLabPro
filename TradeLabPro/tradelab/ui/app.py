@@ -9592,9 +9592,15 @@ class RetirementSimPanel(QWidget):
         "people": (["Name", "Age"], ["name", "age"]),
         "accounts": (["Account", "Kind", "Balance", "Owner"],
                      ["name", "kind", "balance", "owner"]),
-        "incomes": (["Income", "Owner", "Per year", "Starts", "Ends"],
-                    ["name", "owner", "annual", "starts_at_age", "ends_at_age"]),
+        "incomes": (["Income", "Owner", "Per year", "Starts", "Ends", "Indexed"],
+                    ["name", "owner", "annual", "starts_at_age", "ends_at_age",
+                     "indexed"]),
     }
+
+    # Typed in the Indexed column. Anything else is read as "yes", because an
+    # income that keeps its value is by far the common case here - RRQ, PSV,
+    # AOW - and a blank cell should not quietly halve a pension.
+    NOT_INDEXED = {"no", "n", "non", "false", "0", "fixed", "fixe"}
 
     def __init__(self, db: Database):
         super().__init__()
@@ -9618,6 +9624,22 @@ class RetirementSimPanel(QWidget):
         self.real_return.setSuffix(" % real")
         self.real_return.setToolTip("Return *after* inflation. 3 means three points above "
                                     "inflation, not three percent.")
+        self.inflation = QDoubleSpinBox()
+        self.inflation.setRange(0, 15); self.inflation.setDecimals(1)
+        self.inflation.setSuffix(" % infl")
+        self.inflation.setToolTip(
+            "The projection is in today's dollars, so this does not discount the "
+            "balances — a real return is already net of inflation, and the tax "
+            "brackets, RRQ and PSV are indexed by law. It does two things: it "
+            "erodes any income you mark as not indexed, and it converts the real "
+            "return above into the nominal one shown beside it.")
+        # A real return is the honest input but the unfamiliar one; showing the
+        # nominal equivalent live means you can sanity-check it against the
+        # number a fund actually advertises.
+        self.nominal_hint = QLabel("")
+        self.nominal_hint.setStyleSheet("color: " + theme.MUTED + "; font-size: 11px;")
+        self.real_return.valueChanged.connect(self._update_nominal_hint)
+        self.inflation.valueChanged.connect(self._update_nominal_hint)
         self.until_age = QSpinBox(); self.until_age.setRange(66, 110)
         self.until_age.setPrefix("to age ")
         self.splitting = QDoubleSpinBox()
@@ -9648,7 +9670,8 @@ class RetirementSimPanel(QWidget):
         clear_sim = QPushButton("Clear saved")
         clear_sim.clicked.connect(self.clear_saved_sim)
         for widget in (QLabel("Spending"), self.spending, QLabel("  Return"),
-                       self.real_return, self.volatility, QLabel("  Project"),
+                       self.real_return, self.inflation, self.nominal_hint,
+                       self.volatility, QLabel("  Project"),
                        self.until_age, QLabel("  Pension"), self.splitting,
                        self.paths, run, trajectories, save, save_sim, clear_sim):
             controls.addWidget(widget)
@@ -9690,6 +9713,9 @@ class RetirementSimPanel(QWidget):
         note = QLabel(
             "Everything is in today's dollars: the tax brackets, RRQ and PSV are all "
             "indexed, so real terms hold — if indexation ever stops, this is optimistic. "
+            "The inflation rate therefore does not discount the balances; it erodes only "
+            "the incomes you mark Indexed = No, such as a fixed private pension, and "
+            "converts the real return into the nominal one shown beside it. "
             "And a single return path says nothing about the order returns arrive in: a "
             "bad first few years of drawing down hurts far more than the same average "
             "later. " + theme.NOT_ADVICE)
@@ -9708,17 +9734,23 @@ class RetirementSimPanel(QWidget):
             for r, row in enumerate(rows):
                 for c, field in enumerate(fields):
                     value = row.get(field)
+                    # Stored as a flag, read back as a word: a column of 1s and
+                    # 0s is not something you can check at a glance.
+                    if field == "indexed":
+                        value = "No" if str(value) in ("0", "False") else "Yes"
                     table.setItem(r, c, table_item("" if value is None else value))
             table.resizeColumnsToContents()
         settings = app_settings()
         settings.beginGroup(self.SETTING)
         self.spending.setValue(float(settings.value("spending", 50_000)))
         self.real_return.setValue(float(settings.value("real_return", 3.0)))
+        self.inflation.setValue(float(settings.value("inflation", 2.0)))
         self.until_age.setValue(int(settings.value("until_age", 95)))
         self.splitting.setValue(float(settings.value("splitting", 0)))
         self.volatility.setValue(float(settings.value("volatility", 10)))
         self.paths.setValue(int(settings.value("paths", 500)))
         settings.endGroup()
+        self._update_nominal_hint()
 
     def save(self):
         written = 0
@@ -9728,6 +9760,7 @@ class RetirementSimPanel(QWidget):
         settings.beginGroup(self.SETTING)
         settings.setValue("spending", self.spending.value())
         settings.setValue("real_return", self.real_return.value())
+        settings.setValue("inflation", self.inflation.value())
         settings.setValue("until_age", self.until_age.value())
         settings.setValue("splitting", self.splitting.value())
         settings.setValue("volatility", self.volatility.value())
@@ -9750,6 +9783,8 @@ class RetirementSimPanel(QWidget):
                 elif field in ("balance", "annual"):
                     cleaned = text.replace(",", "").replace("$", "").replace(" ", "")
                     row[field] = float(cleaned) if cleaned else 0.0
+                elif field == "indexed":
+                    row[field] = 0 if text.lower() in self.NOT_INDEXED else 1
                 else:
                     row[field] = text
             rows.append(row)
@@ -9767,6 +9802,18 @@ class RetirementSimPanel(QWidget):
         for row in rows:
             table.removeRow(row)
 
+    def _update_nominal_hint(self):
+        """Show what the real return implies in nominal terms.
+
+        Fund literature quotes nominal returns, so this is the number you can
+        actually compare against something. It is the Fisher relation rather
+        than an addition — 3% real with 2% inflation is 5.06% nominal, not 5%.
+        """
+        from tradelab.core.retirement_plan import nominal_from_real
+        nominal = nominal_from_real(self.real_return.value() / 100.0,
+                                    self.inflation.value() / 100.0)
+        self.nominal_hint.setText("= {:.2f}% nominal".format(nominal * 100))
+
     # -- the projection -----------------------------------------------------
     def build_plan(self):
         from tradelab.core.retirement_plan import Account, Income, Person, Plan
@@ -9776,7 +9823,8 @@ class RetirementSimPanel(QWidget):
                             float(r["balance"] or 0), r["owner"])
                     for r in self._read("accounts") if r["name"]]
         incomes = [Income(r["name"], r["owner"], float(r["annual"] or 0),
-                          int(r["starts_at_age"] or 0), r["ends_at_age"])
+                          int(r["starts_at_age"] or 0), r["ends_at_age"],
+                          bool(r.get("indexed", 1)))
                    for r in self._read("incomes") if r["name"]]
         if not people or not accounts:
             return None
@@ -9784,6 +9832,7 @@ class RetirementSimPanel(QWidget):
         return Plan(people=people, accounts=accounts, incomes=incomes,
                     spending=self.spending.value(),
                     real_return=self.real_return.value() / 100.0,
+                    inflation=self.inflation.value() / 100.0,
                     years=max(1, self.until_age.value() - oldest + 1),
                     tax_fn=self.tax_fn())
 

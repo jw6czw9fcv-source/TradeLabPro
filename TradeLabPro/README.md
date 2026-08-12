@@ -3,7 +3,7 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
-2.45.0 - The order returns arrive in - the retirement projection runs over hundreds of return orderings instead of one average, because a bad first few years of drawing down hurts far more than the same average later
+2.46.0 - What inflation is actually for - the projection stays in today's dollars, so the rate erodes only what is not indexed and converts your real return to a nominal one; a fixed pension no longer pretends to hold its value
 
 ## Run
 1. Run `install_requirements.bat` if needed.

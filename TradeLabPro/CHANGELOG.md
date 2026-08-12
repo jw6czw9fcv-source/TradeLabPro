@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.46.0 - What inflation is actually for
+
+### Added
+- **An inflation rate** on the Retirement Sim tab, with the nominal equivalent of your real return shown live beside it. Fund literature quotes nominal returns, so this is the number you can compare against something real.
+- **An Indexed column** on the incomes table. The RRQ, PSV and AOW are indexed by law and ignore the rate entirely; anything you mark `No` - a fixed private pension is the usual case - erodes year by year in today's dollars.
+- `real_from_nominal()` / `nominal_from_real()`, the Fisher relation rather than a subtraction: 6% with 2% inflation is 3.92% real, not 4%.
+
+### Fixed
+- **Every income was treated as though it held its purchasing power.** Correct for the indexed benefits this plan is mostly built from, and wrong for a fixed pension, which pays the same cheque for thirty years. At 2% that pension is worth a little over half its face value by 95, and the projection was counting all of it. Existing rows migrate to `indexed = 1`, which is what they were silently assumed to be, so no saved plan changes its answer.
+
+### Notes
+- **The rate does not discount the balances, and that is deliberate.** The ledger is in today's dollars: a real return is already net of inflation, and the tax brackets, RRQ and PSV are indexed by law, so applying a rate to capital would count it twice. The input has exactly two jobs - eroding what is not indexed, and translating nominal to real. The on-screen note says so rather than leaving it to be inferred.
+- **Known and unfixed:** the federal $2,000 pension income amount is not indexed in law, but the model holds it constant in real terms. That overstates the credit by up to roughly $130 per person per year at the far end of a thirty-year projection - small, but it is optimism rather than caution.
+
+### Verified
+- Full pytest suite (1287) passes. The migration tests now derive the schema count from `MIGRATIONS` instead of a hardcoded number that failed on every new migration.
+
 ## 2.45.0 - The order returns arrive in
 
 ### Added

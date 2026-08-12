@@ -18,6 +18,14 @@ the things being compared against — federal and Quebec tax brackets, the RRQ,
 the PSV — are all indexed to inflation. That assumption is stated rather than
 buried: if indexation stops, this projection is optimistic.
 
+Which is why `inflation` is an input even though the arithmetic is real. It
+does one job here: eroding what is *not* indexed. An income marked
+`indexed=False` — a fixed private pension is the usual case — buys less every
+year, and over a thirty-year retirement at 2% it ends up worth a little over
+half what it says on the page. Treating such a pension as though it held its
+value, which this module did until the flag existed, flatters the plan by
+real money. Indexed incomes ignore the rate entirely, as they should.
+
 Qt-free and offline-testable; no network, no I/O.
 """
 from __future__ import annotations
@@ -113,19 +121,31 @@ class Income:
 
     `starts_at_age` is the owner's age when it begins and `ends_at_age` when
     it stops (None = for life). A wage is just an income that ends.
+
+    `indexed` says whether it keeps its purchasing power. True for the RRQ,
+    the PSV and the AOW, which are indexed by law; false for a fixed private
+    pension, which pays the same nominal cheque for thirty years and is worth
+    steadily less. Defaulting to True keeps the common case honest, and makes
+    the erosion something you opt into deliberately rather than a surprise.
     """
     name: str
     owner: str
     annual: float
     starts_at_age: int = 0
     ends_at_age: int | None = None
+    indexed: bool = True
 
-    def amount_at(self, age: int) -> float:
+    def amount_at(self, age: int, years_elapsed: int = 0,
+                  inflation: float = 0.0) -> float:
+        """What it is worth in *today's* dollars, `years_elapsed` years in."""
         if age < self.starts_at_age:
             return 0.0
         if self.ends_at_age is not None and age > self.ends_at_age:
             return 0.0
-        return float(self.annual)
+        amount = float(self.annual)
+        if not self.indexed and inflation and years_elapsed > 0:
+            amount /= (1.0 + inflation) ** years_elapsed
+        return amount
 
 
 @dataclass
@@ -146,6 +166,12 @@ class Plan:
     # Real return, i.e. after inflation. 0.03 means "three points above
     # inflation", not "three percent".
     real_return: float = 0.03
+    # Only ever applied to incomes marked `indexed=False`. The rest of the
+    # ledger is in today's dollars and needs no rate: a real return is already
+    # net of inflation, and the tax brackets, RRQ and PSV are indexed by law.
+    # It is also what converts a nominal return you may know better into the
+    # real one this asks for - see `real_from_nominal`.
+    inflation: float = 0.0
     # One return per year, when the caller has a sequence rather than an
     # average. This is what makes sequence risk visible: the same numbers in a
     # different order are a different retirement, and a single average cannot
@@ -167,6 +193,22 @@ class Plan:
     # ledger can be tested without a tax model and the rules can change
     # without touching it.
     tax_fn: object = None
+
+
+def real_from_nominal(nominal: float, inflation: float) -> float:
+    """The Fisher relation, not a subtraction.
+
+    Most people know what they expect a portfolio to return in nominal terms
+    and have no figure at all for the real one. 6% with 2% inflation is 3.92%
+    real, not 4% — small here, but it compounds over thirty years, and the
+    subtraction is always the optimistic direction.
+    """
+    return (1.0 + nominal) / (1.0 + inflation) - 1.0
+
+
+def nominal_from_real(real: float, inflation: float) -> float:
+    """The inverse, for showing what a real return implies in nominal terms."""
+    return (1.0 + real) * (1.0 + inflation) - 1.0
 
 
 def _order(plan: Plan) -> list[Account]:
@@ -199,7 +241,7 @@ def project(plan: Plan) -> list[dict]:
         for income in plan.incomes:
             owner = income.owner
             by_owner[owner] = by_owner.get(owner, 0.0) + income.amount_at(
-                ages.get(owner, 0))
+                ages.get(owner, 0), year, plan.inflation)
         gross_income = sum(by_owner.values())
 
         # 2. The registered minimum. It is forced, it is taxable to the

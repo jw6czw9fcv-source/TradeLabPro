@@ -383,3 +383,78 @@ def test_the_simulation_does_not_disturb_the_plan_it_was_given():
     plan = _plan(years=5)
     simulate(plan, paths=5, seed=1)
     assert plan.returns is None
+
+
+# -- inflation, and what it is allowed to touch -------------------------------
+
+def test_an_indexed_income_ignores_inflation_entirely():
+    """The RRQ and PSV are indexed by law, so in today's dollars they are flat.
+    A model that eroded them would understate every retirement in Quebec."""
+    income = Income("RRQ", "Pierre", 13_128, 65)
+    assert income.amount_at(65, 0, 0.02) == pytest.approx(13_128)
+    assert income.amount_at(85, 20, 0.02) == pytest.approx(13_128)
+
+
+def test_a_non_indexed_income_loses_purchasing_power():
+    """A fixed private pension pays the same cheque for thirty years."""
+    income = Income("Rente privee", "Pierre", 10_000, 65, indexed=False)
+    assert income.amount_at(65, 0, 0.02) == pytest.approx(10_000)
+    assert income.amount_at(75, 10, 0.02) == pytest.approx(10_000 / 1.02 ** 10)
+    # Just over half its value after thirty years - the reason the flag exists.
+    assert income.amount_at(95, 30, 0.02) == pytest.approx(5_520, abs=5)
+
+
+def test_an_income_is_indexed_unless_you_say_otherwise():
+    """The common case here is RRQ/PSV/AOW, and a blank should not halve them."""
+    assert Income("PSV", "Pierre", 8_292, 65).indexed is True
+
+
+def test_zero_inflation_leaves_even_a_fixed_pension_alone():
+    income = Income("Rente", "Pierre", 10_000, 65, indexed=False)
+    assert income.amount_at(85, 20, 0.0) == pytest.approx(10_000)
+
+
+def test_a_fixed_pension_makes_the_plan_run_shorter():
+    """End to end: the same numbers, the flag flipped, less money."""
+    def plan_with(indexed):
+        return Plan(
+            people=[Person("Pierre", 65)],
+            accounts=[Account("CELI", TFSA, 600_000, "Pierre")],
+            incomes=[Income("Rente", "Pierre", 20_000, 65, indexed=indexed)],
+            spending=30_000, real_return=0.0, inflation=0.03, years=25)
+    kept = project(plan_with(True))[-1]["closing"]
+    eroded = project(plan_with(False))[-1]["closing"]
+    # Both plans hold - otherwise this compares two zeroes and proves nothing.
+    assert eroded > 0
+    assert eroded < kept
+
+
+def test_inflation_does_not_touch_the_balances():
+    """The ledger is in real terms already: a real return is net of inflation,
+    so applying the rate to capital would be counting it twice."""
+    def plan_with(inflation):
+        return Plan(people=[Person("Pierre", 65)],
+                    accounts=[Account("CELI", TFSA, 500_000, "Pierre")],
+                    spending=20_000, real_return=0.03, inflation=inflation,
+                    years=20)
+    assert (project(plan_with(0.0))[-1]["closing"]
+            == pytest.approx(project(plan_with(0.05))[-1]["closing"]))
+
+
+# -- nominal and real ---------------------------------------------------------
+
+def test_real_from_nominal_is_fisher_not_subtraction():
+    from tradelab.core.retirement_plan import real_from_nominal
+    assert real_from_nominal(0.06, 0.02) == pytest.approx(0.039215, abs=1e-6)
+    # And the subtraction people reach for is the optimistic direction.
+    assert real_from_nominal(0.06, 0.02) < 0.04
+
+
+def test_nominal_and_real_are_inverses():
+    from tradelab.core.retirement_plan import nominal_from_real, real_from_nominal
+    assert real_from_nominal(nominal_from_real(0.03, 0.02), 0.02) == pytest.approx(0.03)
+
+
+def test_with_no_inflation_real_and_nominal_agree():
+    from tradelab.core.retirement_plan import real_from_nominal
+    assert real_from_nominal(0.05, 0.0) == pytest.approx(0.05)

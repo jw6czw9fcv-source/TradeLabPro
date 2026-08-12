@@ -5,8 +5,11 @@ from tradelab.data.database import Database
 
 def test_fresh_database_applies_all_migrations(tmp_db_path):
     db = Database(path=tmp_db_path)
+    from tradelab.data.database import MIGRATIONS
     row = db.conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
-    assert row["v"] == 6  # SCHEMA_V1..V6 currently defined
+    # Derived, not hardcoded: a count in a literal only ever records the day
+    # the test was written, and fails the next migration for no real reason.
+    assert row["v"] == len(MIGRATIONS)
 
 
 def test_default_watchlist_created(tmp_db_path):
@@ -19,8 +22,9 @@ def test_reopening_database_does_not_reapply_migrations(tmp_db_path):
     db1 = Database(path=tmp_db_path)
     db1.conn.close()
     db2 = Database(path=tmp_db_path)  # should not raise / duplicate anything
+    from tradelab.data.database import MIGRATIONS
     count = db2.conn.execute("SELECT COUNT(*) AS n FROM schema_version").fetchone()["n"]
-    assert count == 6
+    assert count == len(MIGRATIONS)
 
 
 def test_save_and_load_chart_layout(tmp_db_path):
@@ -205,3 +209,22 @@ def test_incomes_keep_their_start_and_end_ages(tmp_db_path):
     rows = db.retirement_rows("incomes")
     assert rows[0]["ends_at_age"] == 69
     assert rows[1]["ends_at_age"] is None      # for life, not "ends at zero"
+
+
+def test_an_income_is_indexed_by_default(tmp_path):
+    """What rows written before the column existed were silently assumed to
+    be, so the migration must not change any existing plan's answer."""
+    db = Database(path=tmp_path / "t.db")
+    db.set_retirement_rows("incomes", [{"name": "RRQ", "owner": "Pierre",
+                                        "annual": 13_128, "starts_at_age": 65}])
+    assert db.retirement_rows("incomes")[0]["indexed"] == 1
+
+
+def test_a_non_indexed_income_round_trips(tmp_path):
+    """0 is falsy, and an earlier write path would have turned it back into
+    the default."""
+    db = Database(path=tmp_path / "t.db")
+    db.set_retirement_rows("incomes", [{"name": "Rente", "owner": "Pierre",
+                                        "annual": 20_000, "starts_at_age": 65,
+                                        "indexed": 0}])
+    assert db.retirement_rows("incomes")[0]["indexed"] == 0

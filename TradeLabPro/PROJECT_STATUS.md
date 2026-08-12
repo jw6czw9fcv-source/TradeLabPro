@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.45.0
+Current version: 2.46.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.46.0 (What inflation is actually for)
+- An inflation rate on Retirement Sim, with the nominal equivalent of the real return shown live beside it.
+- An Indexed column on incomes. Indexed benefits ignore the rate; a fixed pension erodes in today's dollars.
+- Fixed: every income was treated as holding its purchasing power. Existing rows migrate to indexed = 1, so no saved plan changes its answer.
+- Known and unfixed: the federal $2,000 pension amount is not indexed in law but is held constant here - up to roughly $130/person/year of optimism at the far end.
 
 ## Completed in 2.45.0 (The order returns arrive in)
 - `simulate()` / `sample_returns()` / `percentile()` in `core/retirement_plan.py`, and **Run many paths** in the panel. See the 2.44.0 notes below for the ledger it runs on.

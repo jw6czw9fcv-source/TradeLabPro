@@ -164,8 +164,15 @@ CREATE TABLE IF NOT EXISTS retirement_incomes (
 );
 """
 
+# Whether an income keeps its purchasing power. The RRQ, PSV and AOW do, by
+# law; a fixed private pension does not. Existing rows default to 1, which is
+# what they were silently assumed to be before this column existed.
+SCHEMA_V7 = """
+ALTER TABLE retirement_incomes ADD COLUMN indexed INTEGER NOT NULL DEFAULT 1;
+"""
+
 MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
-                         SCHEMA_V6]
+                         SCHEMA_V6, SCHEMA_V7]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
 SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
@@ -365,7 +372,7 @@ class Database:
                                       ("name", "kind", "balance", "owner")),
                          "incomes": ("retirement_incomes",
                                      ("name", "owner", "annual", "starts_at_age",
-                                      "ends_at_age"))}
+                                      "ends_at_age", "indexed"))}
 
     def retirement_rows(self, what: str) -> list[dict]:
         table, _cols = self.RETIREMENT_TABLES[what]
@@ -376,7 +383,7 @@ class Database:
     # and blow up on a row someone simply typed sparsely.
     RETIREMENT_DEFAULTS = {"kind": "registered", "owner": "", "balance": 0.0,
                            "annual": 0.0, "starts_at_age": 65, "ends_at_age": None,
-                           "age": 65}
+                           "age": 65, "indexed": 1}
 
     def set_retirement_rows(self, what: str, rows: list[dict]) -> int:
         """Replace the whole set. These are edited as a table, and a partial

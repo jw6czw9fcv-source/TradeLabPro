@@ -312,3 +312,88 @@ def test_the_chart_is_optional(panel):
     assert panel.chart is None
     _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
     panel.run()             # must not raise
+
+
+# -- inflation ----------------------------------------------------------------
+
+def test_the_inflation_rate_has_a_sensible_default(panel):
+    assert panel.inflation.value() == 2.0
+
+
+def test_the_nominal_equivalent_is_shown_and_is_not_a_sum(panel):
+    """3% real with 2% inflation is 5.06% nominal, not 5%."""
+    panel.real_return.setValue(3.0)
+    panel.inflation.setValue(2.0)
+    assert "5.06" in panel.nominal_hint.text()
+    assert "nominal" in panel.nominal_hint.text()
+
+
+def test_the_nominal_hint_follows_both_inputs(panel):
+    panel.real_return.setValue(4.0)
+    panel.inflation.setValue(0.0)
+    assert "4.00" in panel.nominal_hint.text()
+
+
+def test_an_income_is_indexed_unless_the_cell_says_no(panel):
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 1000, "Pierre"]],
+          [["RRQ", "Pierre", 13128, 65, "", ""]])
+    assert panel._read("incomes")[0]["indexed"] == 1
+
+
+def test_typing_no_marks_an_income_as_not_indexed(panel):
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 1000, "Pierre"]],
+          [["Rente", "Pierre", 20000, 65, "", "No"]])
+    assert panel._read("incomes")[0]["indexed"] == 0
+
+
+def test_the_french_word_is_understood_too(panel):
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 1000, "Pierre"]],
+          [["Rente", "Pierre", 20000, 65, "", "non"]])
+    assert panel._read("incomes")[0]["indexed"] == 0
+
+
+def test_the_flag_reaches_the_plan(panel):
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 1000, "Pierre"]],
+          [["Rente", "Pierre", 20000, 65, "", "No"],
+           ["RRQ", "Pierre", 13128, 65, "", ""]])
+    plan = panel.build_plan()
+    by_name = {i.name: i.indexed for i in plan.incomes}
+    assert by_name == {"Rente": False, "RRQ": True}
+
+
+def test_the_inflation_rate_reaches_the_plan(panel):
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 1000, "Pierre"]])
+    panel.inflation.setValue(2.5)
+    assert panel.build_plan().inflation == pytest.approx(0.025)
+
+
+def test_a_fixed_pension_shrinks_across_the_projection(panel):
+    """The income column falls even though the pension never changes."""
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 500_000, "Pierre"]],
+          [["Rente", "Pierre", 20_000, 65, "", "No"]])
+    panel.inflation.setValue(3.0)
+    panel.spending.setValue(0)
+    panel.until_age.setValue(90)
+    panel.run()
+    assert panel.rows[-1]["income"] < panel.rows[0]["income"]
+
+
+def test_an_indexed_pension_holds_across_the_projection(panel):
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 500_000, "Pierre"]],
+          [["RRQ", "Pierre", 13_128, 65, "", "Yes"]])
+    panel.inflation.setValue(3.0)
+    panel.spending.setValue(0)
+    panel.until_age.setValue(90)
+    panel.run()
+    assert panel.rows[-1]["income"] == pytest.approx(panel.rows[0]["income"])
+
+
+def test_the_indexed_flag_survives_a_save_and_reload(panel, qapp, tmp_path):
+    from tradelab.ui.app import RetirementSimPanel
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 1000, "Pierre"]],
+          [["Rente", "Pierre", 20000, 65, "", "No"]])
+    panel.inflation.setValue(2.4)
+    panel.save()
+    again = RetirementSimPanel(Database(path=tmp_path / "sim.db"))
+    assert again.tables["incomes"].item(0, 5).text() == "No"
+    assert again.inflation.value() == pytest.approx(2.4)
