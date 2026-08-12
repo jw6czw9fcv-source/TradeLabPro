@@ -158,16 +158,62 @@ def test_the_unverified_figures_are_named_rather_than_hidden():
     """A tax number written from memory is how a projection quietly becomes
     wrong, and there is no way to tell by looking at it. These are listed so
     the interface can show them differently."""
-    pending = year_2026().unverified()
-    assert "quebec_bpa" in pending
-    assert "quebec_abatement" in pending
-    # And the ones read off the government's own pages are not in the list.
-    assert "federal_bpa" not in pending
-    assert "federal_age_amount" not in pending
-    assert "oas_recovery_threshold" not in pending
+    table = year_2026()
+    # Every 2026 figure has now been read off a government page. The mechanism
+    # stays, because next year's table starts unverified again.
+    assert table.unverified() == []
+    table.quebec_bpa = Figure(1, "a blog said so")
+    assert table.unverified() == ["quebec_bpa"]
 
 
 def test_the_verified_federal_figures_carry_their_source():
     table = year_2026()
     assert "canada.ca" in table.federal_bpa.source
     assert table.federal_bpa.verified is True
+
+
+# -- Québec's reduction of the age amount ------------------------------------
+
+def test_the_quebec_age_amount_is_full_below_the_family_threshold():
+    from tradelab.core.tax_quebec import quebec_age_credit_base
+    table = year_2026()
+    base = quebec_age_credit_base(table, 70, pension_income=0, family_income=40_000)
+    assert base == pytest.approx(3_986)
+
+
+def test_the_quebec_age_amount_shrinks_on_family_income():
+    """18.75% of family net income above 42,955 — missing this overstated the
+    credit badly in the first version of the module."""
+    from tradelab.core.tax_quebec import quebec_age_credit_base
+    table = year_2026()
+    base = quebec_age_credit_base(table, 70, 0, family_income=52_955)
+    assert base == pytest.approx(3_986 - 10_000 * 0.1875)
+
+
+def test_the_quebec_age_amount_can_be_wiped_out_entirely():
+    from tradelab.core.tax_quebec import quebec_age_credit_base
+    assert quebec_age_credit_base(year_2026(), 70, 0, family_income=120_000) == 0
+
+
+def test_the_retirement_income_amount_is_capped():
+    from tradelab.core.tax_quebec import quebec_age_credit_base
+    table = year_2026()
+    a = quebec_age_credit_base(table, 70, pension_income=1_000, family_income=0)
+    b = quebec_age_credit_base(table, 70, pension_income=99_000, family_income=0)
+    assert a == pytest.approx(3_986 + 1_000)
+    assert b == pytest.approx(3_986 + 3_541)          # the maximum, not 99,000
+
+
+def test_the_reduction_uses_family_income_not_the_persons_own():
+    """A per-person view would hand each spouse a full credit the household
+    is not entitled to."""
+    alone = tax_for(30_000, 70)["total"]
+    in_a_couple = tax_for(30_000, 70, family_income=100_000)["total"]
+    assert in_a_couple > alone
+
+
+def test_the_quebec_figures_are_now_verified():
+    pending = year_2026().unverified()
+    for name in ("quebec_bpa", "quebec_age_amount", "quebec_retirement_amount",
+                 "quebec_credit_threshold", "quebec_credit_reduction_rate"):
+        assert name not in pending
