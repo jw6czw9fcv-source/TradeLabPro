@@ -12,6 +12,8 @@
 - **A "What each fund holds" view**: **one line per fund**, its published holdings listed on that line, largest first — the look-through's question turned around. Not "what do I own in total" but "what is in each of these". Thirty-one lines to read down rather than three hundred to scroll.
 - The duplicate rule keeps the **cheaper** of a matching pair (same exposure, less cost), with the ticker breaking a tie so the result is repeatable rather than dependent on row order.
 
+- **Every panel's status line now reaches the window's status bar.** The bar at the bottom showed only the version string, while "what just happened" sat on a small label mid-page that was easy to look straight past. All twenty status lines are mirrored there, found by attribute rather than a hand-kept list, so a new panel is included the day it is written. Messages time out after twelve seconds — a bar still reading "Charting VFV.TO" ten minutes later is worse than an empty one, because it looks current.
+
 ### Fixed
 - **The test suite was writing into your real settings.** Panels persist layout under `QSettings("TradeLabPro", "TradeLabPro")` — the actual Windows registry key — so running the tests overwrote saved column widths, and the next launch read the tests' values back. Settings now come from one factory that honours `TRADELAB_SETTINGS_FILE`, the way `TRADELAB_DATA_DIR` and `TRADELAB_LOG_DIR` already keep the suite out of real data and logs. (`QSettings.setDefaultFormat()` does **not** redirect that constructor on Windows, which is why the override is explicit.)
 - **The cap could be breached by the rule enforcing it.** Redistributing an over-cap fund's excess handed some of it straight back to funds already capped, so the shares bounced instead of settling and the run stopped wherever it happened to be — with a fund above the cap it was given. A capped fund is now fixed there and only the uncapped share the excess.
@@ -26,7 +28,7 @@
 - Inverse volatility uses the **measured** volatility, so a fund that has never been refreshed is left out and named rather than guessed at.
 
 ### Verified
-- Full pytest suite (1153) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
+- Full pytest suite (1159) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
 
 
 ## 2.42.0 - One risk rating, the published one

@@ -67,6 +67,23 @@ def app_settings() -> QSettings:
     return QSettings("TradeLabPro", "TradeLabPro")
 
 
+class StatusLabel(QLabel):
+    """A panel's status line that also announces itself.
+
+    Every panel keeps its own status label next to the controls it describes,
+    which is the right place to read it while working — but it is easy to miss
+    mid-page, and the window already has a status bar people look at. This
+    emits what it was told to say so MainWindow can mirror it there; the two
+    then cannot disagree, because there is one setText and one signal.
+    """
+    messageChanged = Signal(str)
+
+    def setText(self, text):
+        super().setText(text)
+        if text:
+            self.messageChanged.emit(text)
+
+
 def fmt_large(v):
     try:
         v=float(v)
@@ -424,7 +441,7 @@ class ScannerPanel(QWidget):
         layout.addLayout(scan_row)
         self.progress = QProgressBar(); self.progress.setRange(0, 100); self.progress.setValue(0)
         layout.addWidget(self.progress)
-        self.status = QLabel("Ready. Exchange lists auto-refresh when the cache is old or after a refresh button press.")
+        self.status = StatusLabel("Ready. Exchange lists auto-refresh when the cache is old or after a refresh button press.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
@@ -1423,7 +1440,7 @@ class WatchlistPanel(QWidget):
         layout.addLayout(row)
         self.list = QListWidget(); self.list.setSelectionMode(QAbstractItemView.ExtendedSelection); self.list.itemDoubleClicked.connect(self.plot)
         layout.addWidget(self.list)
-        self.status=QLabel("Double-click a symbol to load chart.")
+        self.status = StatusLabel("Double-click a symbol to load chart.")
         layout.addWidget(self.status)
         self.refresh()
     def refresh(self):
@@ -2125,7 +2142,7 @@ class EtfScreenerPanel(QWidget):
             self.totals.horizontalScrollBar().setValue)
         layout.addWidget(self.totals)
 
-        self.status = QLabel("Double-click a ticker to chart it.")
+        self.status = StatusLabel("Double-click a ticker to chart it.")
         layout.addWidget(self.status)
 
         summary_box = QGroupBox("What each allocation holds")
@@ -3117,7 +3134,7 @@ class PortfolioPanel(QWidget):
         self.table.setToolTip("Click a position to chart its symbol.")
         self.table.cellClicked.connect(self._chart_row)
         layout.addWidget(self.table)
-        self.status=QLabel("")
+        self.status = StatusLabel("")
         layout.addWidget(self.status)
         self.refresh()
 
@@ -3555,7 +3572,7 @@ class MarketPanel(QWidget):
 
         self.progress=QProgressBar(); self.progress.setVisible(False)
         layout.addWidget(self.progress)
-        self.status=QLabel("Refresh to update the dashboard. Data uses yfinance when available.")
+        self.status = StatusLabel("Refresh to update the dashboard. Data uses yfinance when available.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         # Regime rows follow the selected market (see core.market.REGIME_ROWS).
@@ -4162,7 +4179,7 @@ class StrategyBuilderPanel(QWidget):
 
         self.preview = QTextEdit(); self.preview.setReadOnly(True); self.preview.setMaximumHeight(120)
         layout.addWidget(QLabel("Plain-English preview:")); layout.addWidget(self.preview)
-        self.status = QLabel(""); self.status.setWordWrap(True); layout.addWidget(self.status)
+        self.status = StatusLabel(""); self.status.setWordWrap(True); layout.addWidget(self.status)
         layout.addStretch()
 
         # Start with a sensible example so the panel isn't blank.
@@ -4454,7 +4471,7 @@ class BacktestPanel(QWidget):
         self.tabs.addTab(self._build_walk_forward(), "Walk-Forward")
         layout.addWidget(self.tabs)
 
-        self.status=QLabel("Research only — not financial advice."); self.status.setWordWrap(True)
+        self.status = StatusLabel("Research only — not financial advice."); self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
     def _base_cfg(self):
@@ -4702,7 +4719,7 @@ class ReplayPanel(QWidget):
         self.slider.valueChanged.connect(self._on_slider)
         layout.addWidget(self.slider)
 
-        self.status = QLabel("Load a symbol to begin.")
+        self.status = StatusLabel("Load a symbol to begin.")
         layout.addWidget(self.status)
         layout.addStretch()
 
@@ -4901,7 +4918,7 @@ class AIAssistantPanel(QWidget):
         cfg_row.addWidget(QLabel("Model")); cfg_row.addWidget(self.model_combo)
         cfg_row.addWidget(save_btn)
         layout.addLayout(cfg_row)
-        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        self.status = StatusLabel(); self.status.setStyleSheet("color:#8a9099;")
         layout.addWidget(self.status)
 
         # --- symbol context loader ---
@@ -5094,7 +5111,7 @@ class CoachPanel(QWidget):
         act_row.addWidget(QLabel("Overall process grade:"))
         act_row.addWidget(self.grade_label)
         act_row.addStretch()
-        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        self.status = StatusLabel(); self.status.setStyleSheet("color:#8a9099;")
         act_row.addWidget(self.status)
         layout.addLayout(act_row)
 
@@ -5784,7 +5801,7 @@ class HeatmapPanel(QWidget):
         legend.addStretch()
         layout.addLayout(legend)
 
-        self.status = QLabel("Pick a market and click Load map.")
+        self.status = StatusLabel("Pick a market and click Load map.")
         layout.addWidget(self.status)
 
     # --- data -------------------------------------------------------------
@@ -6124,7 +6141,7 @@ class AlertsPanel(QWidget):
         layout.addWidget(QLabel("Triggered alerts:"))
         self.log = QListWidget(); self.log.setMaximumHeight(150)
         layout.addWidget(self.log)
-        self.status = QLabel("Ready.")
+        self.status = StatusLabel("Ready.")
         layout.addWidget(self.status)
 
         self._timer = QTimer(self)
@@ -6601,7 +6618,7 @@ class JournalPanel(QWidget):
         self.breakdown.setMaximumHeight(180)
         layout.addWidget(self.breakdown)
 
-        self.status = QLabel("")
+        self.status = StatusLabel("")
         layout.addWidget(self.status)
         self.refresh()
 
@@ -7031,7 +7048,7 @@ class NewsPanel(QWidget):
         self.table.horizontalHeader().setStretchLastSection(False)
         layout.addWidget(self.table, 1)
 
-        self.status = QLabel("Pick a source and click Get news.")
+        self.status = StatusLabel("Pick a source and click Get news.")
         layout.addWidget(self.status)
         self._sync_mode()
 
@@ -7194,7 +7211,7 @@ class LinksPanel(QWidget):
         controls.addWidget(import_btn); controls.addWidget(export_btn)
         layout.addLayout(controls)
 
-        self.status = QLabel("Double-click a link to open it.")
+        self.status = StatusLabel("Double-click a link to open it.")
         layout.addWidget(self.status)
         self.refresh()
 
@@ -7408,7 +7425,7 @@ class SeasonalityPanel(QWidget):
         row.addWidget(QLabel("Symbol")); row.addWidget(self.symbol)
         row.addWidget(QLabel("History")); row.addWidget(self.period)
         row.addWidget(go); row.addStretch()
-        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        self.status = StatusLabel(); self.status.setStyleSheet("color:#8a9099;")
         row.addWidget(self.status)
         layout.addLayout(row)
 
@@ -7642,7 +7659,7 @@ class PortfolioAnalyticsPanel(QWidget):
         row.addWidget(QLabel("History")); row.addWidget(self.period)
         row.addWidget(QLabel("Currency")); row.addWidget(self.currency)
         row.addWidget(go); row.addStretch()
-        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        self.status = StatusLabel(); self.status.setStyleSheet("color:#8a9099;")
         row.addWidget(self.status)
         layout.addLayout(row)
 
@@ -8092,7 +8109,7 @@ class DividendsPanel(QWidget):
         go = QPushButton("Refresh"); go.clicked.connect(self.analyze)
         row.addWidget(QLabel("Currency")); row.addWidget(self.currency)
         row.addWidget(go); row.addStretch()
-        self.status = QLabel(); self.status.setStyleSheet("color:#8a9099;")
+        self.status = StatusLabel(); self.status.setStyleSheet("color:#8a9099;")
         row.addWidget(self.status)
         layout.addLayout(row)
 
@@ -8393,7 +8410,7 @@ class RetirementPanel(QWidget):
         for btn in (new, rename, delete, refresh):
             row.addWidget(btn)
         row.addStretch()
-        self.status = QLabel(); self.status.setStyleSheet(f"color:{theme.MUTED};")
+        self.status = StatusLabel(); self.status.setStyleSheet(f"color:{theme.MUTED};")
         row.addWidget(self.status)
         layout.addLayout(row)
 
@@ -9159,7 +9176,7 @@ class HomePanel(QWidget):
         top.addWidget(QLabel("Currency")); top.addWidget(self.currency); top.addWidget(refresh)
         layout.addLayout(top)
 
-        self.status = QLabel(); self.status.setStyleSheet(f"color:{theme.MUTED};")
+        self.status = StatusLabel(); self.status.setStyleSheet(f"color:{theme.MUTED};")
         layout.addWidget(self.status)
 
         self.headline = QLabel("Loading your portfolio…")
@@ -9664,6 +9681,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([640, 1000])
         self.setCentralWidget(splitter)
         self.statusBar().showMessage(f"{APP_NAME} {APP_VERSION} ready")
+        self._route_status_to_status_bar()
         self._build_menus()
         self.restore_window_state()
 
@@ -9841,6 +9859,31 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self.showMaximized()
+
+    STATUS_TIMEOUT_MS = 12_000
+
+    def _route_status_to_status_bar(self):
+        """Mirror every panel's status line into the window's status bar.
+
+        The per-panel labels stay where they are — read next to the controls
+        they describe, they are the natural place — but they sit mid-page and
+        are easy to look straight past. The status bar is where people expect
+        to find "what just happened", and it was showing only the version
+        string. Found by attribute rather than a hand-kept list, so a new
+        panel is included the day it is written.
+        """
+        for name in dir(self):
+            if not name.endswith("_panel"):
+                continue
+            label = getattr(getattr(self, name, None), "status", None)
+            if isinstance(label, StatusLabel):
+                label.messageChanged.connect(self._show_status)
+
+    def _show_status(self, message: str):
+        # Timed, not permanent: a status bar still reading "Charting VFV.TO"
+        # ten minutes later is worse than an empty one, because it looks
+        # current.
+        self.statusBar().showMessage(message, self.STATUS_TIMEOUT_MS)
 
     def toggle_panel_fullscreen(self):
         """The mirror of `toggle_chart_fullscreen`: give the whole window to

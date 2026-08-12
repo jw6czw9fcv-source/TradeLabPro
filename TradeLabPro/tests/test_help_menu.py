@@ -336,3 +336,33 @@ def test_full_screen_brings_the_toolbar_back_into_view(qapp):
     assert area.verticalScrollBar().value() == 0
     assert win.etf_screener_panel.fullscreen_btn.text().startswith("⤢")
     win.toggle_panel_fullscreen()
+
+
+def test_panel_status_messages_reach_the_window_status_bar(qapp):
+    """The per-panel line sits mid-page and is easy to look straight past;
+    the status bar is where people expect "what just happened"."""
+    win = _main_window(qapp)
+    win.etf_screener_panel.status.setText("Column widths saved (31 columns).")
+    assert "Column widths saved" in win.statusBar().currentMessage()
+
+    win.watch_panel.status.setText("Watchlist: 4 symbols")
+    assert "Watchlist: 4 symbols" in win.statusBar().currentMessage()
+
+
+def test_every_panel_with_a_status_line_is_routed(qapp):
+    from tradelab.ui.app import StatusLabel
+    win = _main_window(qapp)
+    routed = [name for name in dir(win)
+              if name.endswith("_panel")
+              and isinstance(getattr(getattr(win, name, None), "status", None), StatusLabel)]
+    assert len(routed) >= 10, routed
+    for name in routed:
+        getattr(win, name).status.setText(f"probe from {name}")
+        assert f"probe from {name}" in win.statusBar().currentMessage()
+
+
+def test_an_empty_status_does_not_wipe_the_bar(qapp):
+    win = _main_window(qapp)
+    win.etf_screener_panel.status.setText("something happened")
+    win.etf_screener_panel.status.setText("")        # panels clear their line
+    assert "something happened" in win.statusBar().currentMessage()
