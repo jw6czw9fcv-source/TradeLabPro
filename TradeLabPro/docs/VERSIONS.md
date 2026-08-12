@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.44.0** | *unreleased* | How long the money lasts |
+| **2.44.0** | 2026-08-12 | How long the money lasts |
 | **2.43.0** | 2026-08-12 | Fill an allocation by a rule you set |
 | **2.42.0** | 2026-08-11 | One risk rating, the published one |
 | **2.41.0** | 2026-08-10 | Your ETF workbook, in the app |
