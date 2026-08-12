@@ -3,7 +3,7 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
-2.43.0 - Fill an allocation by a rule you set - the ETF Screener builds Low/Mid/High risk from criteria you choose (which published risk bands, equal or inverse-volatility weighting, a cap per fund) instead of by hand
+2.44.0 - How long the money lasts - a Retirement Sim tab that projects a household year by year to the age you name: incomes, the forced RRIF minimum, real Quebec and federal tax, and what has to come out of capital
 
 ## Run
 1. Run `install_requirements.bat` if needed.
