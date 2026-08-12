@@ -675,3 +675,22 @@ def test_holdings_summary_of_a_silent_fund_is_unknown_not_zero():
     assert vab["published"] is None
     assert vab["count"] == 0
     assert vab["text"] == ""
+
+
+def test_sector_weights_are_sorted_and_normalised():
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 1.0},
+                        "sectors": {"Energy": 0.18, "financial_services": 0.32}}}
+    xic = [f for f in holdings_summary(_two_funds(), comps) if f["ticker"] == "XIC"][0]
+    assert [name for name, _w in xic["sectors"]] == ["Financials", "Energy"]
+
+
+def test_a_zero_weight_sector_is_left_out():
+    comps = {"XIC.TO": {"top_holdings": {"RY.TO": 1.0},
+                        "sectors": {"Energy": 0.0, "Utilities": 0.1}}}
+    xic = [f for f in holdings_summary(_two_funds(), comps) if f["ticker"] == "XIC"][0]
+    assert [name for name, _w in xic["sectors"]] == ["Utilities"]
+
+
+def test_a_fund_with_no_sector_data_gets_an_empty_list():
+    xic = [f for f in holdings_summary(_two_funds(), {}) if f["ticker"] == "XIC"][0]
+    assert xic["sectors"] == []

@@ -1580,6 +1580,12 @@ class EtfMetricsWorker(QThread):
             pass
 
 
+# The chart, the Screener and these dialogs all offer the same gesture; the
+# labels live in one place so they can't drift apart.
+_FULLSCREEN_ENTER = "⛶ Full screen"
+_FULLSCREEN_EXIT = "⤢ Retract"
+
+
 class _EtfReportDialog(QDialog):
     """A one-off table of results with a footnote — used for the analyses that
     answer a question rather than edit the Screener (target vs held, what the
@@ -1597,6 +1603,19 @@ class _EtfReportDialog(QDialog):
         self.table.setAlternatingRowColors(True)
         for r, row in enumerate(rows):
             for c, cell in enumerate(row):
+                if isinstance(cell, dict):
+                    # A cell whose parts need different emphasis - a list of
+                    # holdings where the names must carry and the percentages
+                    # must not. A plain item is one colour throughout, so this
+                    # one is a widget.
+                    label = QLabel(cell["html"])
+                    label.setWordWrap(True)
+                    label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                    label.setContentsMargins(6, 4, 6, 4)
+                    label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+                    self.table.setItem(r, c, table_item(cell.get("sort", "")))
+                    self.table.setCellWidget(r, c, label)
+                    continue
                 text, colour, sort_value = (cell if isinstance(cell, tuple)
                                             else (cell, None, None))
                 item = table_item(sort_value if sort_value is not None else text,
@@ -1621,8 +1640,28 @@ class _EtfReportDialog(QDialog):
             note.setWordWrap(True)
             note.setStyleSheet(f"color: {theme.MUTED}; font-size: 11px;")
             layout.addWidget(note)
+
+        buttons = QHBoxLayout()
+        self.fullscreen_btn = QPushButton(_FULLSCREEN_ENTER)
+        self.fullscreen_btn.setToolTip("Fill the monitor with this table, or put it back.")
+        self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
         close = QPushButton("Close"); close.clicked.connect(self.accept)
-        layout.addWidget(close)
+        buttons.addWidget(self.fullscreen_btn)
+        buttons.addStretch(1)
+        buttons.addWidget(close)
+        layout.addLayout(buttons)
+
+    def toggle_fullscreen(self):
+        """The table is wide and the dialog opens small. Same gesture and the
+        same glyphs as the chart and the Screener - the button says which way
+        it goes, so there is never a state with no visible way out."""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+        self.fullscreen_btn.setText(
+            _FULLSCREEN_EXIT if self.isFullScreen() else _FULLSCREEN_ENTER)
+        self.table.resizeRowsToContents()
 
 
 class _EtfCompareDialog(QDialog):
@@ -1638,8 +1677,22 @@ class _EtfCompareDialog(QDialog):
         layout.addWidget(self.chart, 1)
         self.chart.show_funds(rebased, title="Rebased to 100 at a common start",
                               footnote=footnote)
+        buttons = QHBoxLayout()
+        self.fullscreen_btn = QPushButton(_FULLSCREEN_ENTER)
+        self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
         close = QPushButton("Close"); close.clicked.connect(self.accept)
-        layout.addWidget(close)
+        buttons.addWidget(self.fullscreen_btn)
+        buttons.addStretch(1)
+        buttons.addWidget(close)
+        layout.addLayout(buttons)
+
+    def toggle_fullscreen(self):
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+        self.fullscreen_btn.setText(
+            _FULLSCREEN_EXIT if self.isFullScreen() else _FULLSCREEN_ENTER)
 
 
 class _BuildAllocationDialog(QDialog):
@@ -1833,8 +1886,8 @@ class EtfScreenerPanel(QWidget):
                       "suggested_account")
 
     # Same glyphs the chart workspace uses for the same gesture.
-    FULLSCREEN_ENTER = "⛶ Full screen"
-    FULLSCREEN_EXIT = "⤢ Retract"
+    FULLSCREEN_ENTER = _FULLSCREEN_ENTER
+    FULLSCREEN_EXIT = _FULLSCREEN_EXIT
 
     # Which weight column each summary column reads.
     COMPOSITIONS = [("Low risk", "low_risk"), ("Mid risk", "mid_risk"),
@@ -2714,15 +2767,17 @@ class EtfScreenerPanel(QWidget):
         summaries = holdings_summary(self._lt_funds, compositions)
         table = []
         for fund in summaries:
+            sectors = self._weighted_html(fund["sectors"], limit=5)
             if not fund["count"]:
                 table.append([fund["ticker"],
                               ("no holdings published", theme.MUTED, None),
-                              ("", None, None), ("", None, None)])
+                              sectors, ("", None, None), ("", None, None)])
                 continue
             published = fund["published"]
             table.append([
                 fund["ticker"],
-                (fund["text"], None, None),
+                self._weighted_html(fund["holdings"]),
+                sectors,
                 (str(fund["count"]), None, fund["count"]),
                 # Amber whenever the source names less than half the fund: the
                 # line reads as a description of it, and past a point it isn't.
@@ -2733,12 +2788,28 @@ class EtfScreenerPanel(QWidget):
         self.status.setText(f"{named} of {len(summaries)} funds publish holdings.")
         _EtfReportDialog(
             self, "What each fund contains",
-            ["Fund", "What it holds", "Names", "Published"], table,
-            "One line per fund: its published holdings, largest first. **Published** is "
-            "how much of the fund those names actually account for — sources give only "
-            "the top ten or so, so the rest is real money this line does not describe. "
-            "A fund held whole inside another is opened one level further. "
-            + theme.NOT_ADVICE).exec()
+            ["Fund", "What it holds", "Sectors", "Names", "Published"], table,
+            "One line per fund: its published holdings, largest first, then the sector "
+            "weights it publishes for the whole fund. **Published** is how much of the "
+            "fund those named holdings account for — sources give only the top ten or "
+            "so, so the rest is real money this line does not describe, while the "
+            "sector weights cover all of it. A fund held whole inside another is "
+            "opened one level further. " + theme.NOT_ADVICE).exec()
+
+    @staticmethod
+    def _weighted_html(pairs, limit=None):
+        """A list of name/weight pairs where the names carry and the weights
+        recede. Reading down this column you are looking for tickers, so the
+        percentages are dimmed rather than competing with them."""
+        if not pairs:
+            return {"html": "", "sort": ""}
+        shown = pairs[:limit] if limit else pairs
+        parts = [f'{name}&nbsp;<span style="color:{theme.MUTED}">{weight * 100:.1f}%</span>'
+                 for name, weight in shown]
+        html = " · ".join(parts)
+        if limit and len(pairs) > limit:
+            html += f' <span style="color:{theme.MUTED}">+{len(pairs) - limit} more</span>'
+        return {"html": html, "sort": pairs[0][0]}
 
     def shutdown(self):
         """Stop every in-flight fetch so closing the window doesn't leave a

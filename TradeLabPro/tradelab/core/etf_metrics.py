@@ -568,8 +568,22 @@ def holdings_rows(funds: list[dict], compositions: dict) -> list[dict]:
     return rows
 
 
+def _canonical_sector(name):
+    """market_data's normaliser, kept behind a guard so this module stays
+    importable (and testable) without the data layer."""
+    try:
+        from tradelab.data.market_data import canonical_sector
+        return canonical_sector(name)
+    except Exception:
+        return None
+
+
 def holdings_summary(funds: list[dict], compositions: dict) -> list[dict]:
     """One entry per fund: everything it holds, on one line.
+
+    Carries the fund's published sector weights too: they come with the same
+    fetch, so the column is free, and they describe the whole fund rather than
+    only the names it happens to list.
 
     The same facts as `holdings_rows` folded so a fund is a single row —
     thirty-one lines instead of three hundred, which is the difference between
@@ -588,10 +602,27 @@ def holdings_summary(funds: list[dict], compositions: dict) -> list[dict]:
             except (TypeError, ValueError):
                 continue
         published = sum(w for _s, w in pairs)
+
+        # Sector weights come with the same fetch, so this column costs no
+        # extra request. They arrive unordered and sometimes in the source's
+        # own spelling; sort and normalise so two funds' sectors can be
+        # compared by eye down the column.
+        raw_sectors = ((compositions or {}).get(symbol) or {}).get("sectors") or {}
+        sectors = []
+        for name, weight in raw_sectors.items():
+            try:
+                weight = float(weight)
+            except (TypeError, ValueError):
+                continue
+            if weight > 0:
+                sectors.append((_canonical_sector(name) or str(name), weight))
+        sectors.sort(key=lambda kv: -kv[1])
+
         out.append({
             "ticker": fund.get("ticker", ""),
             "symbol": symbol,
             "holdings": pairs,
+            "sectors": sectors,
             "published": published if pairs else None,
             "count": len(pairs),
             "text": ", ".join(f"{s} {w * 100:.1f}%" for s, w in pairs),

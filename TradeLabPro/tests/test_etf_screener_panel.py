@@ -1093,12 +1093,14 @@ def test_fund_holdings_puts_each_fund_on_one_line(panel, monkeypatch, no_network
     panel._on_look_through_loaded(
         {"XIC.TO": {"top_holdings": {"RY.TO": 0.6, "TD.TO": 0.2}}, "VAB.TO": {}}, {}, "")
 
-    assert shown["headers"] == ["Fund", "What it holds", "Names", "Published"]
+    assert shown["headers"] == ["Fund", "What it holds", "Sectors", "Names", "Published"]
     # One row per fund, not one per holding.
     assert [row[0] for row in shown["rows"]] == ["VAB", "XIC"]
     xic = [row for row in shown["rows"] if row[0] == "XIC"][0]
-    assert xic[1][0] == "RY.TO 60.0%, TD.TO 20.0%"      # largest first
-    assert xic[2][0] == "2"
+    # Names carry, percentages recede — so the cell is markup, not plain text.
+    assert xic[1]["html"].index("RY.TO") < xic[1]["html"].index("TD.TO")   # largest first
+    assert "60.0%" in xic[1]["html"] and appmod.theme.MUTED in xic[1]["html"]
+    assert xic[3][0] == "2"
     assert "1 of 2 funds publish holdings" in panel.status.text()
 
 
@@ -1114,7 +1116,7 @@ def test_fund_holdings_says_how_much_of_the_fund_is_described(panel, monkeypatch
     panel.reload()
     panel.show_fund_holdings()
     panel._on_look_through_loaded({"XIC.TO": {"top_holdings": {"RY.TO": 0.6}}}, {}, "")
-    assert shown["rows"][0][3][0] == "60%"
+    assert shown["rows"][0][4][0] == "60%"
 
 
 def test_a_fund_publishing_nothing_keeps_its_line(panel, monkeypatch, no_network):
@@ -1144,3 +1146,57 @@ def test_the_two_views_share_one_fetch_but_render_differently(panel, no_network)
     assert panel._lt_render == panel._render_look_through
     panel.show_fund_holdings()
     assert panel._lt_render == panel._render_fund_holdings
+
+
+def test_the_sectors_column_uses_what_the_fund_publishes(panel, monkeypatch, no_network):
+    """Sector weights arrive with the same fetch as the holdings, so the
+    column costs no extra request — and unlike the named holdings they cover
+    the whole fund."""
+    from tradelab.ui import app as appmod
+    shown = {}
+    monkeypatch.setattr(appmod._EtfReportDialog, "__init__",
+                        lambda self, parent, title, headers, rows, footnote="":
+                            shown.update(rows=rows) or None)
+    monkeypatch.setattr(appmod._EtfReportDialog, "exec", lambda self: None)
+    panel.db.etf_upsert("XIC", yahoo="XIC.TO")
+    panel.reload()
+    panel.show_fund_holdings()
+    panel._on_look_through_loaded(
+        {"XIC.TO": {"top_holdings": {"RY.TO": 0.6},
+                    "sectors": {"Energy": 0.18, "Financial Services": 0.32}}}, {}, "")
+    html = shown["rows"][0][2]["html"]
+    # Normalised on the way in ("Financial Services" and "financial_services"
+    # are one sector), so two funds' columns can be compared by eye.
+    assert html.index("Financials") < html.index("Energy")           # largest first
+    assert "32.0%" in html
+
+
+def test_a_long_sector_list_is_capped_and_says_so(panel):
+    pairs = [(f"Sector {i}", 0.1) for i in range(8)]
+    cell = panel._weighted_html(pairs, limit=5)
+    assert "+3 more" in cell["html"]
+    assert "Sector 5" not in cell["html"]
+
+
+def test_an_empty_weighted_cell_is_blank(panel):
+    assert panel._weighted_html([])["html"] == ""
+
+
+def test_a_report_can_fill_the_monitor_and_come_back(qapp):
+    """The holdings table is wide and the dialog opens small."""
+    from tradelab.ui.app import _EtfReportDialog, _FULLSCREEN_ENTER, _FULLSCREEN_EXIT
+    dialog = _EtfReportDialog(None, "T", ["A", "B"], [["x", "y"]], "note")
+    assert dialog.fullscreen_btn.text() == _FULLSCREEN_ENTER
+    dialog.toggle_fullscreen()
+    assert dialog.isFullScreen()
+    assert dialog.fullscreen_btn.text() == _FULLSCREEN_EXIT
+    dialog.toggle_fullscreen()
+    assert not dialog.isFullScreen()
+    assert dialog.fullscreen_btn.text() == _FULLSCREEN_ENTER
+    dialog.close()
+
+
+def test_every_full_screen_control_uses_the_same_labels(panel):
+    from tradelab.ui.app import _FULLSCREEN_ENTER, _FULLSCREEN_EXIT
+    assert panel.FULLSCREEN_ENTER == _FULLSCREEN_ENTER
+    assert panel.FULLSCREEN_EXIT == _FULLSCREEN_EXIT
