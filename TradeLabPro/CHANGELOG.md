@@ -6,6 +6,7 @@
 - **A Build… button on the ETF Screener.** It fills Low / Mid / High risk from a rule instead of by hand: which **published risk bands** count as eligible, **equal weight or inverse volatility**, a **cap per fund**, and whether to keep only one of two funds that buy the same market. A live preview shows exactly what it would write before it writes anything, and every cell stays editable afterwards — the rule produces a starting point, not a decision.
 - **A Sectors column** on that view, from the sector weights the fund publishes for itself. They arrive with the same fetch, so the column costs no extra request — and unlike the named holdings they describe **all** of the fund. Names are normalised, so a fund saying `financial_services` and one saying `Financial Services` line up in the column.
 - **The percentages are dimmed and the names are not.** Reading down a holdings column you are looking for tickers; the weights were competing with them for attention.
+- **Column widths are remembered.** Widen a column in full screen to read it and it stays that way — through the next reload, the toggle back, and the next launch. Sizing to the contents only happens when nothing has been remembered yet, so a reload can no longer undo every column you set. Stored like the Scanner's saved layout.
 - **Full screen on the report windows too** (`⛶` / `⤢`), same gesture and same labels as the chart and the Screener — now defined in one place so they can't drift apart.
 - **A "What each fund holds" view**: **one line per fund**, its published holdings listed on that line, largest first — the look-through's question turned around. Not "what do I own in total" but "what is in each of these". Thirty-one lines to read down rather than three hundred to scroll.
 - The duplicate rule keeps the **cheaper** of a matching pair (same exposure, less cost), with the ticker breaking a tie so the result is repeatable rather than dependent on row order.
@@ -23,7 +24,7 @@
 - Inverse volatility uses the **measured** volatility, so a fund that has never been refreshed is left out and named rather than guessed at.
 
 ### Verified
-- Full pytest suite (1144) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
+- Full pytest suite (1148) passes, including the cap redistributing an excess and stopping when every fund is at the cap, inverse volatility giving the calmer fund more, the duplicate pair resolved by cost, a stale weight cleared, the other allocations left alone, and cancelling writing nothing.
 
 
 ## 2.42.0 - One risk rating, the published one

@@ -1200,3 +1200,48 @@ def test_every_full_screen_control_uses_the_same_labels(panel):
     from tradelab.ui.app import _FULLSCREEN_ENTER, _FULLSCREEN_EXIT
     assert panel.FULLSCREEN_ENTER == _FULLSCREEN_ENTER
     assert panel.FULLSCREEN_EXIT == _FULLSCREEN_EXIT
+
+
+# -- remembered column widths -------------------------------------------------
+
+def test_a_column_you_widen_survives_a_reload(panel):
+    """Widening a column to read it, then having the next edit snap it back,
+    is a table fighting you."""
+    panel.db.etf_upsert("VFV", name="Vanguard S&P 500")
+    panel.reload()
+    column = _col(panel, "name")
+    panel.table.setColumnWidth(column, 320)
+    panel.reload()
+    assert panel.table.columnWidth(column) == 320
+
+
+def test_the_widths_outlive_the_panel(panel, qapp, tmp_path):
+    from tradelab.ui.app import EtfScreenerPanel
+    panel.db.etf_upsert("VFV")
+    panel.reload()
+    panel.table.setColumnWidth(_col(panel, "notes"), 275)
+    fresh = EtfScreenerPanel(Database(path=tmp_path / "again.db"))
+    fresh.db.etf_upsert("VFV")
+    fresh.reload()
+    assert fresh.table.columnWidth(_col(fresh, "notes")) == 275
+
+
+def test_our_own_sizing_is_not_saved_over_yours(panel):
+    """resizeColumnsToContents fires the same signal; saving that would
+    overwrite the widths the moment a reload ran."""
+    panel.db.etf_upsert("VFV")
+    panel.reload()
+    column = _col(panel, "name")
+    panel.table.setColumnWidth(column, 300)
+    panel._sizing = True
+    panel.table.setColumnWidth(column, 60)          # as if auto-sized
+    panel._sizing = False
+    assert panel.restore_layout()
+    assert panel.table.columnWidth(column) == 300
+
+
+def test_a_fresh_install_sizes_to_the_contents(panel, monkeypatch):
+    monkeypatch.setattr(type(panel), "restore_layout", lambda self: False)
+    panel.db.etf_upsert("VFV", name="A very long fund name to widen the column")
+    panel.reload()                                   # must not raise
+    assert panel.table.columnWidth(_col(panel, "name")) > 20

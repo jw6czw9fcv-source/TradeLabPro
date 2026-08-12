@@ -2031,6 +2031,13 @@ class EtfScreenerPanel(QWidget):
         self.table.setMinimumHeight(320)
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.cellDoubleClicked.connect(self._chart_row)
+        # Column widths you set by hand survive a reload, a full-screen
+        # toggle and a restart. Widening a column to read it in full and
+        # having the next edit snap it back is the kind of thing that makes a
+        # table feel like it is fighting you. Same store and same shape as the
+        # Scanner's saved layout.
+        self.table.horizontalHeader().sectionResized.connect(
+            lambda *_a: self.save_layout())
         layout.addWidget(self.table, 1)
 
         # Thirty columns scroll a long way right; the ticker column is pinned
@@ -2093,6 +2100,44 @@ class EtfScreenerPanel(QWidget):
         self.reload()
 
     # -- data -------------------------------------------------------------
+    TABLE_SETTING = "EtfScreenerTable"
+
+    @staticmethod
+    def _settings():
+        """The app's own store. A bare QSettings() has no organization, writes
+        somewhere else and reads back nothing."""
+        return QSettings("TradeLabPro", "TradeLabPro")
+
+    def save_layout(self):
+        """Remember the column widths — unless we are the ones setting them."""
+        if self._loading or getattr(self, "_sizing", False):
+            return
+        try:
+            widths = [self.table.columnWidth(c) for c in range(self.table.columnCount())]
+            settings = self._settings()
+            settings.beginGroup(self.TABLE_SETTING)
+            settings.setValue("widths", json.dumps(widths))
+            settings.endGroup()
+        except Exception:
+            pass
+
+    def restore_layout(self) -> bool:
+        """Apply the remembered widths. False when there are none, so the
+        caller can size to the contents instead."""
+        try:
+            settings = self._settings()
+            settings.beginGroup(self.TABLE_SETTING)
+            widths = json.loads(settings.value("widths", "[]"))
+            settings.endGroup()
+        except Exception:
+            return False
+        applied = False
+        for column, width in enumerate(widths[:self.table.columnCount()]):
+            if int(width) > 20:
+                self.table.setColumnWidth(column, int(width))
+                applied = True
+        return applied
+
     def reload(self):
         """Repaint the whole table from the database. Sorting is switched off
         while the rows go in: with it on, Qt re-sorts after every setItem and
@@ -2107,7 +2152,12 @@ class EtfScreenerPanel(QWidget):
             for c, (key, _label, editable) in enumerate(self.COLUMNS):
                 self.table.setItem(r, c, self._make_item(key, fund.get(key), editable, fund))
         self.table.setSortingEnabled(sorting)
-        self.table.resizeColumnsToContents()
+        # Only size to the contents when nothing was remembered: otherwise a
+        # reload would quietly undo every column you widened.
+        self._sizing = True
+        if not self.restore_layout():
+            self.table.resizeColumnsToContents()
+        self._sizing = False
         frozen = getattr(self, "frozen", None)
         if frozen is not None:
             frozen.sync()
