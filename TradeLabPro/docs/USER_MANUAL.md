@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.43.0**
+**Version 2.46.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
 **Home** dashboard showing your book, a chart of its year so far, the market
@@ -9,7 +9,8 @@ dates your holdings have scheduled, scan the
 market for setups, chart and analyze symbols, keep watchlists and a portfolio
 (**import your positions from IBKR**, see the book's **risk analytics** in CAD,
 read your ETFs through to the **companies inside them**,
-and track the **dividend income** it pays), set price/indicator **alerts**, see a
+and track the **dividend income** it pays), **project how long the money lasts**
+in retirement, set price/indicator **alerts**, see a
 whole market at a glance on a
 **heatmap**, backtest strategies, build your own strategies and indicators
 without code, **replay** history bar-by-bar, study a symbol's **seasonality**,
@@ -84,15 +85,16 @@ The window is split into two halves:
   market in one screen — and the rest follow the
   trading process: **Market → Heatmap → News** (market context) → **Scanner →
   ETF Screener → Watchlists → Alerts** (find & watch) → **AI Assist → Risk → Paper Trading**
-  (analyse, size & act) → **Portfolio → Analytics → Dividends → Journal →
-  Coach** (track & review) →
+  (analyse, size & act) → **Portfolio → Analytics → Dividends → Retirement →
+  Retirement Sim → Journal → Coach** (track & review) →
   **Backtest → Strategies → Replay → Seasonality → Plugins** (research/build) →
   **Notes → Links → Settings** (utilities). The tab bar wraps to two rows so
   every tab is visible.
-- **Right — the chart workspace.** Always visible. Charts you open from the
-  Scanner, Heatmap, Journal, or Replay (or type in directly) appear here as
-  dockable panels. A **⛶ Full screen** button expands the chart to the whole
-  monitor (Esc to retract).
+- **Right — the chart workspace.** Always visible, and it follows the tab you
+  are on: charts you open from the Scanner, Heatmap, Journal, or Replay (or type
+  in directly) appear here as dockable panels, while **Retirement Sim** draws its
+  projection in the same space. A **⛶ Full screen** button expands the chart to
+  the whole monitor (Esc to retract).
 
 Drag the divider between the two halves to rebalance the space. Each tab scrolls
 internally if it needs more room than the window height, so the bottom of a tab
@@ -747,6 +749,114 @@ performance would mislead.
 > **What it won't do.** It won't connect to your plan, and it won't tell you
 > which fund to hold. Returns, benchmarks and fees are laid side by side as
 > facts. Reporting only — not financial advice.
+
+### The Retirement Sim tab — how long the money lasts
+
+The **Retirement** tab beside it *tracks* a plan: what it was worth, what it
+returned. **Retirement Sim** *projects*. Given what you hold and what you
+assume, it writes one row per calendar year — incomes, the forced RRIF minimum,
+real Québec **and** federal tax, and what has to come out of capital to cover
+the spending — up to the age you name.
+
+**Three tables to fill in.** Add and remove rows with the buttons under each.
+
+| Table | Columns | Notes |
+| --- | --- | --- |
+| **People** | Name, Age | One row per person. Every **Owner** elsewhere has to match a Name here exactly, or the app can't tell whose age applies. |
+| **Accounts** | Account, Kind, Balance, Owner | **Kind** is `registered` (REER/FERR/FTQ), `tfsa` (CELI) or `taxable` (non-registered). Balances accept `$` and commas — `$164,000` reads fine. |
+| **Incomes** | Income, Owner, Per year, Starts, Ends, Indexed | **Per year** is what it's worth **today**. **Starts** / **Ends** are the owner's age; a blank End means for life. A wage is just an income that ends. |
+
+**The Indexed column decides whether a cheque grows.** `Yes` (or a blank cell —
+the common case) means it rises with inflation, which is what the RRQ, the PSV
+and the AOW do by law. Type `No`, `non` or `fixe` for a fixed private pension:
+it keeps paying the same number of dollars for thirty years, and loses about
+half its worth doing so.
+
+**The controls along the top.**
+
+| Control | What it does |
+| --- | --- |
+| **Spending** | Household spending per year, in today's dollars — it grows with inflation from there. **The input that moves the answer more than any other.** |
+| **% return** | The return as a fund reports it, with inflation still in it. 5 means five percent. |
+| **% infl** | Inflation, projected explicitly. It grows the indexed benefits, the spending, and the tax brackets. |
+| *= x.xx% real* | What the return leaves after inflation. Fisher, not subtraction: 5% at 2% is **2.94% real**, not 3%. |
+| **% vol** | How much the return varies year to year — only used by **Run many paths**. |
+| **to age** | How far to project. The horizon runs from the oldest person's age to this one. |
+| **% split** | How much eligible pension income to move to the lower earner (0–50%). |
+| **Today's $** | Read the finished table in today's purchasing power instead of each year's. See below. |
+| **paths** | How many return orderings **Run many paths** uses. |
+
+**What a run gives you.** *Run projection* fills the table below — **Year,
+Ages, Income, RRIF minimum, Tax, From capital, Unfunded, Closing** — and draws
+the closing balance in the right-hand pane where the chart normally sits. Any
+year the plan can't fund is shown in red, and **the projection keeps going past
+the year it fails** rather than stopping and leaving you to guess at the rest.
+The status line says the age the money lasts to, or the age it runs short at
+and by how much.
+
+*Income* counts your incomes only; the forced withdrawal has its own column so
+you can see what arrived because you needed it and what arrived because the law
+said so. Capital is drawn **in the order the accounts are listed** — reorder the
+rows to change it. Nothing here picks a withdrawal strategy for you.
+
+**Which dollars you are reading.** The projection runs in the dollars of the
+year each thing happens: the RRQ grows the way it really does, the spending
+rises to match, and the balances are the numbers that would appear on a
+statement. The cost is that "$1.2M in 2055" is not a figure anyone can price —
+so tick **Today's $** and the same run is re-read in today's purchasing power.
+It *re-reads*, it does not re-run: every row carries its own inflation factor,
+so the two views can never disagree about what happened, only about how it is
+priced. The toggle covers the many-path bands and the chart too, including a
+run you saved months ago.
+
+**The tax is a real model, not a rate.** Every 2026 figure was read off
+canada.ca and revenuquebec.ca, and each carries its source. Each person is
+taxed **as a person** — two basic personal amounts are worth more than one — with
+the age amount from 65, the pension income amount, Québec's reduction of the age
+amount on **family** net income, and the Québec abatement. The brackets are
+indexed along with everything else, because both governments index theirs;
+freezing them would invent bracket creep that will not happen. **Only eligible
+pension income is split**: a wage can't be, and the RRQ has its own separate
+mechanism.
+
+**The forced RRIF minimum.** From the year an account's owner turns 71, a
+registered account pays out the CRA's prescribed minimum whether the spending
+needed it or not, and it is taxable to **that account's owner** — a couple's
+minimums are two different numbers, not one.
+
+**Run many paths.** One average return says nothing about the *order* returns
+arrive in, and order is what decides a drawdown: losing 20% in the first two
+years of withdrawing is not the same as losing it in the last two, because money
+taken out at the bottom never comes back. This runs the same plan over hundreds
+of orderings and reports **Worst 10% / Median / Best 10%** per year, plus the
+share of paths **still solvent**, with the 10–90 band shaded behind the median
+on the chart. The draw is seeded, so the same inputs give the same answer twice.
+
+**Save inputs** writes the three tables and every control to the database, so
+the plan is there next launch. **Save sim** keeps the current run on the chart
+as the line to compare against — it stays through later runs and through closing
+the app, until you press it again; a baseline that moved with every experiment
+wouldn't be one. **Clear saved** removes it.
+
+> **A success rate is the share of *simulated* paths under assumptions you
+> chose** — not a probability that a retirement works. Move the spending by five
+> thousand and it shifts more than any market will. Returns are drawn from a
+> normal curve, which has **fewer very bad years than markets actually do**.
+
+> **It computes; it does not advise.** Spending, return, inflation, the age each
+> pension starts, how much pension income is split, the order accounts are drawn
+> from — every judgement is an input you type. Nothing in this tab picks a
+> strategy, recommends a withdrawal rate, or says whether a plan is good. Not
+> financial advice.
+
+> **What it deliberately does not model.** A **non-registered** account is
+> treated as tax-free on withdrawal — the app doesn't track an adjusted cost
+> base, and inventing a capital gain would be a guess, so that column is
+> optimistic if you hold much outside registered plans. The **OAS/PSV recovery
+> tax** (clawback) is not applied. Deferring a pension is **not** grossed up for
+> you: type the amount that applies at the age you start it. And the tax table is
+> **2026** — it is meant to be edited each year, and if indexation ever stops,
+> the whole projection is optimistic.
 
 ---
 
