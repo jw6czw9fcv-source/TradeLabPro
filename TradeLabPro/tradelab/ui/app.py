@@ -6933,12 +6933,73 @@ class ManualBrowser(QTextBrowser):
 
     def __init__(self, base_dir):
         super().__init__()
-        self.setOpenExternalLinks(True)
+        # Every click comes here instead of to Qt: setMarkdown renders the
+        # headings but gives them no anchors, so Qt has nothing to jump to and a
+        # table-of-contents link did nothing at all. See _link_clicked.
+        self.setOpenLinks(False)
+        self.anchorClicked.connect(self._link_clicked)
         self._base_dir = Path(base_dir)
         # Resolve the manual's relative image paths (images/*.png).
         self.setSearchPaths([str(self._base_dir)])
         self._native = {}  # src name -> (width, height) in native pixels
         self._base_pt = None  # font point size at zoom 1.0
+
+    # -- links ---------------------------------------------------------------
+
+    def _link_clicked(self, url):
+        """A link inside the document: jump if it points at a heading, hand it
+        to the system if it points anywhere else."""
+        if not url.scheme() and not url.path() and url.fragment():
+            self.scroll_to_heading(url.fragment())
+            return
+        target = url if url.scheme() else QUrl.fromLocalFile(
+            str((self._base_dir / url.path()).resolve()))
+        QDesktopServices.openUrl(target)
+
+    def heading_blocks(self):
+        """Every heading in the rendered document, with the slug its own table
+        of contents would use to link to it."""
+        from tradelab.core.manual import slugify
+        doc = self.document()
+        block = doc.begin()
+        while block.isValid():
+            if block.blockFormat().headingLevel():
+                yield slugify(block.text()), block
+            block = block.next()
+
+    def lay_out_fully(self):
+        """Make the document's own geometry true before anyone measures it.
+
+        Qt lays a QTextDocument out lazily, and with screenshots in it the
+        difference is not small: everything below the first image reports a
+        position from a *placeholder* layout — zero-height blocks a few pixels
+        apart — so the manual claims to be 11,600px tall when it is really
+        25,100. Scrolling to a position read from that lands every section
+        after the first screenshot in a heap just past it, which is what a
+        table-of-contents jump looked like. Re-stating the width forces the
+        real thing.
+        """
+        width = self.viewport().width()
+        if width > 0:
+            self.document().setTextWidth(width)
+            self.document().size()          # reading it is what does the work
+
+    def scroll_to_heading(self, slug) -> bool:
+        """Put the heading with this slug at the top of the view.
+
+        Qt's own scrollToAnchor is no use here: it needs `<a name>` anchors that
+        markdown rendering never produces. Matching the heading text against the
+        same slug rule the links were written with is what makes the manual's
+        table of contents work at all.
+        """
+        self.lay_out_fully()
+        for name, block in self.heading_blocks():
+            if name == slug:
+                top = self.document().documentLayout().blockBoundingRect(block).top()
+                bar = self.verticalScrollBar()
+                bar.setValue(max(0, min(bar.maximum(), int(top))))
+                return True
+        return False
 
     def load_markdown(self, md):
         self.setMarkdown(md)
@@ -6987,6 +7048,47 @@ class ManualBrowser(QTextBrowser):
         if avail < 50:
             return
         _scale_doc_images(self.document(), avail * self._zoom_factor(), self._native_size)
+        # Resizing every image invalidates the layout, and Qt would rebuild only
+        # what it has to. Until it does, the scrollbar is sized for a document
+        # less than half the real height — so the end of the manual is not
+        # reachable by dragging it.
+        self.lay_out_fully()
+
+
+class HelpPanel(QWidget):
+    """The user manual as a tab, sitting at the end of the row after Settings.
+
+    The same manual the Help menu opens (F1), and the same viewer class — it is
+    a second way in, not a second copy of the text. A tab is where you look when
+    you are already lost in a screen; a menu is where you look when you know the
+    manual exists.
+    """
+
+    def __init__(self, manual_path, on_pdf=None):
+        super().__init__()
+        self.manual_path = Path(manual_path)
+        layout = QVBoxLayout(self)
+
+        bar = QHBoxLayout()
+        if on_pdf is not None:
+            pdf_btn = QPushButton("📄  Open as PDF")
+            pdf_btn.setToolTip("Export the manual to a PDF and open it in your default viewer")
+            pdf_btn.clicked.connect(lambda: on_pdf(self.manual_path))
+            bar.addWidget(pdf_btn)
+        bar.addStretch()
+        layout.addLayout(bar)
+
+        self.viewer = ManualBrowser(self.manual_path.parent)
+        try:
+            self.viewer.load_markdown(self.manual_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self.viewer.setPlainText(
+                f"Could not load the user manual from:\n{self.manual_path}\n\n{exc}")
+        layout.addWidget(self.viewer, 1)
+
+    def show_section(self, slug) -> bool:
+        """Jump the tab to a section, the way the manual's own contents do."""
+        return self.viewer.scroll_to_heading(slug)
 
 
 class NewsWorker(QThread):
@@ -10226,6 +10328,8 @@ class MainWindow(QMainWindow):
         self.notes_panel = NotesPanel()
         self.links_panel = LinksPanel()
         self.settings_panel = SettingsPanel(self.db)
+        self.help_panel = HelpPanel(ROOT_DIR / "docs" / "USER_MANUAL.md",
+                                    on_pdf=self._export_manual_pdf)
 
         # Tabs follow the trading process (each page wrapped in a scroll area so
         # a tall tab can't force the window past the screen height):
@@ -10257,6 +10361,10 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(self.notes_panel), "Notes")           # utilities
         tabs.addTab(_scroll_tab(self.links_panel), "Links")
         tabs.addTab(_scroll_tab(self.settings_panel), "Settings")
+        # Last, after Settings. Not wrapped in a scroll area like the others:
+        # the manual viewer scrolls itself, and nesting the two fights over the
+        # wheel.
+        tabs.addTab(self.help_panel, "Help")                          # how does this work?
         # UI-001: keep the left control area usable.  The splitter may still
         # be resized, but the scanner/watchlist/settings column will not
         # collapse to an unreadable width.

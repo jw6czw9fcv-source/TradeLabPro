@@ -11,7 +11,10 @@
 - `TaxYear.inflated()`, and an `indexed` flag on every tax constant.
 - `deflate()`, `real_from_nominal()` / `nominal_from_real()` — the Fisher relation rather than a subtraction: 6% with 2% inflation is 3.92% real, not 4%.
 
+- **A Help tab**, last in the row after Settings: the manual in a tab, with the same Open as PDF button. `Help → User Manual` (F1) still opens it in its own window — a second way in, not a replacement.
+
 ### Fixed
+- **Nothing in the manual's table of contents went anywhere.** `setMarkdown` renders headings but gives them no anchors, so all 24 links had nothing to jump to. Worse, Qt lays a document out lazily: with screenshots in it, every position after the first image came from a *placeholder* layout — zero-height blocks a few pixels apart, a manual claiming to be 11,600px tall when it is 25,100 — so a jump computed from it landed in a heap just past section 5, and the scrollbar could not reach the end of the document at all. The viewer now forces the real layout before it measures anything, and resolves each link by matching the heading against the same slug rule the published page uses (now shared, in `core/manual.py`, rather than written twice). 24 of 24 links land on their own heading, against 5 before.
 - **Every income was treated as though it held its purchasing power.** Correct for the indexed benefits this plan is mostly built from, and wrong for a fixed pension. Existing rows migrate to `indexed = 1`, which is what they were silently assumed to be.
 - **Spending was held flat while the plan around it moved.** A retirement's costs rise like everything else; a projection that inflated the incomes and not the grocery bill flatters the plan by real money.
 - **The federal $2,000 pension income amount is frozen in law and now behaves that way.** In a real-terms ledger, holding it constant overstated the credit by up to roughly $130 per person per year at the far end of a thirty-year projection. In a nominal one the correct behaviour falls out for free: it is the one amount in the table marked not indexed, and it shrinks.

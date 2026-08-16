@@ -389,3 +389,123 @@ def test_the_right_pane_follows_the_tab(qapp):
 def test_the_sim_panel_is_given_the_chart(qapp):
     win = _main_window(qapp)
     assert win.retirement_sim_panel.chart is win.retirement_chart
+
+
+# -- the table of contents actually goes somewhere -----------------------------
+
+def _manual_browser(qapp):
+    from tradelab.ui.app import ManualBrowser
+    from tradelab.core.config import ROOT_DIR
+    docs = ROOT_DIR / "docs"
+    browser = ManualBrowser(docs)
+    browser.load_markdown((docs / "USER_MANUAL.md").read_text(encoding="utf-8"))
+    browser.resize(900, 700)
+    browser.show()
+    qapp.processEvents()
+    return browser
+
+
+def test_every_contents_link_lands_on_a_heading(qapp):
+    """The manual links to its own sections by slug. Markdown rendering gives
+    the headings no anchors, so nothing in Qt checks this — and when it broke,
+    every entry in the table of contents silently did nothing."""
+    import re
+    from tradelab.core.config import ROOT_DIR
+    md = (ROOT_DIR / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8")
+    browser = _manual_browser(qapp)
+    slugs = {slug for slug, _block in browser.heading_blocks()}
+    links = set(re.findall(r"\]\(#([^)]+)\)", md))
+    browser.hide()
+    assert links, "the manual should link to its own sections"
+    assert not links - slugs, f"links point at nothing: {sorted(links - slugs)}"
+
+
+def test_every_contents_entry_lands_on_its_own_heading(qapp):
+    """Not merely "it scrolled somewhere". Qt lays the document out lazily, and
+    with screenshots in it every position below the first image came back from a
+    placeholder layout — so each jump landed in a heap just past section 5
+    instead of at its section. Only checking what is at the top of the view
+    catches that."""
+    import re
+    from PySide6.QtCore import QUrl, QPoint
+    from tradelab.core.config import ROOT_DIR
+    md = (ROOT_DIR / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8")
+    browser = _manual_browser(qapp)
+    headings = {slug: block.text().strip() for slug, block in browser.heading_blocks()}
+
+    for slug in re.findall(r"\]\(#([^)]+)\)", md):
+        browser.verticalScrollBar().setValue(0)
+        browser._link_clicked(QUrl("#" + slug))
+        qapp.processEvents()
+        at_top = browser.cursorForPosition(QPoint(5, 3)).block().text().strip()
+        assert at_top == headings[slug], (
+            f"#{slug} landed on {at_top!r}, not on {headings[slug]!r}")
+    browser.hide()
+
+
+def test_the_whole_document_is_measured_not_just_the_visible_part(qapp):
+    """The lazy layout also sizes the scrollbar for a document less than half
+    the real height, which puts the end of the manual out of reach."""
+    browser = _manual_browser(qapp)
+    layout = browser.document().documentLayout()
+    last = list(browser.heading_blocks())[-1][1]
+    rect = layout.blockBoundingRect(last)
+    assert rect.height() > 0, "the last heading was never laid out"
+    # And the scrollbar can actually reach it.
+    assert browser.verticalScrollBar().maximum() + browser.viewport().height() >= rect.top()
+    assert browser.horizontalScrollBar().maximum() == 0   # no sideways scrolling
+    browser.hide()
+
+
+def test_an_unknown_anchor_is_a_no_op_not_a_crash(qapp):
+    browser = _manual_browser(qapp)
+    assert browser.scroll_to_heading("no-such-section") is False
+    assert browser.verticalScrollBar().value() == 0
+    browser.hide()
+
+
+def test_the_viewer_handles_its_own_links(qapp):
+    """Qt must not navigate on its own: it would try to load the fragment as a
+    new document and blank the manual."""
+    browser = _manual_browser(qapp)
+    assert browser.openLinks() is False
+    browser.hide()
+
+
+def test_the_slug_rule_is_shared_with_the_published_page(qapp):
+    """Two copies of it would drift, and half the links would quietly stop
+    working in one surface but not the other."""
+    from tradelab.core.manual import slugify
+    from tools.build_manual_html import slugify as html_slugify
+    assert html_slugify is slugify
+    assert slugify("8. Portfolio, Analytics, Dividends & Retirement") == \
+        "8-portfolio-analytics-dividends--retirement"
+
+
+# -- the Help tab --------------------------------------------------------------
+
+def test_help_is_the_last_tab_after_settings(qapp):
+    win = _main_window(qapp)
+    names = [win.tabs.tabText(i) for i in range(win.tabs.count())]
+    assert names[-2:] == ["Settings", "Help"]
+
+
+def test_the_help_tab_holds_the_manual(qapp):
+    win = _main_window(qapp)
+    assert "TradeLab Pro" in win.help_panel.viewer.toPlainText()[:200]
+
+
+def test_the_help_tab_can_be_sent_to_a_section(qapp):
+    win = _main_window(qapp)
+    assert win.help_panel.show_section("17-paper-trading") is True
+    assert win.help_panel.viewer.verticalScrollBar().value() > 0
+    assert win.help_panel.show_section("no-such-section") is False
+
+
+def test_the_help_menu_still_works_beside_the_tab(qapp):
+    """The tab is a second way in, not a replacement: F1 has been the way to
+    the manual since 2.12."""
+    win = _main_window(qapp)
+    assert [a.text() for a in win.help_menu.actions() if a.text()] == \
+        ["User Manual", "Revision history", "Version"]
+    assert win.manual_action.shortcut().toString() == "F1"

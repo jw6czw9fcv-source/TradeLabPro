@@ -88,8 +88,9 @@ The window is split into two halves:
   (analyse, size & act) → **Portfolio → Analytics → Dividends → Retirement →
   Retirement Sim → Journal → Coach** (track & review) →
   **Backtest → Strategies → Replay → Seasonality → Plugins** (research/build) →
-  **Notes → Links → Settings** (utilities). The tab bar wraps to two rows so
-  every tab is visible.
+  **Notes → Links → Settings → Help** (utilities). The tab bar wraps to two rows
+  so every tab is visible. **Help** is this manual, in a tab — the same one
+  **Help → User Manual** (F1) opens in its own window.
 - **Right — the chart workspace.** Always visible, and it follows the tab you
   are on: charts you open from the Scanner, Heatmap, Journal, or Replay (or type
   in directly) appear here as dockable panels, while **Retirement Sim** draws its

@@ -35,16 +35,10 @@ DEFAULT_OUT = ROOT / "docs" / "USER_MANUAL.html"
 TOC_HEADING = "## Table of Contents"
 
 
-def slugify(text: str) -> str:
-    """GitHub's heading-anchor rules, so the links already written inside the
-    manual (`(#8-portfolio-analytics--dividends)`) keep working here.
-
-    Punctuation is dropped rather than replaced, which is why an ampersand
-    leaves a double dash behind — its surrounding spaces each become one.
-    """
-    text = text.strip().lower()
-    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
-    return re.sub(r"\s", "-", text)
+# The rule lives beside the app, not here: the in-app viewer resolves the same
+# links against the same headings, and a second copy of it would drift.
+sys.path.insert(0, str(ROOT))
+from tradelab.core.manual import slugify  # noqa: E402  (re-exported for callers)
 
 
 def strip_toc(md: str) -> str:
