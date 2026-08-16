@@ -57,11 +57,15 @@ def test_an_income_can_stop():
 # -- the ledger --------------------------------------------------------------
 
 def _plan(**kwargs):
+    # Zero return and zero inflation by default, so every figure below is one
+    # you can check in your head. The tests that care about inflation turn it
+    # on themselves.
     base = dict(
         people=[Person("me", 65)],
         accounts=[Account("CELI", TFSA, 100_000, "me")],
         spending=0.0,
-        real_return=0.0,
+        nominal_return=0.0,
+        inflation=0.0,
         years=3,
     )
     base.update(kwargs)
@@ -74,8 +78,8 @@ def test_a_plan_with_no_spending_and_no_growth_holds_its_balance():
     assert depletion_year(rows) is None
 
 
-def test_growth_is_a_real_return_and_compounds():
-    rows = project(_plan(real_return=0.10))
+def test_growth_is_the_nominal_return_and_compounds():
+    rows = project(_plan(nominal_return=0.10))
     assert rows[0]["closing"] == pytest.approx(110_000)
     assert rows[2]["closing"] == pytest.approx(133_100)
 
@@ -202,6 +206,27 @@ def test_tax_makes_the_plan_draw_more_capital():
                              tax_fn=lambda by_owner, ages, pension: sum(by_owner.values()) * 0.25))
     assert without[0]["drawn_from_capital"] == 0
     assert with_tax[0]["drawn_from_capital"] == pytest.approx(2_500)
+
+
+def test_the_tax_model_is_told_which_year_it_is():
+    """Brackets are indexed, so a nominal projection has to say how far out it
+    is; a model that did not know would invent bracket creep."""
+    seen = []
+    def tax_fn(by_owner, ages, pension, years_elapsed):
+        seen.append(years_elapsed)
+        return 0.0
+    project(_plan(years=4, tax_fn=tax_fn))
+    assert seen == [0, 1, 2, 3]
+
+
+def test_a_tax_model_that_ignores_the_year_still_works():
+    """The argument was added after the fact. A flat rate has no use for it and
+    should not have to grow a parameter it never reads."""
+    rows = project(_plan(
+        people=[Person("me", 71)],
+        accounts=[Account("REER", REGISTERED, 100_000, "me")],
+        years=1, tax_fn=lambda by_owner, ages, pension: 1_000.0))
+    assert rows[0]["tax"] == pytest.approx(1_000)
 
 
 # -- deferring a public pension ----------------------------------------------
@@ -387,31 +412,34 @@ def test_the_simulation_does_not_disturb_the_plan_it_was_given():
 
 # -- inflation, and what it is allowed to touch -------------------------------
 
-def test_an_indexed_income_ignores_inflation_entirely():
-    """The RRQ and PSV are indexed by law, so in today's dollars they are flat.
-    A model that eroded them would understate every retirement in Quebec."""
+def test_an_indexed_income_grows_with_inflation():
+    """The RRQ and PSV are indexed by law, so the cheque itself rises. The
+    `annual` figure is what it is worth today; the projection grows it."""
     income = Income("RRQ", "Pierre", 13_128, 65)
     assert income.amount_at(65, 0, 0.02) == pytest.approx(13_128)
-    assert income.amount_at(85, 20, 0.02) == pytest.approx(13_128)
+    assert income.amount_at(85, 20, 0.02) == pytest.approx(13_128 * 1.02 ** 20)
 
 
-def test_a_non_indexed_income_loses_purchasing_power():
-    """A fixed private pension pays the same cheque for thirty years."""
+def test_a_non_indexed_income_keeps_paying_the_same_cheque():
+    """A fixed private pension pays the same number of dollars for thirty
+    years, which is exactly how it loses half its worth."""
     income = Income("Rente privee", "Pierre", 10_000, 65, indexed=False)
     assert income.amount_at(65, 0, 0.02) == pytest.approx(10_000)
-    assert income.amount_at(75, 10, 0.02) == pytest.approx(10_000 / 1.02 ** 10)
-    # Just over half its value after thirty years - the reason the flag exists.
-    assert income.amount_at(95, 30, 0.02) == pytest.approx(5_520, abs=5)
+    assert income.amount_at(95, 30, 0.02) == pytest.approx(10_000)
+    # Its purchasing power is what falls, and the deflator is what shows it.
+    assert 10_000 / 1.02 ** 30 == pytest.approx(5_520, abs=5)
 
 
 def test_an_income_is_indexed_unless_you_say_otherwise():
-    """The common case here is RRQ/PSV/AOW, and a blank should not halve them."""
+    """The common case here is RRQ/PSV/AOW, and a blank should not freeze them."""
     assert Income("PSV", "Pierre", 8_292, 65).indexed is True
 
 
-def test_zero_inflation_leaves_even_a_fixed_pension_alone():
-    income = Income("Rente", "Pierre", 10_000, 65, indexed=False)
-    assert income.amount_at(85, 20, 0.0) == pytest.approx(10_000)
+def test_zero_inflation_leaves_every_income_flat():
+    indexed = Income("RRQ", "Pierre", 10_000, 65)
+    fixed = Income("Rente", "Pierre", 10_000, 65, indexed=False)
+    assert indexed.amount_at(85, 20, 0.0) == pytest.approx(10_000)
+    assert fixed.amount_at(85, 20, 0.0) == pytest.approx(10_000)
 
 
 def test_a_fixed_pension_makes_the_plan_run_shorter():
@@ -421,24 +449,85 @@ def test_a_fixed_pension_makes_the_plan_run_shorter():
             people=[Person("Pierre", 65)],
             accounts=[Account("CELI", TFSA, 600_000, "Pierre")],
             incomes=[Income("Rente", "Pierre", 20_000, 65, indexed=indexed)],
-            spending=30_000, real_return=0.0, inflation=0.03, years=25)
+            spending=30_000, nominal_return=0.03, inflation=0.03, years=25)
     kept = project(plan_with(True))[-1]["closing"]
-    eroded = project(plan_with(False))[-1]["closing"]
+    frozen = project(plan_with(False))[-1]["closing"]
     # Both plans hold - otherwise this compares two zeroes and proves nothing.
-    assert eroded > 0
-    assert eroded < kept
+    assert frozen > 0
+    assert frozen < kept
 
 
-def test_inflation_does_not_touch_the_balances():
-    """The ledger is in real terms already: a real return is net of inflation,
-    so applying the rate to capital would be counting it twice."""
+def test_the_spending_rises_with_inflation():
+    """A retirement's costs do, and holding them flat in a projection that
+    inflates everything else would flatter the plan enormously."""
+    rows = project(_plan(accounts=[Account("CELI", TFSA, 2_000_000, "me")],
+                         spending=40_000, inflation=0.02, years=11))
+    assert rows[0]["spending"] == pytest.approx(40_000)
+    assert rows[10]["spending"] == pytest.approx(40_000 * 1.02 ** 10)
+    # And it is the spending that comes out of capital, not the flat figure.
+    assert rows[10]["drawn_from_capital"] == pytest.approx(40_000 * 1.02 ** 10)
+
+
+def test_inflation_costs_the_plan_real_money():
+    """The contrast with the old real-terms ledger, where the rate could not
+    reach the balances at all: here a higher rate empties them faster."""
     def plan_with(inflation):
         return Plan(people=[Person("Pierre", 65)],
                     accounts=[Account("CELI", TFSA, 500_000, "Pierre")],
-                    spending=20_000, real_return=0.03, inflation=inflation,
+                    spending=20_000, nominal_return=0.05, inflation=inflation,
                     years=20)
-    assert (project(plan_with(0.0))[-1]["closing"]
-            == pytest.approx(project(plan_with(0.05))[-1]["closing"]))
+    assert (project(plan_with(0.05))[-1]["closing"]
+            < project(plan_with(0.0))[-1]["closing"])
+
+
+# -- reading a nominal projection in today's dollars --------------------------
+
+def test_every_row_carries_the_factors_that_deflate_it():
+    """Two of them, because the balance is measured after the year's growth
+    and the year's cheques are not."""
+    rows = project(_plan(inflation=0.03, years=4))
+    assert rows[0]["deflator"] == pytest.approx(1.0)
+    assert rows[3]["deflator"] == pytest.approx(1.03 ** 3)
+    assert rows[3]["closing_deflator"] == pytest.approx(1.03 ** 4)
+
+
+def test_deflating_undoes_the_inflation_the_projection_put_in():
+    """A balance in 2055 dollars is not a figure anyone can price. With the
+    return and inflation equal, capital is flat in real terms — and that is
+    what the deflated view has to show."""
+    from tradelab.core.retirement_plan import deflate
+    rows = project(_plan(nominal_return=0.03, inflation=0.03, years=10))
+    real = deflate(rows)
+    assert rows[-1]["closing"] > 100_000              # nominal, and growing
+    assert real[-1]["closing"] == pytest.approx(100_000)
+    assert real[-1]["balances"]["CELI"] == pytest.approx(100_000)
+
+
+def test_deflated_spending_is_the_figure_you_typed():
+    """The round trip: spending is entered in today's dollars, inflated to be
+    lived, and reads back as what was typed."""
+    from tradelab.core.retirement_plan import deflate
+    rows = deflate(project(_plan(
+        accounts=[Account("CELI", TFSA, 2_000_000, "me")],
+        spending=40_000, inflation=0.025, years=15)))
+    assert all(row["spending"] == pytest.approx(40_000) for row in rows)
+
+
+def test_deflating_leaves_the_ages_and_the_rates_alone():
+    from tradelab.core.retirement_plan import deflate
+    rows = project(_plan(nominal_return=0.06, inflation=0.02, years=5))
+    real = deflate(rows)
+    assert real[3]["ages"] == rows[3]["ages"]
+    assert real[3]["return"] == pytest.approx(0.06)
+    assert real[3]["calendar_year"] == rows[3]["calendar_year"]
+
+
+def test_deflating_does_not_disturb_the_rows_it_was_given():
+    from tradelab.core.retirement_plan import deflate
+    rows = project(_plan(nominal_return=0.05, inflation=0.02, years=5))
+    closing = rows[-1]["closing"]
+    deflate(rows)
+    assert rows[-1]["closing"] == pytest.approx(closing)
 
 
 # -- nominal and real ---------------------------------------------------------

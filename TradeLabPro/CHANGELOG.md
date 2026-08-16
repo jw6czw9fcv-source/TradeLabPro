@@ -3,19 +3,25 @@
 ## 2.46.0 - What inflation is actually for
 
 ### Added
-- **An inflation rate** on the Retirement Sim tab, with the nominal equivalent of your real return shown live beside it. Fund literature quotes nominal returns, so this is the number you can compare against something real.
-- **An Indexed column** on the incomes table. The RRQ, PSV and AOW are indexed by law and ignore the rate entirely; anything you mark `No` - a fixed private pension is the usual case - erodes year by year in today's dollars.
-- `real_from_nominal()` / `nominal_from_real()`, the Fisher relation rather than a subtraction: 6% with 2% inflation is 3.92% real, not 4%.
+- **An inflation rate** on the Retirement Sim tab, projected explicitly rather than netted out of the return. It grows the indexed benefits, the spending, and the tax brackets, one year at a time.
+- **The return is now the nominal one** — what a fund actually reports, with inflation still in it — with what it leaves in real terms shown live beside it. Nobody knows their real return; everybody can look up the nominal one. A saved 3% real is converted to its nominal equivalent on first load rather than re-read as 3% nominal, which would have quietly made an existing plan poorer overnight.
+- **An Indexed column** on the incomes table. The RRQ, PSV and AOW are indexed by law and rise with the rate; anything you mark `No` — a fixed private pension is the usual case — keeps paying the same cheque and loses half its worth over thirty years.
+- **A Today's $ toggle.** The projection runs in the dollars of the year each thing happens; ticking this re-reads the finished rows in today's purchasing power. It re-reads rather than re-runs — every row carries its own deflator — so the two views cannot disagree about what happened, only about how it is priced. It applies to the many-path bands and to the chart, including a run saved months ago.
+- `TaxYear.inflated()`, and an `indexed` flag on every tax constant.
+- `deflate()`, `real_from_nominal()` / `nominal_from_real()` — the Fisher relation rather than a subtraction: 6% with 2% inflation is 3.92% real, not 4%.
 
 ### Fixed
-- **Every income was treated as though it held its purchasing power.** Correct for the indexed benefits this plan is mostly built from, and wrong for a fixed pension, which pays the same cheque for thirty years. At 2% that pension is worth a little over half its face value by 95, and the projection was counting all of it. Existing rows migrate to `indexed = 1`, which is what they were silently assumed to be, so no saved plan changes its answer.
+- **Every income was treated as though it held its purchasing power.** Correct for the indexed benefits this plan is mostly built from, and wrong for a fixed pension. Existing rows migrate to `indexed = 1`, which is what they were silently assumed to be.
+- **Spending was held flat while the plan around it moved.** A retirement's costs rise like everything else; a projection that inflated the incomes and not the grocery bill flatters the plan by real money.
+- **The federal $2,000 pension income amount is frozen in law and now behaves that way.** In a real-terms ledger, holding it constant overstated the credit by up to roughly $130 per person per year at the far end of a thirty-year projection. In a nominal one the correct behaviour falls out for free: it is the one amount in the table marked not indexed, and it shrinks.
 
 ### Notes
-- **The rate does not discount the balances, and that is deliberate.** The ledger is in today's dollars: a real return is already net of inflation, and the tax brackets, RRQ and PSV are indexed by law, so applying a rate to capital would count it twice. The input has exactly two jobs - eroding what is not indexed, and translating nominal to real. The on-screen note says so rather than leaving it to be inferred.
-- **Known and unfixed:** the federal $2,000 pension income amount is not indexed in law, but the model holds it constant in real terms. That overstates the credit by up to roughly $130 per person per year at the far end of a thirty-year projection - small, but it is optimism rather than caution.
+- **Why the ledger changed footing.** In today's dollars the arithmetic is tidy but every input is a figure nobody has: a real return, a real pension, a real spending path. In the dollars of the year it happens, every input is something you can look up — and the cost, a balance in 2055 that nobody can price, is a *reading* problem, which is what the toggle solves. The tax brackets moved with it: both governments index theirs, and leaving them frozen against inflating incomes would have invented bracket creep that will not happen — an error that compounds with the horizon.
+- **If indexation ever stops, this is optimistic.** Stated on screen rather than left to be inferred.
+- The tax model is handed the year it is computing, so it can index its own table. A `tax_fn` with no use for the year — a flat rate, or any of the stand-ins the ledger is tested with — still works unchanged; the arity is read once rather than by catching `TypeError` around each call, which would swallow a real one raised inside it.
 
 ### Verified
-- Full pytest suite (1287) passes. The migration tests now derive the schema count from `MIGRATIONS` instead of a hardcoded number that failed on every new migration.
+- Full pytest suite (1308) passes, including: the same real income taxed the same way twenty years on, deflated spending reading back as the figure that was typed, a fixed pension flat in nominal terms and halved in real ones, the toggle changing the table without moving the projection behind it, and a plan that runs short saying so in either view. The migration tests now derive the schema count from `MIGRATIONS` instead of a hardcoded number that failed on every new migration.
 
 ## 2.45.0 - The order returns arrive in
 

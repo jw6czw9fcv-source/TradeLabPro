@@ -33,9 +33,21 @@ class Figure:
     value: float
     source: str
     verified: bool = False
+    # Whether this figure rises with inflation. Nearly every amount here is
+    # indexed by law, which is what stops a projection in future dollars from
+    # inventing bracket creep that will not happen. Two kinds are marked
+    # False: the federal pension income amount, which really is frozen at
+    # $2,000 and so shrinks in real terms, and the rates, which are not
+    # amounts at all.
+    indexed: bool = True
 
     def __float__(self) -> float:
         return float(self.value)
+
+    def scaled(self, factor: float) -> "Figure":
+        if not self.indexed or factor == 1.0:
+            return self
+        return Figure(self.value * factor, self.source, self.verified, self.indexed)
 
 
 @dataclass
@@ -61,6 +73,32 @@ class TaxYear:
     federal_credit_rate: Figure = None
     quebec_credit_rate: Figure = None
     oas_recovery_threshold: Figure = None
+
+    def inflated(self, years: int, inflation: float) -> "TaxYear":
+        """This table as it would read `years` years from now.
+
+        Both governments index their brackets and most credit amounts to
+        inflation each year. A projection in future dollars that left them
+        frozen would push every retirement into higher brackets it will never
+        actually reach — the error grows with the horizon, and at thirty years
+        it is large. What is *not* indexed stays put, which is the whole
+        reason `Figure` carries the flag.
+        """
+        if not inflation or years <= 0:
+            return self
+        factor = (1.0 + inflation) ** years
+        out = TaxYear(year=self.year + years)
+        for name, value in vars(self).items():
+            if name == "year":
+                continue
+            if isinstance(value, Figure):
+                setattr(out, name, value.scaled(factor))
+            elif name.endswith("_brackets"):
+                setattr(out, name, [(None if bound is None else bound * factor, rate)
+                                    for bound, rate in value])
+            else:
+                setattr(out, name, value)
+        return out
 
     def unverified(self) -> list:
         """Which figures still need checking against the source. The panel
@@ -117,18 +155,21 @@ def year_2026() -> TaxYear:
         # income above this. Missing it overstates the credit badly, which is
         # what the first version of this module did.
         quebec_credit_threshold=Figure(42_955, RQ_FORM, verified=True),
-        quebec_credit_reduction_rate=Figure(0.1875, RQ_FORM, verified=True),
+        quebec_credit_reduction_rate=Figure(0.1875, RQ_FORM, verified=True, indexed=False),
 
-        federal_pension_amount=Figure(2_000, CRA_PENSION, verified=True),
-        quebec_abatement=Figure(0.165, CRA_ABATEMENT, verified=True),
-        federal_age_reduction_rate=Figure(0.15, CRA_INDEX, verified=True),
+        federal_pension_amount=Figure(2_000, CRA_PENSION, verified=True,
+                                     # Frozen at $2,000 since 2006 and not
+                                     # indexed, so it really does shrink.
+                                     indexed=False),
+        quebec_abatement=Figure(0.165, CRA_ABATEMENT, verified=True, indexed=False),
+        federal_age_reduction_rate=Figure(0.15, CRA_INDEX, verified=True, indexed=False),
         # 2026 is the first year at 14%: the lowest bracket rate was cut from
         # 15%, and most non-refundable credits are converted at it. A Top-Up
         # Tax Credit keeps 15% for credit amounts above the first bracket
         # threshold - not modelled, because it cannot bite at the incomes this
         # is built for, and pretending otherwise would be a guess.
-        federal_credit_rate=Figure(0.14, CRA_RATE_CUT, verified=True),
-        quebec_credit_rate=Figure(0.14, RQ_CONVERSION, verified=True),
+        federal_credit_rate=Figure(0.14, CRA_RATE_CUT, verified=True, indexed=False),
+        quebec_credit_rate=Figure(0.14, RQ_CONVERSION, verified=True, indexed=False),
     )
 
 

@@ -9609,6 +9609,9 @@ class RetirementSimPanel(QWidget):
         # Set by MainWindow; the panel does not know about the right-hand pane.
         self.chart = None
         self._last_series = None
+        # The last many-path run, kept so the Today's $ toggle can re-read it
+        # rather than draw hundreds of paths again.
+        self._paths_out = None
         layout = QVBoxLayout(self)
 
         bar = QWidget()
@@ -9617,29 +9620,38 @@ class RetirementSimPanel(QWidget):
         self.spending = QDoubleSpinBox()
         self.spending.setRange(0, 1_000_000); self.spending.setDecimals(0)
         self.spending.setPrefix("$"); self.spending.setSingleStep(1_000)
-        self.spending.setToolTip("Household spending per year, in today's dollars — the "
-                                 "input that moves the answer more than any other.")
-        self.real_return = QDoubleSpinBox()
-        self.real_return.setRange(-10, 15); self.real_return.setDecimals(1)
-        self.real_return.setSuffix(" % real")
-        self.real_return.setToolTip("Return *after* inflation. 3 means three points above "
-                                    "inflation, not three percent.")
+        self.spending.setToolTip("Household spending per year, in today's dollars — it "
+                                 "grows with inflation from there. The input that moves "
+                                 "the answer more than any other.")
+        self.nominal_return = QDoubleSpinBox()
+        self.nominal_return.setRange(-10, 20); self.nominal_return.setDecimals(1)
+        self.nominal_return.setSuffix(" % return")
+        self.nominal_return.setToolTip("The return as a fund reports it, with inflation "
+                                       "still in it. 5 means five percent.")
         self.inflation = QDoubleSpinBox()
         self.inflation.setRange(0, 15); self.inflation.setDecimals(1)
         self.inflation.setSuffix(" % infl")
         self.inflation.setToolTip(
-            "The projection is in today's dollars, so this does not discount the "
-            "balances — a real return is already net of inflation, and the tax "
-            "brackets, RRQ and PSV are indexed by law. It does two things: it "
-            "erodes any income you mark as not indexed, and it converts the real "
-            "return above into the nominal one shown beside it.")
-        # A real return is the honest input but the unfamiliar one; showing the
-        # nominal equivalent live means you can sanity-check it against the
-        # number a fund actually advertises.
-        self.nominal_hint = QLabel("")
-        self.nominal_hint.setStyleSheet("color: " + theme.MUTED + "; font-size: 11px;")
-        self.real_return.valueChanged.connect(self._update_nominal_hint)
-        self.inflation.valueChanged.connect(self._update_nominal_hint)
+            "Projected explicitly rather than netted out of the return. It grows "
+            "the indexed benefits (RRQ, PSV, AOW), the spending, and the tax "
+            "brackets — which are indexed by law, so leaving them frozen would "
+            "invent bracket creep that will not happen.")
+        # The nominal return is the figure you can look up; the real one is what
+        # actually decides whether the plan holds. Showing it live means the
+        # difference between them is never invisible.
+        self.real_hint = QLabel("")
+        self.real_hint.setStyleSheet("color: " + theme.MUTED + "; font-size: 11px;")
+        self.nominal_return.valueChanged.connect(self._update_real_hint)
+        self.inflation.valueChanged.connect(self._update_real_hint)
+        # A balance in 2055 nominal dollars is not a figure anyone can price,
+        # so the reading view is a toggle rather than a second run: every row
+        # carries its own deflator.
+        self.todays_dollars = QCheckBox("Today's $")
+        self.todays_dollars.setToolTip(
+            "Show the results in today's purchasing power instead of the dollars "
+            "of the year they happen. The projection itself is unchanged — this "
+            "only divides each year by its inflation factor.")
+        self.todays_dollars.toggled.connect(self._redraw_results)
         self.until_age = QSpinBox(); self.until_age.setRange(66, 110)
         self.until_age.setPrefix("to age ")
         self.splitting = QDoubleSpinBox()
@@ -9670,9 +9682,10 @@ class RetirementSimPanel(QWidget):
         clear_sim = QPushButton("Clear saved")
         clear_sim.clicked.connect(self.clear_saved_sim)
         for widget in (QLabel("Spending"), self.spending, QLabel("  Return"),
-                       self.real_return, self.inflation, self.nominal_hint,
+                       self.nominal_return, self.inflation, self.real_hint,
                        self.volatility, QLabel("  Project"),
                        self.until_age, QLabel("  Pension"), self.splitting,
+                       self.todays_dollars,
                        self.paths, run, trajectories, save, save_sim, clear_sim):
             controls.addWidget(widget)
         layout.addWidget(bar)
@@ -9711,11 +9724,13 @@ class RetirementSimPanel(QWidget):
         layout.addWidget(self.results, 1)
 
         note = QLabel(
-            "Everything is in today's dollars: the tax brackets, RRQ and PSV are all "
-            "indexed, so real terms hold — if indexation ever stops, this is optimistic. "
-            "The inflation rate therefore does not discount the balances; it erodes only "
-            "the incomes you mark Indexed = No, such as a fixed private pension, and "
-            "converts the real return into the nominal one shown beside it. "
+            "Every figure is in the dollars of the year it happens: the return is the "
+            "nominal one a fund reports, and inflation is projected rather than netted "
+            "out of it. So the RRQ, the PSV and the spending all rise year by year, and "
+            "so do the tax brackets, which are indexed by law — if indexation ever "
+            "stops, this is optimistic. An income you mark Indexed = No keeps paying the "
+            "same cheque and quietly loses half its worth over thirty years. Tick "
+            "Today's $ to read the whole table in today's purchasing power. "
             "And a single return path says nothing about the order returns arrive in: a "
             "bad first few years of drawing down hurts far more than the same average "
             "later. " + theme.NOT_ADVICE)
@@ -9743,14 +9758,27 @@ class RetirementSimPanel(QWidget):
         settings = app_settings()
         settings.beginGroup(self.SETTING)
         self.spending.setValue(float(settings.value("spending", 50_000)))
-        self.real_return.setValue(float(settings.value("real_return", 3.0)))
         self.inflation.setValue(float(settings.value("inflation", 2.0)))
+        # The panel used to ask for a real return. Someone who set 3% real meant
+        # a plan, not a number, so the saved value is converted rather than
+        # dropped - reading it as 3% nominal would silently make their plan
+        # poorer overnight.
+        from tradelab.core.retirement_plan import nominal_from_real
+        saved_nominal = settings.value("nominal_return")
+        if saved_nominal is None:
+            old_real = settings.value("real_return")
+            saved_nominal = (nominal_from_real(float(old_real) / 100.0,
+                                               self.inflation.value() / 100.0) * 100
+                             if old_real is not None else 5.0)
+        self.nominal_return.setValue(float(saved_nominal))
+        self.todays_dollars.setChecked(
+            str(settings.value("todays_dollars", "false")).lower() in ("true", "1"))
         self.until_age.setValue(int(settings.value("until_age", 95)))
         self.splitting.setValue(float(settings.value("splitting", 0)))
         self.volatility.setValue(float(settings.value("volatility", 10)))
         self.paths.setValue(int(settings.value("paths", 500)))
         settings.endGroup()
-        self._update_nominal_hint()
+        self._update_real_hint()
 
     def save(self):
         written = 0
@@ -9759,8 +9787,9 @@ class RetirementSimPanel(QWidget):
         settings = app_settings()
         settings.beginGroup(self.SETTING)
         settings.setValue("spending", self.spending.value())
-        settings.setValue("real_return", self.real_return.value())
+        settings.setValue("nominal_return", self.nominal_return.value())
         settings.setValue("inflation", self.inflation.value())
+        settings.setValue("todays_dollars", self.todays_dollars.isChecked())
         settings.setValue("until_age", self.until_age.value())
         settings.setValue("splitting", self.splitting.value())
         settings.setValue("volatility", self.volatility.value())
@@ -9802,17 +9831,18 @@ class RetirementSimPanel(QWidget):
         for row in rows:
             table.removeRow(row)
 
-    def _update_nominal_hint(self):
-        """Show what the real return implies in nominal terms.
+    def _update_real_hint(self):
+        """Show what the nominal return leaves after inflation.
 
-        Fund literature quotes nominal returns, so this is the number you can
-        actually compare against something. It is the Fisher relation rather
-        than an addition — 3% real with 2% inflation is 5.06% nominal, not 5%.
+        The nominal figure is the one you can look up; the real one is what
+        decides whether the plan holds. It is the Fisher relation rather than
+        a subtraction — 5% with 2% inflation is 2.94% real, not 3%, and the
+        subtraction is always the optimistic direction.
         """
-        from tradelab.core.retirement_plan import nominal_from_real
-        nominal = nominal_from_real(self.real_return.value() / 100.0,
-                                    self.inflation.value() / 100.0)
-        self.nominal_hint.setText("= {:.2f}% nominal".format(nominal * 100))
+        from tradelab.core.retirement_plan import real_from_nominal
+        real = real_from_nominal(self.nominal_return.value() / 100.0,
+                                 self.inflation.value() / 100.0)
+        self.real_hint.setText("= {:.2f}% real".format(real * 100))
 
     # -- the projection -----------------------------------------------------
     def build_plan(self):
@@ -9831,7 +9861,7 @@ class RetirementSimPanel(QWidget):
         oldest = max(p.age for p in people)
         return Plan(people=people, accounts=accounts, incomes=incomes,
                     spending=self.spending.value(),
-                    real_return=self.real_return.value() / 100.0,
+                    nominal_return=self.nominal_return.value() / 100.0,
                     inflation=self.inflation.value() / 100.0,
                     years=max(1, self.until_age.value() - oldest + 1),
                     tax_fn=self.tax_fn())
@@ -9843,11 +9873,25 @@ class RetirementSimPanel(QWidget):
         fraction you set. A wage cannot be split and RRQ has its own separate
         mechanism; treating the household as one pot and halving it — which
         an earlier draft did — made the tax bill far too small.
-        """
-        from tradelab.core.tax_quebec import household_tax, split_pension
-        fraction = self.splitting.value() / 100.0
 
-        def tax_fn(by_owner, ages, pension_by_owner):
+        The income arriving here is in the dollars of the year it is earned,
+        so the table has to be indexed to that same year. The offset is years
+        from the start of the projection, which is the table's own year — when
+        that stops being true the table is a year stale and wants editing,
+        which is what it was built to be. The tables are cached because a
+        many-path run asks for the same thirty of them hundreds of times.
+        """
+        from tradelab.core.tax_quebec import household_tax, split_pension, year_2026
+        fraction = self.splitting.value() / 100.0
+        inflation = self.inflation.value() / 100.0
+        base, tables = year_2026(), {}
+
+        def table_for(years_elapsed):
+            if years_elapsed not in tables:
+                tables[years_elapsed] = base.inflated(years_elapsed, inflation)
+            return tables[years_elapsed]
+
+        def tax_fn(by_owner, ages, pension_by_owner, years_elapsed=0):
             incomes = dict(by_owner)
             pensions = dict(pension_by_owner)
             names = sorted(incomes, key=lambda n: -incomes.get(n, 0.0))
@@ -9860,7 +9904,7 @@ class RetirementSimPanel(QWidget):
                 incomes[lower] = incomes.get(lower, 0.0) + moved
                 pensions[higher] -= moved
                 pensions[lower] = pensions.get(lower, 0.0) + moved
-            return household_tax(incomes, ages, pensions)
+            return household_tax(incomes, ages, pensions, table_for(years_elapsed))
         return tax_fn
 
     def run(self):
@@ -9871,14 +9915,49 @@ class RetirementSimPanel(QWidget):
             self.results.setRowCount(0)
             return
         self.rows = project(plan)
+        # A one-path run replaces a many-path one on screen, so the band is no
+        # longer what is being shown.
+        self._paths_out = None
         self._last_series = {
             "years": [row["calendar_year"] for row in self.rows],
             "balances": [row["closing"] for row in self.rows],
-            "label": "{:,.0f}$/yr at {:.1f}% real".format(
-                self.spending.value(), self.real_return.value()),
+            # Kept with the series so the chart can switch to today's dollars
+            # without re-running anything - including for a run saved months ago.
+            "deflators": [row["closing_deflator"] for row in self.rows],
+            "label": "{:,.0f}$/yr at {:.1f}% nominal".format(
+                self.spending.value(), self.nominal_return.value()),
         }
         self.render_results()
         self._draw()
+
+    # -- which dollars the results are read in --------------------------------
+    #
+    # The projection is always run in the dollars of the year each thing
+    # happens; the toggle only changes how the finished rows are read, which is
+    # why it re-renders instead of re-running.
+
+    def _in_todays_dollars(self) -> bool:
+        return self.todays_dollars.isChecked()
+
+    def _view_rows(self):
+        """The rows as they should be read right now."""
+        from tradelab.core.retirement_plan import deflate
+        if not self.rows:
+            return []
+        return deflate(self.rows) if self._in_todays_dollars() else self.rows
+
+    def _dollars_note(self) -> str:
+        return (" Figures are in today's dollars."
+                if self._in_todays_dollars()
+                else " Figures are in the dollars of each year, not today's.")
+
+    def _redraw_results(self):
+        """Re-read what is already on screen, whichever view it is."""
+        if getattr(self, "_paths_out", None):
+            self.render_paths(self._paths_out)
+        elif self.rows:
+            self.render_results()
+        self._draw(band=self._band())
 
     SAVED_KEY = "saved_sim"
 
@@ -9919,15 +9998,51 @@ class RetirementSimPanel(QWidget):
         self._draw()
         self.status.setText("Saved run removed from the chart.")
 
+    def _as_read(self, series):
+        """A saved or current series in whichever dollars are being shown.
+
+        A series carries the deflator for every year it drew, so a run kept
+        months ago can be read in today's dollars beside a fresh one. One saved
+        before those deflators existed has none, and is left as it was rather
+        than deflated with a guess.
+        """
+        if not series or not self._in_todays_dollars():
+            return series
+        factors = series.get("deflators")
+        if not factors or len(factors) != len(series.get("balances", [])):
+            return series
+        out = dict(series)
+        out["balances"] = [b / (f or 1.0) for b, f in zip(series["balances"], factors)]
+        return out
+
+    def _band(self):
+        """The percentile band of the last many-path run, read the same way."""
+        out = getattr(self, "_paths_out", None)
+        if not out:
+            return None
+        low, high = out["percentiles"][10], out["percentiles"][90]
+        if self._in_todays_dollars():
+            factors = self._closing_deflators(len(low))
+            low = [v / f for v, f in zip(low, factors)]
+            high = [v / f for v, f in zip(high, factors)]
+        return (low, high)
+
+    def _closing_deflators(self, count):
+        """One factor per year, for figures measured at the end of the year —
+        a closing balance is a year further from today's prices than the
+        cheques written during that year."""
+        rate = self.inflation.value() / 100.0
+        return [(1.0 + rate) ** (year + 1) for year in range(count)]
+
     def _draw(self, band=None):
         """Push the current run and the saved one at the chart."""
         if self.chart is None:
             return
-        self.chart.show_saved(self.saved_sim())
-        if self._last_series:
-            self.chart.show_projection(self._last_series["years"],
-                                       self._last_series["balances"],
-                                       self._last_series.get("label", "Current"),
+        self.chart.show_saved(self._as_read(self.saved_sim()))
+        series = self._as_read(self._last_series)
+        if series:
+            self.chart.show_projection(series["years"], series["balances"],
+                                       series.get("label", "Current"),
                                        band=band)
 
     def run_paths(self):
@@ -9944,16 +10059,18 @@ class RetirementSimPanel(QWidget):
             self.status.setText("Add at least one person and one account first.")
             return
         out = simulate(plan, paths=self.paths.value(),
-                       mean=self.real_return.value() / 100.0,
+                       mean=self.nominal_return.value() / 100.0,
                        sd=self.volatility.value() / 100.0, seed=1)
+        self._paths_out = out
         self._last_series = {
             "years": out["calendar_years"],
             "balances": out["percentiles"][50],
+            "deflators": self._closing_deflators(len(out["calendar_years"])),
             "label": "{:,.0f}$/yr, {:,} paths (median)".format(
                 self.spending.value(), out["paths"]),
         }
         self.render_paths(out)
-        self._draw(band=(out["percentiles"][10], out["percentiles"][90]))
+        self._draw(band=self._band())
 
     def render_paths(self, out):
         self.results.setColumnCount(6)
@@ -9962,15 +10079,19 @@ class RetirementSimPanel(QWidget):
         years = out["calendar_years"]
         self.results.setRowCount(len(years))
         ages = [row["ages"] for row in self.rows] if self.rows else []
+        # Balances are end-of-year figures, so they deflate by the end-of-year
+        # factor. Whether it is applied at all is the toggle's only job here.
+        factors = (self._closing_deflators(len(years)) if self._in_todays_dollars()
+                   else [1.0] * len(years))
         for r, year in enumerate(years):
             age_text = ", ".join(str(a) for a in ages[r].values()) if r < len(ages) else ""
-            low = out["percentiles"][10][r]
+            low = out["percentiles"][10][r] / factors[r]
             solvent = sum(1 for a in out["depletion_ages"]
                           if a is None or (r < len(ages) and a > max(ages[r].values())))
             cells = [str(year), age_text,
                      "{:,.0f}".format(low),
-                     "{:,.0f}".format(out["percentiles"][50][r]),
-                     "{:,.0f}".format(out["percentiles"][90][r]),
+                     "{:,.0f}".format(out["percentiles"][50][r] / factors[r]),
+                     "{:,.0f}".format(out["percentiles"][90][r] / factors[r]),
                      "{:.0f}%".format(solvent / out["paths"] * 100)]
             for c, text in enumerate(cells):
                 item = table_item(text)
@@ -9991,7 +10112,7 @@ class RetirementSimPanel(QWidget):
                     "spending by five thousand and it shifts more than any market will. "
                     "Returns are drawn from a normal curve, which has fewer very bad "
                     "years than markets actually do.")
-        self.status.setText(message)
+        self.status.setText(message + self._dollars_note())
 
     def render_results(self):
         self.results.setColumnCount(8)
@@ -9999,7 +10120,10 @@ class RetirementSimPanel(QWidget):
             ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
              "Unfunded", "Closing"])
         from tradelab.core.retirement_plan import depletion_year
-        rows = self.rows
+        # Whether the plan holds is decided on the nominal rows; only the
+        # reading of them changes. Both agree about *when* it fails, because
+        # dividing every figure by a positive factor cannot change a sign.
+        rows = self._view_rows()
         self.results.setRowCount(len(rows))
         for r, row in enumerate(rows):
             ages = ", ".join(str(a) for a in row["ages"].values())
@@ -10024,13 +10148,14 @@ class RetirementSimPanel(QWidget):
             self.status.setText(
                 "The money lasts to age {} — {:,.0f}$ left at the end. That is this one "
                 "return path, not a promise: the same average arriving in a worse order "
-                "can end differently.".format(oldest, last["closing"]))
+                "can end differently.".format(oldest, last["closing"])
+                + self._dollars_note())
         else:
             age = max(rows[failed]["ages"].values())
             self.status.setText(
                 "Runs short at age {}, first year {:,.0f}$ under the spending. The years "
                 "after it are still shown rather than cut off.".format(
-                    age, rows[failed]["unfunded"]))
+                    age, rows[failed]["unfunded"]) + self._dollars_note())
 
 
 class MainWindow(QMainWindow):

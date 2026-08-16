@@ -11,25 +11,36 @@ inflation rate, the spending, the order accounts are drawn from, the age each
 benefit starts. Nothing here picks a withdrawal strategy or says whether a
 plan is good.
 
-**Everything is in today's dollars.** A projection in nominal dollars reads
-as "$210,000 in 2048", which nobody can price. Working in real terms means
-the spending figure means what it means today, and it is defensible because
-the things being compared against — federal and Quebec tax brackets, the RRQ,
-the PSV — are all indexed to inflation. That assumption is stated rather than
-buried: if indexation stops, this projection is optimistic.
+**Everything is in the dollars of the year it happens.** The return you give
+is the nominal one — what a fund actually reports — and `inflation` is
+projected explicitly rather than folded into it. So the RRQ grows year by
+year the way it really does, spending rises to match, and the balances are
+the numbers that would appear on a statement.
 
-Which is why `inflation` is an input even though the arithmetic is real. It
-does one job here: eroding what is *not* indexed. An income marked
-`indexed=False` — a fixed private pension is the usual case — buys less every
-year, and over a thirty-year retirement at 2% it ends up worth a little over
-half what it says on the page. Treating such a pension as though it held its
-value, which this module did until the flag existed, flatters the plan by
-real money. Indexed incomes ignore the rate entirely, as they should.
+The cost of that choice is that "$1.2M in 2055" is not a figure anyone can
+price, so callers are expected to offer a deflated view; `real_from_nominal`
+and the `deflate` helper are here for it. The gain is that every input is
+something you can look up: nobody knows their real return, and everybody
+knows what their pension is worth today.
+
+Three things move with inflation and one deliberately does not:
+
+* Incomes marked `indexed` — the RRQ, PSV and AOW, indexed by law — grow at
+  the rate. A fixed private pension is marked `indexed=False` and stays at
+  its nominal amount, which is exactly what such a pension does.
+* Spending grows at the rate, since a household's costs do.
+* The tax brackets and most credit amounts grow, because both governments
+  index them. Leaving them frozen while incomes inflated would invent
+  bracket creep that will not happen — an error that compounds with the
+  horizon. See `TaxYear.inflated`.
+* The federal pension income amount does not grow, because it is not
+  indexed in law. In a nominal projection that falls out correctly for free.
 
 Qt-free and offline-testable; no network, no I/O.
 """
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -122,11 +133,13 @@ class Income:
     `starts_at_age` is the owner's age when it begins and `ends_at_age` when
     it stops (None = for life). A wage is just an income that ends.
 
-    `indexed` says whether it keeps its purchasing power. True for the RRQ,
-    the PSV and the AOW, which are indexed by law; false for a fixed private
-    pension, which pays the same nominal cheque for thirty years and is worth
-    steadily less. Defaulting to True keeps the common case honest, and makes
-    the erosion something you opt into deliberately rather than a surprise.
+    `annual` is what it is worth *today*; the projection grows it from there.
+
+    `indexed` says whether it rises with inflation. True for the RRQ, the PSV
+    and the AOW, which are indexed by law; false for a fixed private pension,
+    which pays the same cheque for thirty years and therefore buys steadily
+    less. Defaulting to True keeps the common case right, and makes a frozen
+    pension something you state deliberately rather than a silent surprise.
     """
     name: str
     owner: str
@@ -137,14 +150,14 @@ class Income:
 
     def amount_at(self, age: int, years_elapsed: int = 0,
                   inflation: float = 0.0) -> float:
-        """What it is worth in *today's* dollars, `years_elapsed` years in."""
+        """The cheque actually written that year, in that year's dollars."""
         if age < self.starts_at_age:
             return 0.0
         if self.ends_at_age is not None and age > self.ends_at_age:
             return 0.0
         amount = float(self.annual)
-        if not self.indexed and inflation and years_elapsed > 0:
-            amount /= (1.0 + inflation) ** years_elapsed
+        if self.indexed and inflation and years_elapsed > 0:
+            amount *= (1.0 + inflation) ** years_elapsed
         return amount
 
 
@@ -161,17 +174,16 @@ class Plan:
     people: list[Person]
     accounts: list[Account]
     incomes: list[Income] = field(default_factory=list)
-    # Household spending per year, in today's dollars.
+    # Household spending in *today's* dollars. It grows with inflation from
+    # there: a retirement's costs rise like everything else, and holding this
+    # flat in a nominal projection would flatter the plan enormously.
     spending: float = 0.0
-    # Real return, i.e. after inflation. 0.03 means "three points above
-    # inflation", not "three percent".
-    real_return: float = 0.03
-    # Only ever applied to incomes marked `indexed=False`. The rest of the
-    # ledger is in today's dollars and needs no rate: a real return is already
-    # net of inflation, and the tax brackets, RRQ and PSV are indexed by law.
-    # It is also what converts a nominal return you may know better into the
-    # real one this asks for - see `real_from_nominal`.
-    inflation: float = 0.0
+    # The nominal return - what a fund reports, with inflation still in it.
+    # 0.05 means five percent, full stop.
+    nominal_return: float = 0.05
+    # Projected explicitly rather than netted out of the return. It grows the
+    # indexed incomes, the spending, and the tax brackets.
+    inflation: float = 0.02
     # One return per year, when the caller has a sequence rather than an
     # average. This is what makes sequence risk visible: the same numbers in a
     # different order are a different retirement, and a single average cannot
@@ -187,12 +199,53 @@ class Plan:
     # is arithmetic the reader has to do themselves.
     start_year: int | None = None
     # Tax on the year's taxable income. Called with ({owner: taxable},
-    # {owner: age}, {owner: pension_income}) - per person, not as one
-    # household total, because two people are taxed as two people and only
-    # *eligible pension* income can be moved between them. Injected so the
-    # ledger can be tested without a tax model and the rules can change
-    # without touching it.
+    # {owner: age}, {owner: pension_income}, years_elapsed) - per person, not
+    # as one household total, because two people are taxed as two people and
+    # only *eligible pension* income can be moved between them. The last
+    # argument lets the callee index the brackets to the right year; a tax_fn
+    # that ignores it still works. Injected so the ledger can be tested
+    # without a tax model and the rules can change without touching it.
     tax_fn: object = None
+
+
+# What happens *during* the year — the cheques, the tax, the withdrawals — and
+# the balance the year opens with. All of it is priced at the start of the year.
+FLOW_KEYS = ("opening", "income", "forced_withdrawal", "tax",
+             "drawn_from_capital", "spending", "unfunded")
+# The balance *after* the year's growth, which is a year later and so a year
+# further from today's prices. Deflating it by the opening factor, which an
+# earlier draft did, quietly overstated every closing balance by one year of
+# inflation.
+CLOSING_KEYS = ("closing",)
+
+
+def deflate(rows: list[dict]) -> list[dict]:
+    """The same rows read in today's dollars.
+
+    A nominal projection is built from figures you can look up, and then ends
+    with a balance in 2055 that means nothing to anybody. This converts it
+    back for reading — every money column and the per-owner breakdown, using
+    the deflators each row already carries. Rates, ages and years are left
+    alone.
+    """
+    out = []
+    for row in rows:
+        opening = float(row.get("deflator") or 1.0) or 1.0
+        closing = float(row.get("closing_deflator") or opening) or opening
+        copy = dict(row)
+        for key in FLOW_KEYS:
+            if isinstance(copy.get(key), (int, float)):
+                copy[key] = copy[key] / opening
+        for key in CLOSING_KEYS:
+            if isinstance(copy.get(key), (int, float)):
+                copy[key] = copy[key] / closing
+        if isinstance(copy.get("income_by_owner"), dict):
+            copy["income_by_owner"] = {k: v / opening
+                                       for k, v in copy["income_by_owner"].items()}
+        if isinstance(copy.get("balances"), dict):
+            copy["balances"] = {k: v / closing for k, v in copy["balances"].items()}
+        out.append(copy)
+    return out
 
 
 def real_from_nominal(nominal: float, inflation: float) -> float:
@@ -209,6 +262,28 @@ def real_from_nominal(nominal: float, inflation: float) -> float:
 def nominal_from_real(real: float, inflation: float) -> float:
     """The inverse, for showing what a real return implies in nominal terms."""
     return (1.0 + real) * (1.0 + inflation) - 1.0
+
+
+def _tax_caller(fn):
+    """Normalise an injected `tax_fn` to the four-argument form.
+
+    The year offset only matters to a model that indexes its brackets; a flat
+    rate, or any of the stand-ins the ledger is tested with, has no use for it
+    and should not have to grow an argument it ignores. The arity is read once
+    here rather than by catching TypeError around each call, which would
+    silently swallow a real TypeError raised inside the callee.
+    """
+    if fn is None:
+        return None
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):        # a builtin or C callable
+        return fn
+    positional = [p for p in params
+                  if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    if len(positional) >= 4 or any(p.kind == p.VAR_POSITIONAL for p in params):
+        return fn
+    return lambda by_owner, ages, pension, _year: fn(by_owner, ages, pension)
 
 
 def _order(plan: Plan) -> list[Account]:
@@ -230,6 +305,7 @@ def project(plan: Plan) -> list[dict]:
     ages = {p.name: p.age for p in plan.people}
     start_year = plan.start_year or date.today().year
     accounts = _order(plan)
+    tax_fn = _tax_caller(plan.tax_fn)
     rows = []
 
     for year in range(plan.years):
@@ -265,12 +341,15 @@ def project(plan: Plan) -> list[dict]:
                 account.owner, 0.0) + take
 
         taxable = gross_income + forced
-        tax = float(plan.tax_fn(by_owner, ages, pension_by_owner)) if plan.tax_fn else 0.0
+        tax = (float(tax_fn(by_owner, ages, pension_by_owner, year))
+               if tax_fn else 0.0)
         available = taxable - tax
 
         # 3. Whatever the spending still needs comes out of capital, in the
-        #    order the person chose.
-        shortfall = max(0.0, plan.spending - available)
+        #    order the person chose. Spending is given in today's dollars and
+        #    inflated to the year being lived, like the income it is met from.
+        spending = plan.spending * (1.0 + plan.inflation) ** year
+        shortfall = max(0.0, spending - available)
         drawn = 0.0
         for account in accounts:
             if shortfall <= 0:
@@ -281,7 +360,7 @@ def project(plan: Plan) -> list[dict]:
             shortfall -= take
 
         # 4. Growth applies to what is left at the end of the year.
-        growth = plan.real_return
+        growth = plan.nominal_return
         if plan.returns:
             growth = plan.returns[year] if year < len(plan.returns) else plan.returns[-1]
         for name in balances:
@@ -297,6 +376,15 @@ def project(plan: Plan) -> list[dict]:
             "forced_withdrawal": forced,
             "tax": tax,
             "drawn_from_capital": drawn,
+            # What the spending had grown to by this year, so the reader can
+            # see the cost rising rather than infer it from the drawdown.
+            "spending": spending,
+            # Divide by this to read the year's flows in today's dollars, and
+            # by the one below for the balance, which is measured after the
+            # year's growth and so is a year further out. Kept per row so a
+            # deflated view needs no second run.
+            "deflator": (1.0 + plan.inflation) ** year,
+            "closing_deflator": (1.0 + plan.inflation) ** (year + 1),
             # What the plan could not fund this year. The whole point of the
             # projection is this number turning positive.
             "unfunded": shortfall,
@@ -331,9 +419,10 @@ def depletion_year(rows: list[dict]) -> int | None:
 
 def sample_returns(years: int, paths: int, mean: float = 0.03,
                    sd: float = 0.10, history=None, seed: int | None = None):
-    """`paths` sequences of `years` real returns.
+    """`paths` sequences of `years` returns, on the same footing as
+    `Plan.nominal_return`.
 
-    With `history` — a series of past real annual returns — this resamples it
+    With `history` — a series of past annual returns — this resamples it
     with replacement, which keeps the shape of what actually happened,
     including the bad years a normal curve smooths away. Without it, returns
     are drawn from a normal distribution around `mean`, which is easier to
@@ -377,7 +466,7 @@ def simulate(plan: Plan, paths: int = 500, mean: float | None = None,
     you chose** — not a probability that a retirement works. Change the
     spending by five thousand and it moves more than any market ever will.
     """
-    mean = plan.real_return if mean is None else mean
+    mean = plan.nominal_return if mean is None else mean
     sequences = sample_returns(plan.years, paths, mean, sd, history, seed)
 
     balances_by_year = [[] for _ in range(plan.years)]

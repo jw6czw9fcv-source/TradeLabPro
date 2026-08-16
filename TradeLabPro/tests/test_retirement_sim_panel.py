@@ -89,7 +89,7 @@ def test_the_horizon_reaches_the_age_you_asked_for(panel):
 def test_a_plan_that_holds_says_what_is_left(panel):
     _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 1_000_000, "Pierre"]])
     panel.spending.setValue(10_000)
-    panel.real_return.setValue(3.0)
+    panel.nominal_return.setValue(3.0)
     panel.run()
     assert "lasts to age" in panel.status.text()
 
@@ -97,7 +97,7 @@ def test_a_plan_that_holds_says_what_is_left(panel):
 def test_a_plan_that_fails_names_the_age(panel):
     _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 20_000, "Pierre"]])
     panel.spending.setValue(50_000)
-    panel.real_return.setValue(0.0)
+    panel.nominal_return.setValue(0.0)
     panel.run()
     assert "Runs short at age" in panel.status.text()
     # And the years after the failure are still there to read.
@@ -107,7 +107,7 @@ def test_a_plan_that_fails_names_the_age(panel):
 def test_the_forced_rrif_minimum_appears_in_the_results(panel):
     _fill(panel, [["Pierre", 71]], [["REER", "registered", 100_000, "Pierre"]])
     panel.spending.setValue(0)
-    panel.real_return.setValue(0.0)
+    panel.nominal_return.setValue(0.0)
     panel.run()
     assert panel.rows[0]["forced_withdrawal"] == pytest.approx(5_280)
 
@@ -290,7 +290,7 @@ def test_clearing_removes_the_saved_line(panel):
 def test_the_saved_label_says_what_it_was(panel):
     _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 400_000, "Pierre"]])
     panel.spending.setValue(45_000)
-    panel.real_return.setValue(3.0)
+    panel.nominal_return.setValue(3.0)
     panel.run(); panel.save_sim()
     assert "45,000" in panel.saved_sim()["label"]
     panel.clear_saved_sim()
@@ -320,18 +320,19 @@ def test_the_inflation_rate_has_a_sensible_default(panel):
     assert panel.inflation.value() == 2.0
 
 
-def test_the_nominal_equivalent_is_shown_and_is_not_a_sum(panel):
-    """3% real with 2% inflation is 5.06% nominal, not 5%."""
-    panel.real_return.setValue(3.0)
+def test_the_real_equivalent_is_shown_and_is_not_a_subtraction(panel):
+    """5% with 2% inflation leaves 2.94% real, not 3% — and the subtraction is
+    always the optimistic direction."""
+    panel.nominal_return.setValue(5.0)
     panel.inflation.setValue(2.0)
-    assert "5.06" in panel.nominal_hint.text()
-    assert "nominal" in panel.nominal_hint.text()
+    assert "2.94" in panel.real_hint.text()
+    assert "real" in panel.real_hint.text()
 
 
-def test_the_nominal_hint_follows_both_inputs(panel):
-    panel.real_return.setValue(4.0)
+def test_the_real_hint_follows_both_inputs(panel):
+    panel.nominal_return.setValue(4.0)
     panel.inflation.setValue(0.0)
-    assert "4.00" in panel.nominal_hint.text()
+    assert "4.00" in panel.real_hint.text()
 
 
 def test_an_income_is_indexed_unless_the_cell_says_no(panel):
@@ -367,25 +368,114 @@ def test_the_inflation_rate_reaches_the_plan(panel):
     assert panel.build_plan().inflation == pytest.approx(0.025)
 
 
-def test_a_fixed_pension_shrinks_across_the_projection(panel):
-    """The income column falls even though the pension never changes."""
+def test_a_fixed_pension_pays_the_same_cheque_and_loses_its_worth(panel):
+    """The income column holds flat in nominal terms — and collapses once the
+    same rows are read in today's dollars, which is the point of the flag."""
+    from tradelab.core.retirement_plan import deflate
     _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 500_000, "Pierre"]],
           [["Rente", "Pierre", 20_000, 65, "", "No"]])
     panel.inflation.setValue(3.0)
     panel.spending.setValue(0)
     panel.until_age.setValue(90)
     panel.run()
-    assert panel.rows[-1]["income"] < panel.rows[0]["income"]
+    assert panel.rows[-1]["income"] == pytest.approx(panel.rows[0]["income"])
+    real = deflate(panel.rows)
+    assert real[-1]["income"] < real[0]["income"] / 2
 
 
-def test_an_indexed_pension_holds_across_the_projection(panel):
+def test_an_indexed_pension_grows_with_inflation(panel):
     _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 500_000, "Pierre"]],
           [["RRQ", "Pierre", 13_128, 65, "", "Yes"]])
     panel.inflation.setValue(3.0)
     panel.spending.setValue(0)
     panel.until_age.setValue(90)
     panel.run()
-    assert panel.rows[-1]["income"] == pytest.approx(panel.rows[0]["income"])
+    assert panel.rows[-1]["income"] > panel.rows[0]["income"]
+    # And it holds its value, which is what "indexed by law" means.
+    from tradelab.core.retirement_plan import deflate
+    real = deflate(panel.rows)
+    assert real[-1]["income"] == pytest.approx(real[0]["income"])
+
+
+# -- the two ways of reading the same run -------------------------------------
+
+def test_the_results_start_in_the_dollars_of_each_year(panel):
+    assert panel.todays_dollars.isChecked() is False
+
+
+def test_todays_dollars_re_reads_the_run_without_re_running_it(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 500_000, "Pierre"]])
+    panel.spending.setValue(20_000)
+    panel.inflation.setValue(3.0)
+    panel.nominal_return.setValue(5.0)
+    panel.until_age.setValue(85)
+    panel.run()
+    nominal_rows = [dict(row) for row in panel.rows]
+    nominal_closing = float(panel.results.item(10, 7).text().replace(",", ""))
+
+    panel.todays_dollars.setChecked(True)
+    real_closing = float(panel.results.item(10, 7).text().replace(",", ""))
+    assert real_closing < nominal_closing
+    # The projection itself did not move; only the reading of it did.
+    assert panel.rows[10]["closing"] == pytest.approx(nominal_rows[10]["closing"])
+    assert "today's dollars" in panel.status.text()
+
+
+def test_todays_dollars_does_not_change_whether_the_plan_holds(panel):
+    """Dividing every figure by a positive number cannot turn a surplus into a
+    shortfall, and the message has to agree."""
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 20_000, "Pierre"]])
+    panel.spending.setValue(50_000)
+    panel.run()
+    assert "Runs short at age" in panel.status.text()
+    panel.todays_dollars.setChecked(True)
+    assert "Runs short at age" in panel.status.text()
+
+
+def test_the_toggle_re_reads_a_many_path_run_too(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 500_000, "Pierre"]])
+    panel.spending.setValue(20_000)
+    panel.inflation.setValue(3.0)
+    panel.until_age.setValue(85)
+    panel.paths.setValue(60)
+    panel.run()
+    panel.run_paths()
+    nominal_median = float(panel.results.item(15, 3).text().replace(",", ""))
+    panel.todays_dollars.setChecked(True)
+    real_median = float(panel.results.item(15, 3).text().replace(",", ""))
+    assert real_median == pytest.approx(nominal_median / 1.03 ** 16, rel=1e-3)
+    # And it is still the many-path view, not the detailed one.
+    assert panel.results.columnCount() == 6
+
+
+def test_the_view_setting_survives_a_save_and_reload(panel, qapp, tmp_path):
+    from tradelab.ui.app import RetirementSimPanel
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 1000, "Pierre"]])
+    panel.todays_dollars.setChecked(True)
+    panel.save()
+    again = RetirementSimPanel(Database(path=tmp_path / "sim.db"))
+    assert again.todays_dollars.isChecked() is True
+    panel.todays_dollars.setChecked(False)
+    panel.save()
+
+
+# -- the tax brackets move too ------------------------------------------------
+
+def test_the_brackets_are_indexed_along_with_the_income(panel):
+    """A household whose income keeps pace with inflation must not drift into
+    a higher bracket. Freezing the 2026 table would invent that drift."""
+    _fill(panel, [["Pierre", 65]], [["CELI", "tfsa", 100_000, "Pierre"]],
+          [["RRQ", "Pierre", 40_000, 65, "", "Yes"]])
+    panel.spending.setValue(0)
+    panel.inflation.setValue(3.0)
+    panel.until_age.setValue(90)
+    panel.run()
+    first, last = panel.rows[0], panel.rows[-1]
+    # The bill grows in dollars, because the income does...
+    assert last["tax"] > first["tax"]
+    # ...but the *rate* barely moves, which a frozen table would not manage.
+    assert (last["tax"] / last["income"]) == pytest.approx(
+        first["tax"] / first["income"], abs=0.01)
 
 
 def test_the_indexed_flag_survives_a_save_and_reload(panel, qapp, tmp_path):

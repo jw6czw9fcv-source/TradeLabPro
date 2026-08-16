@@ -217,3 +217,66 @@ def test_the_quebec_figures_are_now_verified():
     for name in ("quebec_bpa", "quebec_age_amount", "quebec_retirement_amount",
                  "quebec_credit_threshold", "quebec_credit_reduction_rate"):
         assert name not in pending
+
+
+# -- the table as it will read in a future year -------------------------------
+
+def test_the_brackets_and_the_amounts_move_with_inflation():
+    """Both governments index them every year. A projection in future dollars
+    that left them frozen would invent bracket creep that will not happen."""
+    later = year_2026().inflated(10, 0.02)
+    factor = 1.02 ** 10
+    assert later.year == 2036
+    assert later.federal_brackets[0][0] == pytest.approx(58_523 * factor)
+    assert later.federal_brackets[0][1] == pytest.approx(0.14)      # the rate holds
+    assert later.quebec_brackets[0][0] == pytest.approx(54_345 * factor)
+    assert float(later.federal_bpa) == pytest.approx(16_452 * factor)
+    assert float(later.quebec_bpa) == pytest.approx(18_952 * factor)
+
+
+def test_the_top_bracket_keeps_its_open_end():
+    later = year_2026().inflated(10, 0.02)
+    assert later.federal_brackets[-1][0] is None
+    assert later.quebec_brackets[-1][0] is None
+
+
+def test_the_rates_are_not_amounts_and_do_not_inflate():
+    later = year_2026().inflated(20, 0.03)
+    assert float(later.quebec_abatement) == pytest.approx(0.165)
+    assert float(later.federal_credit_rate) == pytest.approx(0.14)
+    assert float(later.quebec_credit_reduction_rate) == pytest.approx(0.1875)
+
+
+def test_the_federal_pension_amount_is_frozen_in_law_and_stays_frozen():
+    """$2,000 since 2006, not indexed — so it really does shrink, and the
+    projection should show that rather than tidy it away."""
+    later = year_2026().inflated(30, 0.02)
+    assert float(later.federal_pension_amount) == pytest.approx(2_000)
+
+
+def test_a_table_asked_for_no_change_is_the_same_table():
+    table = year_2026()
+    assert table.inflated(0, 0.02) is table
+    assert table.inflated(10, 0.0) is table
+
+
+def test_indexing_keeps_the_sources_and_the_verified_flags():
+    """An inflated figure is still the figure that was checked; losing the
+    provenance would make the panel show every future year as unverified."""
+    later = year_2026().inflated(5, 0.02)
+    assert later.unverified() == year_2026().unverified()
+    assert "canada.ca" in later.federal_bpa.source
+
+
+def test_an_indexed_table_taxes_the_same_real_income_the_same_way():
+    """The point of the whole exercise: a household whose income keeps pace
+    with inflation does not drift into a higher bracket."""
+    table = year_2026()
+    now = tax_for(60_000, 70, 5_000, table)["total"]
+    factor = 1.02 ** 20
+    later = tax_for(60_000 * factor, 70, 5_000 * factor,
+                    table.inflated(20, 0.02))["total"]
+    # Not identical - the $2,000 pension amount is frozen, so the future bill
+    # is slightly higher in real terms. Within a percent, though, where a
+    # frozen table would be out by a third.
+    assert later / factor == pytest.approx(now, rel=0.01)
