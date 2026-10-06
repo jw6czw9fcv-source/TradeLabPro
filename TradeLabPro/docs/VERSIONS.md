@@ -17,7 +17,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 | **2.42.0** | 2026-08-11 | One risk rating, the published one |
 | **2.41.0** | 2026-08-10 | Your ETF workbook, in the app |
 | **2.40.0** | 2026-08-08 | Your workplace retirement plan, fund by fund |
-| **2.39.0** | *no tag of its own* | Your account year-to-date, charted on Home |
+| **2.39.0** | 2026-08-08 | Your account year-to-date, charted on Home |
 | **2.38.0** | 2026-07-28 | Coming up: scheduled dates for your holdings |
 | **2.37.0** | 2026-07-27 | Look-through exposure |
 | **2.36.0** | 2026-07-27 | Home dashboard, market context and a consistency pass |
