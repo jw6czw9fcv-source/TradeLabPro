@@ -112,3 +112,24 @@ def test_walk_forward_verdict_labels_reliability(panel):
     panel.run_walk_forward()
     text = panel.wf_verdict.text()
     assert any(word in text for word in ["reliable", "unreliable", "overfit"])
+
+
+def test_a_chart_that_cannot_be_drawn_says_so(panel, monkeypatch):
+    """The figures are computed before the chart is drawn, so a chart failure
+    must not fail the run - but it used to fail in silence, leaving the
+    previous symbol's chart beside the new symbol's numbers."""
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("no data for the chart")
+    monkeypatch.setattr(panel.chart, "plot", broken)
+    panel.single_symbol.setText("AAPL")
+    panel.run_single()
+    assert panel.metrics.rowCount() > 0                       # the run still completed
+    text = panel.status.text()
+    assert "could not be drawn" in text and "no data for the chart" in text
+    assert "figures are unaffected" in text
+
+
+def test_a_chart_that_draws_says_nothing_extra(panel):
+    panel.single_symbol.setText("AAPL")
+    panel.run_single()
+    assert "could not be drawn" not in panel.status.text()

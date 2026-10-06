@@ -4519,10 +4519,17 @@ class BacktestPanel(QWidget):
         _fill_table(self.trades, ["Entry Date","Exit Date","Entry","Exit","Return %"],
                     res.trades.to_dict("records") if not res.trades.empty else [])
         self._set_single_verdict(sym, res.metrics)
+        done = f"Backtest complete: {len(res.trades)} trade rows."
         try:
             self.chart.plot(sym, get_history(sym, cfg.period, cfg.interval), cfg)
-        except Exception: pass
-        self.status.setText(f"Backtest complete: {len(res.trades)} trade rows.")
+        except Exception as exc:
+            # The numbers above are already right, so this must not fail the
+            # run - but it used to fail in total silence, leaving yesterday's
+            # chart on screen beside today's results with nothing to say they
+            # no longer belong together.
+            log.warning("Backtest chart for %s could not be drawn: %s", sym, exc)
+            done += f" The chart could not be drawn ({exc}) - the figures are unaffected."
+        self.status.setText(done)
 
     def _set_single_verdict(self, sym, m):
         if m.get("Error") or not m.get("Closed trades"):
