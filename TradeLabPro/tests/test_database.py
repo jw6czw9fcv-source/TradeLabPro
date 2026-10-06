@@ -228,3 +228,74 @@ def test_a_non_indexed_income_round_trips(tmp_path):
                                         "annual": 20_000, "starts_at_age": 65,
                                         "indexed": 0}])
     assert db.retirement_rows("incomes")[0]["indexed"] == 0
+
+
+# -- a migration is all or nothing ---------------------------------------------
+#
+# executescript() runs in autocommit mode, so a migration that failed on its
+# second statement used to leave the first one applied and its version
+# unrecorded. The next launch replayed it, hit the half that was already
+# there ("duplicate column name") and the app would not start at all.
+
+def _columns(db, table):
+    return [r[1] for r in db.conn.execute(f"PRAGMA table_info({table})")]
+
+
+def _version(db):
+    return db.conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()["v"]
+
+
+def test_a_failed_migration_leaves_nothing_half_applied(tmp_db_path, monkeypatch):
+    import sqlite3
+    from tradelab.data import database
+    Database(path=tmp_db_path).conn.close()            # an up-to-date database
+    before = len(database.MIGRATIONS)
+
+    bad = ("ALTER TABLE watchlists ADD COLUMN colour TEXT;\n"
+           "INSERT INTO table_that_does_not_exist VALUES (1);")
+    monkeypatch.setattr(database, "MIGRATIONS", database.MIGRATIONS + [bad])
+    with pytest.raises(sqlite3.Error):
+        Database(path=tmp_db_path)
+
+    monkeypatch.setattr(database, "MIGRATIONS", database.MIGRATIONS[:before])
+    db = Database(path=tmp_db_path)
+    assert "colour" not in _columns(db, "watchlists"), "the first half stayed applied"
+    assert _version(db) == before
+
+
+def test_after_a_failed_migration_the_corrected_one_still_applies(tmp_db_path, monkeypatch):
+    """The scenario that used to brick the app: the next version ships a fixed
+    script, and the database has to accept it."""
+    import sqlite3
+    from tradelab.data import database
+    Database(path=tmp_db_path).conn.close()
+    base = list(database.MIGRATIONS)
+
+    monkeypatch.setattr(database, "MIGRATIONS", base + [
+        "ALTER TABLE watchlists ADD COLUMN colour TEXT;\n"
+        "INSERT INTO table_that_does_not_exist VALUES (1);"])
+    with pytest.raises(sqlite3.Error):
+        Database(path=tmp_db_path)
+
+    monkeypatch.setattr(database, "MIGRATIONS", base + [
+        "ALTER TABLE watchlists ADD COLUMN colour TEXT;"])
+    db = Database(path=tmp_db_path)                       # must not raise
+    assert "colour" in _columns(db, "watchlists")
+    assert _version(db) == len(base) + 1
+
+
+def test_a_failed_migration_keeps_the_data_already_there(tmp_db_path, monkeypatch):
+    import sqlite3
+    from tradelab.data import database
+    db = Database(path=tmp_db_path)
+    db.add_watch_symbol("RY.TO")
+    db.conn.close()
+
+    monkeypatch.setattr(database, "MIGRATIONS", database.MIGRATIONS + [
+        "DELETE FROM watchlist_symbols;\n"
+        "INSERT INTO table_that_does_not_exist VALUES (1);"])
+    with pytest.raises(sqlite3.Error):
+        Database(path=tmp_db_path)
+
+    monkeypatch.setattr(database, "MIGRATIONS", database.MIGRATIONS[:-1])
+    assert Database(path=tmp_db_path).watch_symbols() == ["RY.TO"]

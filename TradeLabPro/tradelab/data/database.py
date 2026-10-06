@@ -197,9 +197,23 @@ class Database:
             if idx <= current:
                 continue
             log.info("Applying database migration v%d", idx)
-            self.conn.executescript(script)
-            self.conn.execute("INSERT INTO schema_version(version) VALUES (?)", (idx,))
-            self.conn.commit()
+            # All or nothing. executescript() runs in autocommit mode, so a
+            # migration that failed on its second statement used to leave the
+            # first one applied and its version unrecorded - and the next
+            # launch, replaying it, died on the half that was already there
+            # ("duplicate column name"): an app that would not start, with the
+            # data trapped inside. SQLite's DDL is transactional, so the step
+            # and its version row now commit together or not at all.
+            try:
+                self.conn.executescript(
+                    f"BEGIN;\n{script}\n"
+                    f"INSERT INTO schema_version(version) VALUES ({int(idx)});\n"
+                    "COMMIT;")
+            except sqlite3.Error:
+                if self.conn.in_transaction:
+                    self.conn.rollback()
+                log.exception("Database migration v%d failed and was rolled back", idx)
+                raise
 
     def ensure_default_watchlist(self):
         self.conn.execute("INSERT OR IGNORE INTO watchlists(name) VALUES (?)", ("Default",))
