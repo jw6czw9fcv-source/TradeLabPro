@@ -1,13 +1,19 @@
 # TradeLab Pro Project Status
 
-Current version: 2.46.0
+Current version: 2.46.1
 Current phase: ETF comparison & allocation building (done)
 
+## Completed in 2.46.1 (One rule for a bad download)
+- Fixed a real crash from the log: a backtest optimisation died on a frame with two 'Close' columns (yfinance MultiIndex flattening). The guard existed in `core/market` and again in `core/seasonality`, but never in `core/indicators` - the one function the scanner, the alerts poller, both backtesters, every strategy and the chart go through. The rule now lives once, in `core/ohlcv.py`, and covers High/Low/Volume too.
+- Fixed two tests that had rotted rather than broken: a dividend fixture anchored to a fixed date drifted out of its own trailing-twelve-month window, and the release index had not been regenerated after `v2.39.0` was tagged.
+- Fixed README and this file, which still described 2.46.0's abandoned real-terms design.
+
 ## Completed in 2.46.0 (What inflation is actually for)
-- An inflation rate on Retirement Sim, with the nominal equivalent of the real return shown live beside it.
-- An Indexed column on incomes. Indexed benefits ignore the rate; a fixed pension erodes in today's dollars.
-- Fixed: every income was treated as holding its purchasing power. Existing rows migrate to indexed = 1, so no saved plan changes its answer.
-- Known and unfixed: the federal $2,000 pension amount is not indexed in law but is held constant here - up to roughly $130/person/year of optimism at the far end.
+- Retirement Sim runs in the dollars of each year: the return is the nominal one a fund reports, and inflation is projected explicitly over the indexed benefits, the spending and the tax brackets (`TaxYear.inflated`).
+- A **Today's $** toggle re-reads the finished rows in today's purchasing power - it re-reads rather than re-runs, so the two views cannot disagree about what happened.
+- An Indexed column on incomes: indexed benefits rise with the rate, a fixed pension keeps paying the same cheque and loses half its worth over thirty years.
+- The federal $2,000 pension amount is the one amount marked not indexed, so in a nominal projection it shrinks correctly - the optimism noted as "known and unfixed" in the draft design is gone.
+- A Help tab after Settings, and the manual's table of contents made to work at all.
 
 ## Completed in 2.45.0 (The order returns arrive in)
 - `simulate()` / `sample_returns()` / `percentile()` in `core/retirement_plan.py`, and **Run many paths** in the panel. See the 2.44.0 notes below for the ledger it runs on.

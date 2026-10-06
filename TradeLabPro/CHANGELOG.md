@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.46.1 - One rule for a bad download
+
+### Fixed
+- **A backtest optimisation could be killed by the download itself.** yfinance's MultiIndex flattening sometimes returns a frame with two `Close` columns; `df["Close"]` is then a DataFrame and `add_indicators` dies with *"Cannot set a DataFrame with multiple columns to the single column EMA9"*. This is not hypothetical - it is in the log, uncaught, from a real optimisation run. The galling part is that the rule was already understood and written out **twice**, in `core/market` and in `core/seasonality`, and had never reached `core/indicators` - the one function the scanner, the alerts poller, both backtesters, every strategy and the chart all run through. Six callers were one odd download away from the same crash. The rule now lives once, in **`core/ohlcv.py`**, and covers `High`, `Low` and `Volume` as well, because `atr`/`adx` read the first two and `obv`/`mfi` the third.
+- **Two tests had rotted rather than broken.** A dividend fixture anchored its quarterly payments to a fixed date, so the oldest one walked out of the trailing-twelve-month window it was measuring and the test started failing in October for no reason but the calendar - the arithmetic was right the whole time. And `docs/VERSIONS.md` had not been regenerated after `v2.39.0` was backfilled as a tag; the test that rebuilds it and compares is what caught that.
+- **The README and PROJECT_STATUS still described a design that was abandoned before 2.46.0 shipped** - the projection "staying in today's dollars", and a $2,000 pension amount held constant as "known and unfixed". Both were fixed in the code and in the CHANGELOG, and neither doc was updated to match.
+
+### Notes
+- No behaviour changes beyond the crash: a frame that was already well-formed takes the same path it always did, and the regression test asserts a duplicated frame gives the *same* EMA and RSI as a clean one, so the extra column is dropped rather than folded into the maths.
+
+### Verified
+- Full pytest suite (1328) passes, including 10 new tests for the normaliser and the crash path. Checked that the new test catches the regression: with the fix removed it fails, with it restored it passes.
+
 ## 2.46.0 - What inflation is actually for
 
 ### Added

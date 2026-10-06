@@ -3,7 +3,9 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
-2.46.0 - What inflation is actually for - the projection stays in today's dollars, so the rate erodes only what is not indexed and converts your real return to a nominal one; a fixed pension no longer pretends to hold its value
+2.46.1 - One rule for a bad download - a frame that came back with two 'Close' columns crashed a backtest optimisation, and would have taken the scanner, the alerts poller and the chart with it; the rule that prevents it now lives in one place instead of two
+
+2.46.0 - What inflation is actually for - the projection runs in the dollars of the year each thing happens, with inflation projected explicitly over the indexed benefits, the spending and the tax brackets; tick Today's $ to read it back in today's purchasing power
 
 ## Run
 1. Run `install_requirements.bat` if needed.
