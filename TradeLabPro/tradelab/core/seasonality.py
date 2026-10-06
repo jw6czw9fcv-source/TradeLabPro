@@ -17,6 +17,8 @@ from datetime import date
 
 import pandas as pd
 
+from tradelab.core.ohlcv import close_series
+
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
@@ -25,17 +27,12 @@ WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 
 
 def _close(df) -> pd.Series | None:
-    """The numeric close series with a DatetimeIndex, or None if there isn't a
-    usable one. Mirrors market._close_series (collapse a duplicated 2-D 'Close'
-    from yfinance's MultiIndex flattening) and additionally guarantees the index
-    is datetime so the calendar grouping below can't blow up."""
-    if df is None or getattr(df, "empty", True) or "Close" not in df:
-        return None
-    close = df["Close"]
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-    close = pd.to_numeric(close, errors="coerce").dropna()
-    if close.empty:
+    """The numeric close series **with a DatetimeIndex**, or None if there
+    isn't a usable one. The shared rule in `core.ohlcv` handles the duplicated
+    'Close' a download can arrive with; the datetime index is this module's own
+    requirement, because the calendar grouping below cannot work without it."""
+    close = close_series(df)
+    if close is None:
         return None
     if not isinstance(close.index, pd.DatetimeIndex):
         close.index = pd.to_datetime(close.index, errors="coerce")

@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+from tradelab.core.ohlcv import flatten_ohlcv
+
 
 def ema(series: pd.Series, length: int) -> pd.Series:
     return series.ewm(span=int(length), adjust=False).mean()
@@ -108,7 +110,17 @@ def mfi(df: pd.DataFrame, length: int = 14) -> pd.Series:
 
 
 def add_indicators(df: pd.DataFrame, ema_fast: int = 9, ema_slow: int = 30, macd_fast: int = 12, macd_slow: int = 26, macd_signal: int = 9) -> pd.DataFrame:
-    out = df.copy()
+    """Every indicator this app knows, added as columns.
+
+    The frame is normalised first, and that matters more than it looks: this is
+    the one function the scanner, the alerts poller, both backtesters, every
+    strategy and the chart all run through. A download that came back with two
+    'Close' columns used to crash here with "Cannot set a DataFrame with
+    multiple columns to the single column EMA9" - seen for real in a backtest
+    optimisation - and the same frame would have broken the other five callers
+    just as readily.
+    """
+    out = flatten_ohlcv(df).copy()
     out[f"EMA{ema_fast}"] = ema(out["Close"], ema_fast)
     out[f"EMA{ema_slow}"] = ema(out["Close"], ema_slow)
     out["SMA20"] = sma(out["Close"], 20)

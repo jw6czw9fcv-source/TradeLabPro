@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from tradelab.core.ohlcv import close_series
+
 from tradelab.core.indicators import sma
 
 # The 11 SPDR select-sector ETFs - a standard, liquid proxy for how each
@@ -191,20 +193,10 @@ MOMENTUM_LOOKBACK = 63
 
 def _close_series(df) -> pd.Series | None:
     """The 1-D close price series from an OHLCV frame, or None if there isn't
-    a usable one.
-
-    yfinance sometimes returns a frame with a duplicated 'Close' column (its
-    MultiIndex flattening can produce two, e.g. adjusted + raw). df['Close'] is
-    then a *DataFrame*, and float(close.iloc[-1]) blows up with
-    "float() argument must be ... not 'Series'". Collapse any such 2-D result
-    to its first column so one oddly-shaped download never crashes a refresh.
-    """
-    if df is None or getattr(df, "empty", True) or "Close" not in df:
-        return None
-    close = df["Close"]
-    if isinstance(close, pd.DataFrame):     # duplicate 'Close' columns -> take the first
-        close = close.iloc[:, 0]
-    return pd.to_numeric(close, errors="coerce").dropna()
+    a usable one. The rule itself lives in `core.ohlcv` — it has to be the same
+    one the indicator library uses, or a frame safe for a market refresh is
+    still fatal to a scan."""
+    return close_series(df)
 
 
 def analyze_trend(df: pd.DataFrame) -> dict:
