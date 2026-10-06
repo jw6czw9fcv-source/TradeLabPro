@@ -487,8 +487,17 @@ def test_compute_metrics_carries_the_rating_and_its_window():
 
 # -- distribution yield ------------------------------------------------------
 
-def _dividends(amounts, end="2026-08-01"):
-    idx = pd.date_range(end=pd.Timestamp(end), periods=len(amounts), freq="QE")
+def _dividends(amounts, end=None):
+    """Quarterly payments ending in the most recent quarter.
+
+    Anchored to *today*, never to a fixed date: the yield under test is a
+    trailing-twelve-month figure, so a hardcoded anchor silently walks out of
+    the window as the calendar moves. This file pinned 2026-08-01 and started
+    failing in October, counting three payments instead of four — the maths was
+    right the whole time.
+    """
+    end = pd.Timestamp.today() if end is None else pd.Timestamp(end)
+    idx = pd.date_range(end=end, periods=len(amounts), freq="QE")
     return pd.Series(amounts, index=idx)
 
 
