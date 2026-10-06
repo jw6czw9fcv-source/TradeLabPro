@@ -1424,6 +1424,34 @@ class ScannerPanel(QWidget):
         self.status.setText(f"Added {count} symbol(s) to Portfolio.")
         QMessageBox.information(self, "Portfolio", f"Added {count} symbol(s) to Portfolio.")
 
+    def shutdown(self):
+        """Stop the scan and the list refresh before the window goes.
+
+        Every other panel that starts a thread has one of these, and this one
+        did not: closing the app mid-scan left the scan running and the process
+        ended abnormally, a QThread destroyed while still running. The scan
+        already checks a stop flag between symbols, so asking is enough. The
+        refresh has no flag, so it is only disconnected and waited for.
+        """
+        worker = self.scan_worker
+        if worker is not None:
+            worker.request_stop()
+            for signal in (worker.progress, worker.scan_finished):
+                try:
+                    signal.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+            worker.wait(3000)
+            self.scan_worker = None
+        refresh = self.refresh_worker
+        if refresh is not None:
+            try:
+                refresh.finished.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            refresh.wait(3000)
+            self.refresh_worker = None
+
 
 class WatchlistPanel(QWidget):
     def __init__(self, db: Database, chart: ChartWidget, cfg: ScannerConfig):
@@ -5037,6 +5065,23 @@ class AIAssistantPanel(QWidget):
         self._append("System", f"AI error: {msg}")
         self.send_btn.setEnabled(True); self.prompt.setEnabled(True)
         self._refresh_status()
+
+    def shutdown(self):
+        """Let an answer in flight go quietly when the window closes.
+
+        A half-sent HTTP request cannot be cancelled, so this disconnects it -
+        a late reply must not write into a widget that no longer exists - and
+        gives it the same three seconds every other panel's worker gets.
+        """
+        worker = self._worker
+        if worker is not None:
+            for signal in (worker.done, worker.failed):
+                try:
+                    signal.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+            worker.wait(3000)
+            self._worker = None
 
 
 _COACH_GRADE_COLORS = {"A": "#3fb950", "B": "#5fd657", "C": "#e3b341",
@@ -10791,6 +10836,14 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.news_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.scanner_panel.shutdown()  # a scan can run for minutes
+        except Exception:
+            pass
+        try:
+            self.ai_panel.shutdown()
         except Exception:
             pass
         super().closeEvent(event)
