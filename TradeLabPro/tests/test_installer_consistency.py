@@ -28,7 +28,6 @@ PACKAGE_TO_IMPORT = {
     "pandas": "pandas",
     "numpy": "numpy",
     "yfinance": "yfinance",
-    "matplotlib": "matplotlib",
     "pytest": "pytest",
 }
 
@@ -70,3 +69,26 @@ def test_every_runtime_requirement_has_a_check_install_entry():
 
 def test_requirements_file_is_not_empty():
     assert len(_parse_requirements()) >= 5
+
+
+# -- matplotlib stays out ---------------------------------------------------------
+#
+# It shipped in every installer for years without a single runtime use: the
+# chart moved to pyqtgraph, and pandas.plotting and pyqtgraph.colormap only
+# reference it lazily - enough for the bundler to pull in ~32 MB. These keep
+# it from quietly coming back.
+
+def test_no_app_module_imports_matplotlib():
+    offenders = []
+    for path in (ROOT / "tradelab").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if re.search(r"^\s*(import matplotlib|from matplotlib)", text, re.M):
+            offenders.append(str(path.relative_to(ROOT)))
+    assert not offenders, f"matplotlib is imported by: {offenders}"
+
+
+def test_the_build_excludes_matplotlib():
+    spec = (ROOT / "TradeLabPro.spec").read_text(encoding="utf-8")
+    assert '"matplotlib"' in spec and '"mpl_toolkits"' in spec
+    assert '"Matplotlib" not in name' in spec, \
+        "collect_submodules('pyqtgraph') would pull MatplotlibWidget back in"

@@ -8,7 +8,7 @@ import traceback
 
 # Kept in sync with requirements.txt / check_install.py (see
 # tests/test_installer_consistency.py, which fails the build if they drift).
-REQUIRED_MODULES = ["PySide6", "pyqtgraph", "pandas", "numpy", "yfinance", "matplotlib"]
+REQUIRED_MODULES = ["PySide6", "pyqtgraph", "pandas", "numpy", "yfinance"]
 
 
 def show_error(message: str) -> None:

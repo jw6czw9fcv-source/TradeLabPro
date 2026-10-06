@@ -32,7 +32,9 @@ hiddenimports = [
     # yfinance and pandas reach for these lazily, so the analyser can miss them.
     "yfinance",
     "pandas._libs.tslibs.base",
-    *collect_submodules("pyqtgraph"),
+    # Every pyqtgraph submodule except the one that hard-imports matplotlib:
+    # the app never uses it, and it would otherwise drag matplotlib in.
+    *collect_submodules("pyqtgraph", filter=lambda name: "Matplotlib" not in name),
 ]
 
 excludes = [
@@ -42,6 +44,10 @@ excludes = [
     "PySide6.QtQml", "PySide6.Qt3DCore", "PySide6.QtMultimedia",
     "PySide6.QtBluetooth", "PySide6.QtDesigner",
     "tkinter", "pytest", "PyInstaller",
+    # Not used anywhere in the app - the full test suite passes with it
+    # made unimportable - yet pandas.plotting and pyqtgraph.colormap
+    # reference it lazily, which was enough to ship ~32 MB of it.
+    "matplotlib", "mpl_toolkits",
 ]
 
 a = Analysis(

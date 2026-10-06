@@ -6,7 +6,6 @@ modules = [
     ("pandas", "pandas"),
     ("numpy", "numpy"),
     ("yfinance", "yfinance"),
-    ("matplotlib", "matplotlib"),
 ]
 
 missing = []
