@@ -259,19 +259,24 @@ class Database:
     def set_portfolio_positions(self, portfolio: str, positions: list) -> int:
         """Replace all rows in a named portfolio with `positions` (dicts with
         symbol / shares / entry_price). Used to sync an imported book (e.g. from
-        IBKR) without accumulating duplicates on re-import. Returns rows written."""
-        self.conn.execute("DELETE FROM portfolio_positions WHERE portfolio=?", (portfolio,))
+        IBKR) without accumulating duplicates on re-import. Returns rows written.
+
+        One transaction, all or nothing. The values are converted *after* the
+        delete, so one malformed position in an imported file used to raise
+        mid-loop and leave the delete pending - and the next write anywhere in
+        the app committed it, silently losing part of the book."""
         written = 0
-        for p in positions:
-            symbol = str(p.get("symbol", "")).upper().strip()
-            shares = float(p.get("shares", 0) or 0)
-            if not symbol or shares == 0:
-                continue
-            self.conn.execute(
-                "INSERT INTO portfolio_positions(portfolio,symbol,shares,entry_price) VALUES (?,?,?,?)",
-                (portfolio, symbol, shares, float(p.get("entry_price", 0) or 0)))
-            written += 1
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute("DELETE FROM portfolio_positions WHERE portfolio=?", (portfolio,))
+            for p in positions:
+                symbol = str(p.get("symbol", "")).upper().strip()
+                shares = float(p.get("shares", 0) or 0)
+                if not symbol or shares == 0:
+                    continue
+                self.conn.execute(
+                    "INSERT INTO portfolio_positions(portfolio,symbol,shares,entry_price) VALUES (?,?,?,?)",
+                    (portfolio, symbol, shares, float(p.get("entry_price", 0) or 0)))
+                written += 1
         return written
 
     def save_scan(self, scan_name: str, settings_json: str, rows: list[dict]):
@@ -401,22 +406,27 @@ class Database:
 
     def set_retirement_rows(self, what: str, rows: list[dict]) -> int:
         """Replace the whole set. These are edited as a table, and a partial
-        update would leave a deleted line behind."""
+        update would leave a deleted line behind.
+
+        And the replace is one transaction: a save that failed part-way used to
+        leave the delete pending, and the next unrelated write in the app -
+        adding a symbol to a watchlist - committed it, so the plan came back
+        with only the rows written before the failure."""
         table, cols = self.RETIREMENT_TABLES[what]
-        self.conn.execute(f"DELETE FROM {table}")
         written = 0
-        for row in rows:
-            if not str(row.get("name", "")).strip():
-                continue
-            placeholders = ",".join("?" for _ in cols)
-            self.conn.execute(f"INSERT INTO {table}({','.join(cols)}) "
-                              f"VALUES ({placeholders})",
-                              [row.get(c, self.RETIREMENT_DEFAULTS.get(c))
-                               if row.get(c) is not None
-                               else self.RETIREMENT_DEFAULTS.get(c)
-                               for c in cols])
-            written += 1
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute(f"DELETE FROM {table}")
+            for row in rows:
+                if not str(row.get("name", "")).strip():
+                    continue
+                placeholders = ",".join("?" for _ in cols)
+                self.conn.execute(f"INSERT INTO {table}({','.join(cols)}) "
+                                  f"VALUES ({placeholders})",
+                                  [row.get(c, self.RETIREMENT_DEFAULTS.get(c))
+                                   if row.get(c) is not None
+                                   else self.RETIREMENT_DEFAULTS.get(c)
+                                   for c in cols])
+                written += 1
         return written
 
     def etf_update_metrics(self, ticker: str, metrics: dict):

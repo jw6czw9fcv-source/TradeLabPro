@@ -299,3 +299,47 @@ def test_a_failed_migration_keeps_the_data_already_there(tmp_db_path, monkeypatc
 
     monkeypatch.setattr(database, "MIGRATIONS", database.MIGRATIONS[:-1])
     assert Database(path=tmp_db_path).watch_symbols() == ["RY.TO"]
+
+
+# -- replacing a whole set is all or nothing ------------------------------------
+#
+# Both "replace everything" writes delete first and insert after. A failure
+# part-way used to leave the delete pending, and the next unrelated write in
+# the app committed it: the data came back with only the rows written before
+# the failure, and nothing said so.
+
+def test_a_failed_retirement_save_keeps_the_plan_you_had(tmp_db_path):
+    db = Database(path=tmp_db_path)
+    db.set_retirement_rows("people", [{"name": "Pierre", "age": 64},
+                                      {"name": "Conjointe", "age": 62}])
+    with pytest.raises(Exception):
+        db.set_retirement_rows("people", [{"name": "Pierre", "age": 64},
+                                          {"name": "X", "age": {"not": "a number"}}])
+    db.add_watch_symbol("RY.TO")          # any other write, which used to commit the loss
+    db.conn.close()
+    names = [r["name"] for r in Database(path=tmp_db_path).retirement_rows("people")]
+    assert names == ["Pierre", "Conjointe"]
+
+
+def test_a_malformed_import_keeps_the_book_you_had(tmp_db_path):
+    """The realistic case: the values are converted after the delete, so one
+    bad position in an imported file is enough."""
+    db = Database(path=tmp_db_path)
+    db.set_portfolio_positions("IBKR", [{"symbol": "RY.TO", "shares": 100, "entry_price": 120},
+                                        {"symbol": "XIC.TO", "shares": 50, "entry_price": 35}])
+    with pytest.raises(ValueError):
+        db.set_portfolio_positions("IBKR", [{"symbol": "RY.TO", "shares": 100, "entry_price": 120},
+                                            {"symbol": "VTI", "shares": "N/A", "entry_price": 250}])
+    db.add_watch_symbol("RY.TO")
+    db.conn.close()
+    symbols = sorted(p["symbol"] for p in Database(path=tmp_db_path).positions()
+                     if p["portfolio"] == "IBKR")
+    assert symbols == ["RY.TO", "XIC.TO"]
+
+
+def test_a_successful_replace_still_replaces(tmp_db_path):
+    db = Database(path=tmp_db_path)
+    db.set_portfolio_positions("IBKR", [{"symbol": "RY.TO", "shares": 100, "entry_price": 120}])
+    assert db.set_portfolio_positions("IBKR", [{"symbol": "VTI", "shares": 5, "entry_price": 250}]) == 1
+    db.conn.close()
+    assert [p["symbol"] for p in Database(path=tmp_db_path).positions()] == ["VTI"]
