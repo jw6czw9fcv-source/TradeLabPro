@@ -18,8 +18,13 @@ logs/
 # data.old is the pre-move backup - and both are ignored wholesale rather than
 # file by file: everything inside them is yours, including imported IBKR
 # positions, and none of it belongs in a public repo.
-data/
-data.old/
+#
+# Anchored with a leading slash. A bare `data/` matches every directory of that
+# name at any depth - including the source package tradelab/data/, where
+# database.py and market_data.py live - so a new module created there would
+# have been silently left out of every commit.
+/data/
+/data.old/
 
 # The ETF workbook tools/import_etf_screener.py reads. It holds your own target
 # allocations and notes, and the repo is public - the importer and its tests
