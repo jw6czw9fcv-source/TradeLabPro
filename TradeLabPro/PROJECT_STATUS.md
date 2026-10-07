@@ -1,7 +1,14 @@
 # TradeLab Pro Project Status
 
-Current version: 2.46.1
+Current version: 2.47.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.47.0 (Fresh when you open it)
+- **Auto-refresh on tab open** (`core/freshness.py`, `AutoRefresh` mixin, `MainWindow._auto_refresh_tab`): Home, Market, Analytics refresh when older than the Settings threshold (15 min); Dividends, Risk, Retirement once a day. ETF Screener manual by decision; Portfolio/Watchlists hold no prices. One shared stamp rule: "updated 14:32" / "as of 14:32" / with the date across days. Settings -> Data refresh.
+- Fixed: closing the app mid-scan or mid-AI-request ended the process abnormally (Scanner and AI Assist had no shutdown; a structural test now requires one on every thread-starting panel).
+- Fixed: database migrations and the two replace-the-whole-set writes (retirement plan, IBKR import) are now all-or-nothing - a failure part-way could leave the app unable to start, or silently lose rows on the next unrelated write.
+- Fixed: the backtest chart failed silently; a bare `data/` ignore rule also covered the `tradelab/data/` source package.
+- Changed: matplotlib is no longer shipped (nothing used it) - the exe goes from 132.2 to 122.8 MiB; the dead 1,049-line legacy chart is deleted.
 
 ## Completed in 2.46.1 (One rule for a bad download)
 - Fixed a real crash from the log: a backtest optimisation died on a frame with two 'Close' columns (yfinance MultiIndex flattening). The guard existed in `core/market` and again in `core/seasonality`, but never in `core/indicators` - the one function the scanner, the alerts poller, both backtesters, every strategy and the chart go through. The rule now lives once, in `core/ohlcv.py`, and covers High/Low/Volume too.

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.47.0 - Fresh when you open it
+
+### Added
+- **Tabs bring their own data up to date when you open them**, if it has gone stale - no more remembering to click Refresh. Two speeds, because not everything moves at the same rate: **Home, Market and Analytics** after 15 minutes, because prices move all session; **Dividends, Risk and Retirement** once a day, because nothing in them changes during a session and refetching would only download the same data again. A refresh already running is never started twice, and clicking Refresh yourself resets the clock. Turn it off or change the minutes under **Settings → Data refresh**.
+- **Every one of these tabs says how old its figures are**, by one shared rule (`core/freshness.py`): *updated 14:32*, *as of 14:32* once over an hour old, and the date once they are from another day — a figure from yesterday must never read like one from this afternoon.
+
+### Fixed
+- **Closing the app during a scan ended the process abnormally** (exit code 127 where a clean close exits 0). Sixteen panels stopped their threads on close; the Scanner and AI Assist did not. A structural test now requires every panel that starts a thread to be able to stop it, and the window to call it.
+- **A database migration interrupted part-way could leave the app unable to start** — the first half applied, its version unrecorded, and the next launch dying on the half already there. Each migration is now all or nothing.
+- **Saving the retirement plan, or importing positions from IBKR, could silently lose rows.** Both delete everything and re-insert; a failure part-way left the delete pending, and the next unrelated write — adding a symbol to a watchlist — committed it. One malformed position in an imported file was enough. Both are now single transactions.
+- **The backtest chart failed in silence**, leaving the previous symbol's chart beside the new symbol's figures. It now says so, and that the figures are unaffected.
+- **A bare `data/` ignore rule also covered the source package `tradelab/data/`**, so a new module created there would have been left out of every commit. Nothing had been lost; the rule is now anchored, and the set of ignored files — your private data included — is unchanged.
+
+### Changed
+- **matplotlib is no longer shipped.** Nothing in the app used it — the full suite passes with it made unimportable — yet pandas and pyqtgraph referenced it lazily, enough for the bundler to include it. The exe goes from **132.2 to 122.8 MiB**. The old matplotlib chart, unused since the move to pyqtgraph, is deleted (git keeps it); the launcher no longer demands a package the app never touched.
+
+### Verified
+- Full pytest suite (1382) passes, including 31 tests for the refresh and 25 for the fixes. Each fix was reproduced before it was corrected, and its test was shown to fail on the old code.
+
 ## 2.46.1 - One rule for a bad download
 
 ### Fixed
