@@ -1265,8 +1265,25 @@ price right now"* — that's the data limitation, not the model.
 
 ## 22. Settings & your data
 
-The **Settings** tab lets you choose your **Data source** and shows where your
-data lives (database path, data folder, scan-history counts).
+The **Settings** tab lets you choose your **Data source**, how often tabs
+**refresh themselves**, and shows where your data lives (database path, data
+folder, scan-history counts).
+
+**Data refresh.** When you open a tab that shows market data, it is fetched again
+if it has gone stale — you no longer have to remember to click Refresh. Two
+speeds, because not everything moves at the same rate:
+
+| Refreshes after | Tabs | Why |
+|---|---|---|
+| **15 minutes** (your setting) | Home, Market, Analytics | prices move all session |
+| **Once a day** | Dividends, Risk, Retirement | dividends, sectors and index histories don't change during a session |
+
+Each of these tabs says how old its figures are — *updated 14:32*, then *as of
+14:32* after an hour, with the date once they are from another day. A refresh
+already running is never started twice, and clicking Refresh yourself resets the
+clock. **The ETF Screener stays manual**, and nothing you run yourself — scans,
+backtests, projections — ever starts on its own. Untick the box, or change the
+number of minutes, under **Settings → Data refresh**.
 
 **Data source.** A dropdown selects where prices and fundamentals come from:
 - **Yahoo Finance** *(default)* — live data via `yfinance`, with the synthetic

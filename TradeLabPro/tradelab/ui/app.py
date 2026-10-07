@@ -34,6 +34,7 @@ from tradelab.core.links import Link, LinkStore
 from tradelab.core.notes import load_notes, save_notes
 from tradelab.core.news import fetch_news, MARKET_SYMBOLS, GEO_SYMBOLS, SECTOR_ETFS
 from tradelab.core import heatmap as hm
+from tradelab.core import freshness
 from tradelab.data.universe import US_NASDAQ, US_NYSE, US_AMEX, CAN_TSX, CAN_TSX_EXPANDED
 from tradelab.strategies import strategy_choices
 from tradelab.ui.chart_widget import ChartWorkspace, ChartWidget
@@ -83,6 +84,84 @@ class StatusLabel(QLabel):
         super().setText(text)
         if text:
             self.messageChanged.emit(text)
+
+
+AUTO_REFRESH_KEY = "AutoRefresh/enabled"
+AUTO_REFRESH_MINUTES_KEY = "AutoRefresh/minutes"
+
+
+def auto_refresh_settings(settings) -> tuple:
+    """(enabled, minutes) as set in Settings: on, 15 minutes, unless changed."""
+    enabled = str(settings.value(AUTO_REFRESH_KEY, "true")).lower() in ("true", "1")
+    try:
+        minutes = int(float(settings.value(AUTO_REFRESH_MINUTES_KEY,
+                                           freshness.DEFAULT_MAX_AGE_MINUTES)))
+    except (TypeError, ValueError):
+        minutes = freshness.DEFAULT_MAX_AGE_MINUTES
+    return enabled, max(1, minutes)
+
+
+class AutoRefresh:
+    """A tab whose data can go stale, and how to bring it back.
+
+    Mixed into a panel (before QWidget) to declare the method its own Refresh
+    button calls, the workers that mean a refresh is already running, and how
+    fast its data goes stale (core.freshness). The window does the rest when
+    the tab is opened.
+
+    Two timestamps, because they answer different questions. When a refresh
+    *started* decides whether to start another - set by the button and by the
+    window alike, and set even if the fetch then fails, so a dead network is
+    not retried on every tab switch. When one *succeeded* is what the label
+    shows, because "updated 14:32" has to mean the figures are from 14:32.
+    """
+    REFRESH_METHOD = "refresh"
+    REFRESH_WORKERS = ("_worker",)
+    REFRESH_POLICY = freshness.INTRADAY
+    _refresh_started_at = None
+    _refreshed_at = None
+    freshness_label = None
+
+    def note_refresh_started(self):
+        self._refresh_started_at = time.time()
+
+    def make_freshness_label(self):
+        label = QLabel("")
+        label.setStyleSheet(f"color: {theme.MUTED}; font-size: 11px;")
+        self.freshness_label = label
+        return label
+
+    def mark_refreshed(self):
+        self._refreshed_at = time.time()
+        self.update_freshness_label()
+
+    def update_freshness_label(self, now=None):
+        if self.freshness_label is not None and self._refreshed_at is not None:
+            self.freshness_label.setText(
+                freshness.stamp(self._refreshed_at, time.time() if now is None else now))
+
+    def refresh_running(self) -> bool:
+        for attr in self.REFRESH_WORKERS:
+            worker = getattr(self, attr, None)
+            try:
+                if worker is not None and worker.isRunning():
+                    return True
+            except RuntimeError:            # the C++ side is already gone
+                continue
+        return False
+
+    def refresh_if_stale(self, max_age_minutes=freshness.DEFAULT_MAX_AGE_MINUTES, now=None) -> bool:
+        """Refresh if the data is stale and nothing is already fetching it.
+        Returns whether a refresh was started."""
+        now = time.time() if now is None else now
+        self.update_freshness_label(now)
+        if self.refresh_running():
+            return False
+        if not freshness.is_stale(self._refresh_started_at, now,
+                                  self.REFRESH_POLICY, max_age_minutes):
+            return False
+        getattr(self, self.REFRESH_METHOD)()
+        return True
 
 
 def fmt_large(v):
@@ -3500,7 +3579,12 @@ class _MarketBreadthCard(QGroupBox):
         self.sample.setText("")
 
 
-class MarketPanel(QWidget):
+class MarketPanel(AutoRefresh, QWidget):
+
+    # Brought up to date when the tab is opened, if stale - see AutoRefresh.
+    REFRESH_METHOD = "refresh_market"
+    REFRESH_WORKERS = ("_refresh_worker",)
+    REFRESH_POLICY = freshness.INTRADAY
     # Emitted when a refresh finishes, so panels showing this read (Home) can
     # update without polling.
     marketRefreshed = Signal()
@@ -3844,6 +3928,7 @@ class MarketPanel(QWidget):
         responsive and shows progress."""
         if self._refresh_worker is not None and self._refresh_worker.isRunning():
             return
+        self.note_refresh_started()
         symbols=self.required_symbols()
         self.refresh_btn.setEnabled(False)
         self.progress.setVisible(True)
@@ -6377,9 +6462,14 @@ class SectorExposureWorker(QThread):
             pass
 
 
-class RiskPanel(QWidget):
+class RiskPanel(AutoRefresh, QWidget):
     """Position-sizing calculator + R-multiple targets + portfolio sector
     exposure. Pure planning math - it never places orders."""
+
+    # Brought up to date when the tab is opened, if stale - see AutoRefresh.
+    REFRESH_METHOD = "load_exposure"
+    REFRESH_WORKERS = ("_exposure_worker",)
+    REFRESH_POLICY = freshness.DAILY
 
     def __init__(self, db: Database):
         super().__init__()
@@ -6432,7 +6522,7 @@ class RiskPanel(QWidget):
         # --- sector exposure ----------------------------------------------
         exp = QHBoxLayout()
         load_btn = QPushButton("Load portfolio exposure"); load_btn.clicked.connect(self.load_exposure)
-        exp.addWidget(QLabel("Portfolio sector exposure")); exp.addStretch(); exp.addWidget(load_btn)
+        exp.addWidget(QLabel("Portfolio sector exposure")); exp.addStretch(); exp.addWidget(load_btn); exp.addWidget(self.make_freshness_label())
         layout.addLayout(exp)
         self.exposure = QTableWidget(0, 3)
         self.exposure.setHorizontalHeaderLabels(["Sector", "Value", "% of portfolio"])
@@ -6492,6 +6582,7 @@ class RiskPanel(QWidget):
     def load_exposure(self):
         if self._exposure_worker is not None and self._exposure_worker.isRunning():
             return
+        self.note_refresh_started()
         positions = []
         for p in self.db.positions():
             sym = str(p.get("symbol", "")).upper().strip()
@@ -6509,6 +6600,7 @@ class RiskPanel(QWidget):
         self._exposure_worker.start()
 
     def _on_exposure(self, rows, total):
+        self.mark_refreshed()
         self.exposure.setSortingEnabled(False)
         self.exposure.setRowCount(len(rows))
         top = rows[0] if rows else None
@@ -7510,10 +7602,40 @@ class SettingsPanel(QWidget):
         v.addWidget(self.source_desc)
         layout.addWidget(box)
 
+        refresh_box = QGroupBox("Data refresh")
+        rv = QVBoxLayout(refresh_box)
+        rv.addWidget(_hint(
+            "When you open a tab, its data is fetched again if it has gone stale. "
+            "Prices, book value and the market read go stale after the time below; "
+            "dividends, sectors and the retirement indices once a day, because nothing "
+            "in them moves during a session. The ETF Screener, and anything you run "
+            "yourself - scans, backtests, projections - never refresh on their own."))
+        rrow = QHBoxLayout()
+        enabled, minutes = auto_refresh_settings(self._settings)
+        self.auto_refresh = QCheckBox("Refresh a tab when it is opened, if older than")
+        self.auto_refresh.setChecked(enabled)
+        self.auto_refresh_minutes = QSpinBox()
+        self.auto_refresh_minutes.setRange(1, 240)
+        self.auto_refresh_minutes.setSuffix(" min")
+        self.auto_refresh_minutes.setValue(minutes)
+        self.auto_refresh_minutes.setEnabled(enabled)
+        self.auto_refresh.toggled.connect(self._save_auto_refresh)
+        self.auto_refresh_minutes.valueChanged.connect(self._save_auto_refresh)
+        rrow.addWidget(self.auto_refresh); rrow.addWidget(self.auto_refresh_minutes)
+        rrow.addStretch()
+        rv.addLayout(rrow)
+        layout.addWidget(refresh_box)
+
         self.info = QTextEdit(); self.info.setReadOnly(True)
         layout.addWidget(self.info, 1)
         self._refresh_info()
         self._update_desc()
+
+    def _save_auto_refresh(self, *_):
+        self._settings.setValue(AUTO_REFRESH_KEY, self.auto_refresh.isChecked())
+        self._settings.setValue(AUTO_REFRESH_MINUTES_KEY, self.auto_refresh_minutes.value())
+        self._settings.sync()
+        self.auto_refresh_minutes.setEnabled(self.auto_refresh.isChecked())
 
     def _on_source_changed(self, name):
         from tradelab.data import providers
@@ -7775,13 +7897,18 @@ class _FundCompositionWorker(QThread):
             self.done.emit(None, None, str(exc))
 
 
-class PortfolioAnalyticsPanel(QWidget):
+class PortfolioAnalyticsPanel(AutoRefresh, QWidget):
     """Risk analytics for the Portfolio tab's holdings: current value and
     unrealized P&L, concentration, and the book's risk profile over a history
     window — beta vs a benchmark, annualized volatility, max drawdown, total
     return vs the benchmark, and the correlation between holdings. All numbers
     come from tradelab.core.portfolio_analytics (offline-testable). Analysis
     only — it never places or tracks live orders."""
+
+    # Brought up to date when the tab is opened, if stale - see AutoRefresh.
+    REFRESH_METHOD = "analyze"
+    REFRESH_WORKERS = ("_worker",)
+    REFRESH_POLICY = freshness.INTRADAY
 
     _METRICS = [("value", "Total value"), ("unreal", "Unrealized P&L"),
                 ("ret", "Return vs bench"), ("beta", "Beta"),
@@ -7818,7 +7945,7 @@ class PortfolioAnalyticsPanel(QWidget):
         row.addWidget(QLabel("Benchmark")); row.addWidget(self.bench)
         row.addWidget(QLabel("History")); row.addWidget(self.period)
         row.addWidget(QLabel("Currency")); row.addWidget(self.currency)
-        row.addWidget(go); row.addStretch()
+        row.addWidget(go); row.addWidget(self.make_freshness_label()); row.addStretch()
         self.status = StatusLabel(); self.status.setStyleSheet("color:#8a9099;")
         row.addWidget(self.status)
         layout.addLayout(row)
@@ -7902,6 +8029,7 @@ class PortfolioAnalyticsPanel(QWidget):
         from tradelab.core.portfolio_analytics import currency_of, fx_pair_symbol
         if self._worker is not None and self._worker.isRunning():
             return
+        self.note_refresh_started()
         positions = self.db.positions()
         if not positions:
             self.headline.setText("No positions yet — add holdings in the Portfolio tab first.")
@@ -7942,6 +8070,7 @@ class PortfolioAnalyticsPanel(QWidget):
                             benchmark_symbol=self._bench_symbol,
                             target_currency=self._target, fx=fx)
         self._render(data)
+        self.mark_refreshed()
         self._lt_rows = data.get("holdings") or []
         self._lt_currency = data.get("currency")
         self._render_lookthrough_if_ready()
@@ -8234,7 +8363,7 @@ class _DividendWorker(QThread):
             self.done.emit(None, None, str(exc))
 
 
-class DividendsPanel(QWidget):
+class DividendsPanel(AutoRefresh, QWidget):
     """What your book pays you. Reads the Portfolio tab's holdings and shows the
     income each one generates: annual income, yield at today's price versus the
     yield on what you actually paid, how often it pays, whether the payout is
@@ -8244,6 +8373,11 @@ class DividendsPanel(QWidget):
     reported in the chosen currency (CAD by default) while per-share amounts stay
     native, matching the Analytics tab. Reporting only — it never places orders,
     and it is not financial advice."""
+
+    # Brought up to date when the tab is opened, if stale - see AutoRefresh.
+    REFRESH_METHOD = "analyze"
+    REFRESH_WORKERS = ("_worker",)
+    REFRESH_POLICY = freshness.DAILY
 
     _TILES = [("annual", "Annual income"), ("monthly", "Average per month"),
               ("yield", "Portfolio yield"), ("oncost", "Yield on cost"),
@@ -8268,7 +8402,7 @@ class DividendsPanel(QWidget):
         self.currency = QComboBox(); self.currency.addItems(["CAD", "USD", "Native (mixed)"])
         go = QPushButton("Refresh"); go.clicked.connect(self.analyze)
         row.addWidget(QLabel("Currency")); row.addWidget(self.currency)
-        row.addWidget(go); row.addStretch()
+        row.addWidget(go); row.addWidget(self.make_freshness_label()); row.addStretch()
         self.status = StatusLabel(); self.status.setStyleSheet("color:#8a9099;")
         row.addWidget(self.status)
         layout.addLayout(row)
@@ -8340,6 +8474,7 @@ class DividendsPanel(QWidget):
         from tradelab.core.portfolio_analytics import currency_of, fx_pair_symbol
         if self._worker is not None and self._worker.isRunning():
             return
+        self.note_refresh_started()
         positions = self.db.positions()
         if not positions:
             self.headline.setText("No positions yet — add holdings in the Portfolio tab first.")
@@ -8363,6 +8498,7 @@ class DividendsPanel(QWidget):
         if err or history is None:
             self.status.setText(f"Could not load dividends: {err or 'no data'}")
             return
+        self.mark_refreshed()
         self.status.setText("")
         # Same rule as Analytics: never value real money on synthetic fallback data.
         history = {s: df for s, df in history.items()
@@ -8516,7 +8652,7 @@ class _BenchmarkWorker(QThread):
             self.done.emit(None, str(exc))
 
 
-class RetirementPanel(QWidget):
+class RetirementPanel(AutoRefresh, QWidget):
     """A group plan the app cannot reach: a workplace RRSP, a pension.
 
     There is no ticker for a group plan's funds — the unit values exist only
@@ -8531,6 +8667,11 @@ class RetirementPanel(QWidget):
 
     Reporting only. It never says which fund to hold, and the index comparison
     is stated as a fact about two numbers, not as a recommendation."""
+
+    # Brought up to date when the tab is opened, if stale - see AutoRefresh.
+    REFRESH_METHOD = "refresh"
+    REFRESH_WORKERS = ("_worker",)
+    REFRESH_POLICY = freshness.DAILY
 
     _TILES = [("value", "Plan value"), ("gain", "Gain since first statement"),
               ("best", "Best fund"), ("worst", "Weakest fund"),
@@ -9072,6 +9213,7 @@ class RetirementPanel(QWidget):
         """Render from stored data immediately, then fetch the indices."""
         if self._loading:
             return
+        self.note_refresh_started()
         from tradelab.core import retirement as rt
         account = self.current_account()
         if account is None:
@@ -9299,7 +9441,7 @@ class _HomeWorker(QThread):
             self.done.emit(None, None, None, None, str(exc))
 
 
-class HomePanel(QWidget):
+class HomePanel(AutoRefresh, QWidget):
     """The first thing you see: your book in one screen.
 
     Deliberately assembles rather than calculates — every figure comes from the
@@ -9307,6 +9449,11 @@ class HomePanel(QWidget):
     disagree with them. Refreshes itself once at startup so the numbers are
     already there when you arrive.
     """
+
+    # Brought up to date when the tab is opened, if stale - see AutoRefresh.
+    REFRESH_METHOD = "refresh"
+    REFRESH_WORKERS = ("_worker",)
+    REFRESH_POLICY = freshness.INTRADAY
 
     _TILES = [("value", "Book value"), ("today", "Today"),
               ("unreal", "Unrealized P&L"), ("income", "Annual income")]
@@ -9448,6 +9595,7 @@ class HomePanel(QWidget):
         from tradelab.core.portfolio_analytics import currency_of, fx_pair_symbol
         if self._worker is not None and self._worker.isRunning():
             return
+        self.note_refresh_started()
         positions = self.db.positions()
         if not positions:
             self.headline.setText("No holdings yet — add positions in the Portfolio tab, "
@@ -9664,9 +9812,7 @@ class HomePanel(QWidget):
             extras.append(f"weakest {first['weakest']}")
         as_of = summary.get("as_of")
         if as_of:
-            age_min = (time.time() - as_of) / 60.0
-            stamp = time.strftime("%H:%M", time.localtime(as_of))
-            extras.append(f"as of {stamp}" if age_min > 60 else f"updated {stamp}")
+            extras.append(freshness.stamp(as_of, time.time()))
         if extras:
             line += (f"<br><span style='color:{theme.MUTED}'>"
                      + "  ·  ".join(extras) + "</span>")
@@ -10660,6 +10806,24 @@ class MainWindow(QMainWindow):
             # Bring back whatever was saved, so the comparison line is there
             # the moment the tab opens rather than after the first run.
             self.retirement_sim_panel._draw()
+        self._auto_refresh_tab(page)
+
+    def _auto_refresh_tab(self, page):
+        """Bring a tab's data up to date as it is opened, if it has gone stale.
+
+        Only panels that declare themselves AutoRefresh take part: the ones
+        showing market data. A scan, a backtest or the ETF Screener's ten-year
+        figures are things you start yourself, never side effects of a click."""
+        panel = page.widget() if isinstance(page, QScrollArea) else page
+        if not isinstance(panel, AutoRefresh):
+            return
+        enabled, minutes = auto_refresh_settings(app_settings())
+        if not enabled:
+            return
+        try:
+            panel.refresh_if_stale(minutes)
+        except Exception:
+            log.exception("Auto-refresh of %s failed", type(panel).__name__)
 
     def toggle_panel_fullscreen(self):
         """The mirror of `toggle_chart_fullscreen`: give the whole window to
