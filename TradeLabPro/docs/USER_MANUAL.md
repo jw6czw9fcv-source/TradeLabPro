@@ -1261,6 +1261,39 @@ cost a bit more (the whole conversation is re-sent each turn); use **Clear** to
 reset. It's great at *"what does this setup mean"* and useless for *"what's the
 price right now"* — that's the data limitation, not the model.
 
+### Connect Claude to TradeLab (MCP)
+
+The other direction: instead of TradeLab calling an AI, **Claude Desktop or Claude
+Code can call TradeLab**. TradeLab ships a small **MCP server** that hands Claude your
+own figures and calculations — and it pairs naturally with **Interactive Brokers'
+own connector**, so one conversation can hold both your live account and what
+TradeLab computes on top of it: *"IBKR says my RRSP is at $412,000 — project my
+retirement with that."*
+
+| Tool | What Claude gets |
+|---|---|
+| `retirement_projection` | the Retirement Sim plan, with any assumption — or live balances — overridden for that question only |
+| `quebec_tax` | Quebec + federal tax for an income and age, with the marginal rate |
+| `book_summary` · `look_through` · `dividend_income` | what the Analytics and Dividends tabs show |
+| `portfolio` · `etf_screener` · `journal_summary` | your stored holdings, ETF comparison and trade journal |
+
+**It cannot change anything.** It opens your database in SQLite's read-only mode,
+so a write is refused by the database itself, and TradeLab has no way to place an
+order to begin with. It runs only on your computer, started by Claude when needed,
+and listens on no network port. Bear in mind that whatever a tool returns is sent
+to the AI you connected it to.
+
+**Setting it up** needs the MCP library once (`pip install -r requirements-mcp.txt`),
+then one of:
+
+- **Claude Code:** `claude mcp add tradelab --scope user -- python "C:\path\to\TradeLabPro\tradelab_mcp.py"`
+- **Claude Desktop:** add to `%APPDATA%\Claude\claude_desktop_config.json`:
+  `"mcpServers": {"tradelab": {"command": "python", "args": ["C:\\path\\to\\TradeLabPro\\tradelab_mcp.py"]}}`
+
+Open TradeLab Pro at least once after each update, so the database is upgraded
+before the server reads it — it refuses, with that instruction, rather than read a
+file it doesn't understand.
+
 ---
 
 ## 22. Settings & your data

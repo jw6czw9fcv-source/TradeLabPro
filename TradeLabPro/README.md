@@ -54,6 +54,22 @@ deletes on exit, which would throw the database away on every close).
 Set `TRADELAB_DATA_DIR` to run against a different set of data. The test suite
 uses it so a run can never touch your real portfolio.
 
+## Connect Claude (MCP server)
+`tradelab_mcp.py` lets Claude Desktop or Claude Code read TradeLab's figures and run
+its calculations — retirement projection, Quebec + federal tax, look-through,
+dividends, the ETF comparison and the journal. Pair it with IBKR's own connector and
+one conversation holds the live account and TradeLab's maths on top of it.
+
+Read-only by construction: the database is opened in SQLite's read-only mode, and it
+runs locally over stdio with no network port.
+
+```
+pip install -r requirements-mcp.txt
+claude mcp add tradelab --scope user -- python "C:\path\to\TradeLabPro\tradelab_mcp.py"
+```
+
+Claude Desktop setup and the tool list: manual, section 21.
+
 ## Notes
 - ETFs are now located under My Lists, not Exchanges.
 - Exchange shortcuts: USA, Canada, All, None.

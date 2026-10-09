@@ -179,9 +179,21 @@ SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
 
 
 class Database:
-    def __init__(self, path: Path = DB_PATH):
-        DATA_DIR.mkdir(exist_ok=True)
+    def __init__(self, path: Path = DB_PATH, read_only: bool = False):
+        """`read_only=True` opens the file in SQLite's read-only mode: no
+        migration, no default watchlist, and any write raises - a guarantee
+        from the database engine, not a promise kept by the caller. It is what
+        the MCP server uses, so nothing an AI client asks for can change your
+        data. The file has to exist, and be at the schema this code expects
+        (check `schema_behind()`); only the app itself upgrades it."""
         self.path = path
+        self.read_only = bool(read_only)
+        if self.read_only:
+            uri = Path(path).resolve().as_uri() + "?mode=ro"
+            self.conn = sqlite3.connect(uri, uri=True)
+            self.conn.row_factory = sqlite3.Row
+            return
+        DATA_DIR.mkdir(exist_ok=True)
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
         self._migrate()
@@ -214,6 +226,16 @@ class Database:
                     self.conn.rollback()
                 log.exception("Database migration v%d failed and was rolled back", idx)
                 raise
+
+    def schema_behind(self) -> int:
+        """How many migrations this file is missing - 0 when it is current.
+        A read-only opener cannot apply them, so it has to be able to ask."""
+        try:
+            row = self.conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
+        except sqlite3.Error:
+            return len(MIGRATIONS)
+        current = row["v"] if row and row["v"] is not None else 0
+        return max(0, len(MIGRATIONS) - current)
 
     def ensure_default_watchlist(self):
         self.conn.execute("INSERT OR IGNORE INTO watchlists(name) VALUES (?)", ("Default",))
