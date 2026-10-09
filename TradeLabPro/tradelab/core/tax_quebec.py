@@ -295,3 +295,48 @@ def household_tax(incomes: dict, ages: dict, pension_incomes: dict = None,
                          pension_incomes.get(name, 0.0), table,
                          family_income=family_income)["total"]
     return total
+
+
+def household_tax_fn(splitting_fraction: float = 0.0, inflation: float = 0.0,
+                     base: TaxYear = None):
+    """The tax function a retirement projection is given, built once.
+
+    Each person is taxed as a person, and only eligible pension income moves
+    between spouses - by the fraction chosen, never more than the rules allow.
+    A wage cannot be split and RRQ has its own separate mechanism; treating
+    the household as one pot and halving it - which an early draft of the
+    projection did - made the bill far too small.
+
+    The income it is handed is in the dollars of the year it is earned, so the
+    table is indexed to that same year, counted from the table's own year.
+    Tables are cached because a many-path run asks for the same thirty of them
+    hundreds of times.
+
+    Lives here, not in the panel, so the Retirement Sim tab and anything else
+    that projects a plan - the MCP server - tax it the same way.
+    """
+    fraction = float(splitting_fraction or 0.0)
+    base = base or year_2026()
+    tables = {}
+
+    def table_for(years_elapsed):
+        if years_elapsed not in tables:
+            tables[years_elapsed] = base.inflated(years_elapsed, inflation)
+        return tables[years_elapsed]
+
+    def tax_fn(by_owner, ages, pension_by_owner, years_elapsed=0):
+        incomes = dict(by_owner)
+        pensions = dict(pension_by_owner)
+        names = sorted(incomes, key=lambda n: -incomes.get(n, 0.0))
+        if fraction and len(names) >= 2:
+            higher, lower = names[0], names[1]
+            movable = min(pensions.get(higher, 0.0), incomes.get(higher, 0.0))
+            kept, _given = split_pension(movable, 0.0, fraction)
+            moved = movable - kept
+            incomes[higher] -= moved
+            incomes[lower] = incomes.get(lower, 0.0) + moved
+            pensions[higher] -= moved
+            pensions[lower] = pensions.get(lower, 0.0) + moved
+        return household_tax(incomes, ages, pensions, table_for(years_elapsed))
+
+    return tax_fn

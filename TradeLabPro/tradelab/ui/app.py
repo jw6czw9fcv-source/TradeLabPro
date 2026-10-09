@@ -59,14 +59,7 @@ log = get_logger(__name__)
 # person actually uses. setDefaultFormat() does not redirect this constructor
 # on Windows, so the override is explicit - and matches how TRADELAB_DATA_DIR
 # and TRADELAB_LOG_DIR already keep the suite out of real data and logs.
-SETTINGS_FILE_ENV = "TRADELAB_SETTINGS_FILE"
-
-
-def app_settings() -> QSettings:
-    override = os.environ.get(SETTINGS_FILE_ENV)
-    if override:
-        return QSettings(override, QSettings.IniFormat)
-    return QSettings("TradeLabPro", "TradeLabPro")
+from tradelab.settings import SETTINGS_FILE_ENV, app_settings  # noqa: E402,F401
 
 
 class StatusLabel(QLabel):
@@ -10146,66 +10139,22 @@ class RetirementSimPanel(QWidget):
 
     # -- the projection -----------------------------------------------------
     def build_plan(self):
-        from tradelab.core.retirement_plan import Account, Income, Person, Plan
-        people = [Person(r["name"], int(r["age"] or 65))
-                  for r in self._read("people") if r["name"]]
-        accounts = [Account(r["name"], (r["kind"] or "registered").lower(),
-                            float(r["balance"] or 0), r["owner"])
-                    for r in self._read("accounts") if r["name"]]
-        incomes = [Income(r["name"], r["owner"], float(r["annual"] or 0),
-                          int(r["starts_at_age"] or 0), r["ends_at_age"],
-                          bool(r.get("indexed", 1)))
-                   for r in self._read("incomes") if r["name"]]
-        if not people or not accounts:
-            return None
-        oldest = max(p.age for p in people)
-        return Plan(people=people, accounts=accounts, incomes=incomes,
-                    spending=self.spending.value(),
-                    nominal_return=self.nominal_return.value() / 100.0,
-                    inflation=self.inflation.value() / 100.0,
-                    years=max(1, self.until_age.value() - oldest + 1),
-                    tax_fn=self.tax_fn())
+        from tradelab.core.retirement_plan import plan_from_rows
+        return plan_from_rows(
+            self._read("people"), self._read("accounts"), self._read("incomes"),
+            spending=self.spending.value(),
+            nominal_return=self.nominal_return.value() / 100.0,
+            inflation=self.inflation.value() / 100.0,
+            until_age=self.until_age.value(),
+            tax_fn=self.tax_fn())
 
     def tax_fn(self):
-        """Real Québec + federal tax, each person taxed as a person.
-
-        Only the eligible pension part moves between spouses, and only by the
-        fraction you set. A wage cannot be split and RRQ has its own separate
-        mechanism; treating the household as one pot and halving it — which
-        an earlier draft did — made the tax bill far too small.
-
-        The income arriving here is in the dollars of the year it is earned,
-        so the table has to be indexed to that same year. The offset is years
-        from the start of the projection, which is the table's own year — when
-        that stops being true the table is a year stale and wants editing,
-        which is what it was built to be. The tables are cached because a
-        many-path run asks for the same thirty of them hundreds of times.
-        """
-        from tradelab.core.tax_quebec import household_tax, split_pension, year_2026
-        fraction = self.splitting.value() / 100.0
-        inflation = self.inflation.value() / 100.0
-        base, tables = year_2026(), {}
-
-        def table_for(years_elapsed):
-            if years_elapsed not in tables:
-                tables[years_elapsed] = base.inflated(years_elapsed, inflation)
-            return tables[years_elapsed]
-
-        def tax_fn(by_owner, ages, pension_by_owner, years_elapsed=0):
-            incomes = dict(by_owner)
-            pensions = dict(pension_by_owner)
-            names = sorted(incomes, key=lambda n: -incomes.get(n, 0.0))
-            if fraction and len(names) >= 2:
-                higher, lower = names[0], names[1]
-                movable = min(pensions.get(higher, 0.0), incomes.get(higher, 0.0))
-                kept, _given = split_pension(movable, 0.0, fraction)
-                moved = movable - kept
-                incomes[higher] -= moved
-                incomes[lower] = incomes.get(lower, 0.0) + moved
-                pensions[higher] -= moved
-                pensions[lower] = pensions.get(lower, 0.0) + moved
-            return household_tax(incomes, ages, pensions, table_for(years_elapsed))
-        return tax_fn
+        """Real Quebec + federal tax, each person taxed as a person, pension
+        split by the fraction set here. Built in core.tax_quebec, so the MCP
+        server's projection taxes a plan exactly as this tab does."""
+        from tradelab.core.tax_quebec import household_tax_fn
+        return household_tax_fn(self.splitting.value() / 100.0,
+                                self.inflation.value() / 100.0)
 
     def run(self):
         from tradelab.core.retirement_plan import project

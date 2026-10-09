@@ -498,3 +498,38 @@ def simulate(plan: Plan, paths: int = 500, mean: float | None = None,
         "percentiles": {p: [percentile(year, p) for year in balances_by_year]
                         for p in (10, 25, 50, 75, 90)},
     }
+
+
+def plan_from_rows(people: list, accounts: list, incomes: list, *,
+                   spending: float, nominal_return: float, inflation: float,
+                   until_age: int, tax_fn=None, balances: dict | None = None) -> "Plan | None":
+    """A Plan from the rows the Retirement Sim tables store.
+
+    `people` / `accounts` / `incomes` are dicts as the database returns them.
+    Rates are fractions (0.05 for 5%). Rows without a name are skipped, as the
+    tables skip them. None when there is nobody to project or nothing to draw
+    from - a projection of nothing is not a projection.
+
+    `balances` replaces stored balances by account name (case-insensitive),
+    for when a fresher figure is at hand - a brokerage's live balance, say -
+    and the rows themselves should not be edited to try it.
+    """
+    override = {str(k).strip().lower(): float(v) for k, v in (balances or {}).items()}
+    people_ = [Person(str(r["name"]), int(r.get("age") or 65))
+               for r in people if str(r.get("name") or "").strip()]
+    accounts_ = [Account(str(r["name"]), str(r.get("kind") or "registered").lower(),
+                         override.get(str(r["name"]).strip().lower(),
+                                      float(r.get("balance") or 0)),
+                         str(r.get("owner") or ""))
+                 for r in accounts if str(r.get("name") or "").strip()]
+    incomes_ = [Income(str(r["name"]), str(r.get("owner") or ""),
+                       float(r.get("annual") or 0), int(r.get("starts_at_age") or 0),
+                       r.get("ends_at_age"), bool(r.get("indexed", 1)))
+                for r in incomes if str(r.get("name") or "").strip()]
+    if not people_ or not accounts_:
+        return None
+    oldest = max(p.age for p in people_)
+    return Plan(people=people_, accounts=accounts_, incomes=incomes_,
+                spending=float(spending), nominal_return=float(nominal_return),
+                inflation=float(inflation), years=max(1, int(until_age) - oldest + 1),
+                tax_fn=tax_fn)
