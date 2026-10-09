@@ -206,12 +206,25 @@ class Plan:
     # that ignores it still works. Injected so the ledger can be tested
     # without a tax model and the rules can change without touching it.
     tax_fn: object = None
+    # After-tax income beyond the spending - a RRIF minimum that was not
+    # needed, a wage still coming in - is reinvested in a non-registered
+    # account drawn last, instead of vanishing from the ledger. Until this
+    # existed it did vanish: on a real plan, several hundred thousand dollars
+    # over thirty years, which made every projection too pessimistic and made
+    # spending less look nearly worthless. Off only for comparison.
+    reinvest_surplus: bool = True
+
+
+# The account the surplus goes to. Non-registered, so - like every taxable
+# account here - its withdrawals are not taxed and neither is its growth,
+# which is optimistic and said so wherever the figure is shown.
+SURPLUS_ACCOUNT = "Surplus reinvested"
 
 
 # What happens *during* the year — the cheques, the tax, the withdrawals — and
 # the balance the year opens with. All of it is priced at the start of the year.
 FLOW_KEYS = ("opening", "income", "forced_withdrawal", "tax",
-             "drawn_from_capital", "spending", "unfunded")
+             "drawn_from_capital", "surplus", "spending", "unfunded")
 # The balance *after* the year's growth, which is a year later and so a year
 # further from today's prices. Deflating it by the opening factor, which an
 # earlier draft did, quietly overstated every closing balance by one year of
@@ -306,6 +319,15 @@ def project(plan: Plan) -> list[dict]:
     start_year = plan.start_year or date.today().year
     accounts = _order(plan)
     tax_fn = _tax_caller(plan.tax_fn)
+    surplus_name = None
+    if plan.reinvest_surplus and plan.people:
+        surplus_name = SURPLUS_ACCOUNT
+        while surplus_name in balances:          # never merge into a real account
+            surplus_name += " "
+        balances[surplus_name] = 0.0
+        # Last in the withdrawal order: it is what the plan saved beyond its
+        # needs, so it is the last thing to spend.
+        accounts = accounts + [Account(surplus_name, TAXABLE, 0.0, plan.people[0].name)]
     rows = []
 
     for year in range(plan.years):
@@ -359,7 +381,12 @@ def project(plan: Plan) -> list[dict]:
             drawn += take
             shortfall -= take
 
-        # 4. Growth applies to what is left at the end of the year.
+        # 4. Anything left after the spending is saved, not lost.
+        surplus = max(0.0, available - spending)
+        if surplus_name is not None and surplus > 0:
+            balances[surplus_name] += surplus
+
+        # 5. Growth applies to what is left at the end of the year.
         growth = plan.nominal_return
         if plan.returns:
             growth = plan.returns[year] if year < len(plan.returns) else plan.returns[-1]
@@ -376,6 +403,8 @@ def project(plan: Plan) -> list[dict]:
             "forced_withdrawal": forced,
             "tax": tax,
             "drawn_from_capital": drawn,
+            # After-tax income beyond the spending, put in the surplus account.
+            "surplus": surplus if surplus_name is not None else 0.0,
             # What the spending had grown to by this year, so the reader can
             # see the cost rising rather than infer it from the drawdown.
             "spending": spending,

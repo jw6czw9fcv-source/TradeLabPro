@@ -291,10 +291,14 @@ def retirement_projection(spending: float | None = None,
         "years": [{"year": r["calendar_year"], "ages": r["ages"], "income": r["income"],
                    "rrif_minimum": r["forced_withdrawal"], "tax": r["tax"],
                    "spending": r["spending"], "from_capital": r["drawn_from_capital"],
+                   "reinvested": r.get("surplus", 0.0),
                    "unfunded": r["unfunded"], "closing": r["closing"]} for r in shown],
         "notes": [
             "Nominal return and inflation are projected explicitly; indexed benefits, "
             "spending and the tax brackets rise with inflation, a fixed pension does not.",
+            "After-tax income beyond the spending is reinvested in a non-registered "
+            "account drawn last ('reinvested'); its growth is not taxed in this model, "
+            "which is somewhat optimistic.",
             "One return path says nothing about the order returns arrive in - ask for "
             "paths > 0 to see sequence risk.",
             NOT_ADVICE],

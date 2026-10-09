@@ -788,7 +788,7 @@ half its worth doing so.
 | **paths** | How many return orderings **Run many paths** uses. |
 
 **What a run gives you.** *Run projection* fills the table below — **Year,
-Ages, Income, RRIF minimum, Tax, From capital, Unfunded, Closing** — and draws
+Ages, Income, RRIF minimum, Tax, From capital, Reinvested, Unfunded, Closing** — and draws
 the closing balance in the right-hand pane where the chart normally sits. Any
 year the plan can't fund is shown in red, and **the projection keeps going past
 the year it fails** rather than stopping and leaving you to guess at the rest.
@@ -799,6 +799,15 @@ and by how much.
 you can see what arrived because you needed it and what arrived because the law
 said so. Capital is drawn **in the order the accounts are listed** — reorder the
 rows to change it. Nothing here picks a withdrawal strategy for you.
+
+**Money you don't spend is kept.** When the year's income after tax is more than
+the spending — a wage still coming in, or a RRIF minimum you didn't need — the
+difference goes into a *Surplus reinvested* account, non-registered, and the
+**Reinvested** column shows how much. It grows like the rest and is drawn
+**last**, after every account you listed. Its growth is not taxed in this model,
+so the figure is somewhat optimistic for anyone with a large surplus. (Earlier
+versions let this money vanish from the projection, which made every plan with a
+surplus look poorer than it is — and made spending less look nearly useless.)
 
 **Which dollars you are reading.** The projection runs in the dollars of the
 year each thing happens: the RRQ grows the way it really does, the spending

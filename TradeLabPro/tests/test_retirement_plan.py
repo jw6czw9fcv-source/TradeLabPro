@@ -127,7 +127,11 @@ def test_at_71_the_minimum_comes_out_whether_it_is_needed_or_not():
                          accounts=[Account("REER", REGISTERED, 100_000, "me")],
                          spending=0.0, years=1))
     assert rows[0]["forced_withdrawal"] == pytest.approx(5_280)   # 5.28%
-    assert rows[0]["closing"] == pytest.approx(94_720)
+    # It leaves the RRIF whether it is needed or not...
+    assert rows[0]["balances"]["REER"] == pytest.approx(94_720)
+    # ...but money nobody spent is not money lost: it is reinvested. This test
+    # used to assert a total of 94,720 - the defect itself.
+    assert rows[0]["closing"] == pytest.approx(100_000)
 
 
 def test_the_forced_withdrawal_follows_its_own_owner_age():
@@ -547,3 +551,82 @@ def test_nominal_and_real_are_inverses():
 def test_with_no_inflation_real_and_nominal_agree():
     from tradelab.core.retirement_plan import real_from_nominal
     assert real_from_nominal(0.05, 0.0) == pytest.approx(0.05)
+
+
+# -- what nobody spent is saved, not lost ------------------------------------------
+#
+# After-tax income beyond the spending used to vanish from the ledger. On a
+# real plan that was several hundred thousand dollars over thirty years, and it
+# made spending less look almost worthless: the money saved joined the money lost.
+
+def test_income_beyond_the_spending_is_reinvested():
+    from tradelab.core.retirement_plan import SURPLUS_ACCOUNT
+    rows = project(_plan(spending=10_000, years=1,
+                         incomes=[Income("Travail", "me", 30_000, starts_at_age=0)]))
+    assert rows[0]["surplus"] == pytest.approx(20_000)
+    assert rows[0]["balances"][SURPLUS_ACCOUNT] == pytest.approx(20_000)
+    assert rows[0]["closing"] == pytest.approx(120_000)
+
+
+def test_the_surplus_is_after_tax():
+    rows = project(_plan(spending=10_000, years=1,
+                         incomes=[Income("Travail", "me", 30_000, starts_at_age=0)],
+                         tax_fn=lambda by_owner, ages, pension: 6_000.0))
+    assert rows[0]["surplus"] == pytest.approx(14_000)          # 30k - 6k tax - 10k
+
+
+def test_the_surplus_grows_with_the_rest():
+    from tradelab.core.retirement_plan import SURPLUS_ACCOUNT
+    rows = project(_plan(spending=0, nominal_return=0.10, years=1,
+                         incomes=[Income("Travail", "me", 10_000, starts_at_age=0)]))
+    assert rows[0]["balances"][SURPLUS_ACCOUNT] == pytest.approx(11_000)
+
+
+def test_spending_less_now_leaves_more_capital():
+    """The check that would have caught it: a plan whose income exceeds its
+    needs must end richer when it spends less."""
+    def final(spending):
+        return project(_plan(spending=spending, years=10,
+                             incomes=[Income("RRQ", "me", 40_000, starts_at_age=65)]))[-1]["closing"]
+    assert final(20_000) - final(30_000) == pytest.approx(100_000)
+
+
+def test_the_surplus_account_is_drawn_last():
+    from tradelab.core.retirement_plan import SURPLUS_ACCOUNT
+    rows = project(_plan(accounts=[Account("CELI", TFSA, 5_000, "me")], years=2,
+                         spending=0,
+                         incomes=[Income("Travail", "me", 8_000, starts_at_age=0, ends_at_age=65)]))
+    # Year 1 (age 65): 8,000 surplus saved. Year 2 (age 66): no income, so the
+    # spending of 0 needs nothing - the saved money simply stays.
+    assert rows[1]["balances"][SURPLUS_ACCOUNT] == pytest.approx(8_000)
+    short = project(_plan(accounts=[Account("CELI", TFSA, 5_000, "me")], years=2,
+                          spending=6_000,
+                          incomes=[Income("Travail", "me", 10_000, starts_at_age=0, ends_at_age=65)]))
+    # Year 2 needs 6,000: the CELI's 5,000 goes first, then 1,000 of the surplus.
+    assert short[1]["balances"]["CELI"] == pytest.approx(0)
+    assert short[1]["balances"][SURPLUS_ACCOUNT] == pytest.approx(3_000)
+    assert short[1]["unfunded"] == pytest.approx(0)
+
+
+def test_a_real_account_with_the_same_name_is_never_merged_into():
+    from tradelab.core.retirement_plan import SURPLUS_ACCOUNT
+    rows = project(_plan(accounts=[Account(SURPLUS_ACCOUNT, TAXABLE, 1_000, "me")],
+                         spending=0, years=1,
+                         incomes=[Income("Travail", "me", 500, starts_at_age=0)]))
+    assert rows[0]["balances"][SURPLUS_ACCOUNT] == pytest.approx(1_000)
+    assert sum(rows[0]["balances"].values()) == pytest.approx(1_500)
+
+
+def test_the_surplus_reads_in_todays_dollars_too():
+    from tradelab.core.retirement_plan import deflate
+    rows = project(_plan(spending=10_000, inflation=0.03, years=3,
+                         incomes=[Income("Travail", "me", 30_000, starts_at_age=0)]))
+    real = deflate(rows)
+    assert real[2]["surplus"] == pytest.approx(rows[2]["surplus"] / 1.03 ** 2)
+
+
+def test_the_old_behaviour_is_still_there_to_compare_against():
+    rows = project(_plan(spending=10_000, years=1, reinvest_surplus=False,
+                         incomes=[Income("Travail", "me", 30_000, starts_at_age=0)]))
+    assert rows[0]["closing"] == pytest.approx(100_000)
+    assert rows[0]["surplus"] == 0

@@ -411,10 +411,13 @@ def test_todays_dollars_re_reads_the_run_without_re_running_it(panel):
     panel.until_age.setValue(85)
     panel.run()
     nominal_rows = [dict(row) for row in panel.rows]
-    nominal_closing = float(panel.results.item(10, 7).text().replace(",", ""))
+    headers = [panel.results.horizontalHeaderItem(c).text()
+               for c in range(panel.results.columnCount())]
+    closing = headers.index("Closing")            # by name: columns get added
+    nominal_closing = float(panel.results.item(10, closing).text().replace(",", ""))
 
     panel.todays_dollars.setChecked(True)
-    real_closing = float(panel.results.item(10, 7).text().replace(",", ""))
+    real_closing = float(panel.results.item(10, closing).text().replace(",", ""))
     assert real_closing < nominal_closing
     # The projection itself did not move; only the reading of it did.
     assert panel.rows[10]["closing"] == pytest.approx(nominal_rows[10]["closing"])
@@ -487,3 +490,17 @@ def test_the_indexed_flag_survives_a_save_and_reload(panel, qapp, tmp_path):
     again = RetirementSimPanel(Database(path=tmp_path / "sim.db"))
     assert again.tables["incomes"].item(0, 5).text() == "No"
     assert again.inflation.value() == pytest.approx(2.4)
+
+
+def test_the_results_show_what_was_reinvested(panel):
+    """A RRIF minimum nobody needed is reinvested, and the table says how much."""
+    _fill(panel, [["Pierre", 72]], [["REER", "registered", 500_000, "Pierre"]])
+    panel.spending.setValue(0)
+    panel.run()
+    headers = [panel.results.horizontalHeaderItem(c).text()
+               for c in range(panel.results.columnCount())]
+    assert "Reinvested" in headers
+    col = headers.index("Reinvested")
+    assert float(panel.results.item(0, col).text().replace(",", "")) > 0
+    # And the money is still in the closing balance rather than gone.
+    assert panel.rows[0]["closing"] > 500_000 * 0.99

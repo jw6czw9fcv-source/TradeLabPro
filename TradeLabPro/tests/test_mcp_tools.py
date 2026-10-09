@@ -279,3 +279,11 @@ def test_a_long_series_is_summarised_not_sent_whole():
     s = pd.Series(range(300), index=pd.date_range("2026-01-01", periods=300))
     out = tools.jsonable(s)
     assert out["points"] == 300 and out["first"] == 0 and out["last"] == 299
+
+
+def test_the_projection_shows_what_was_reinvested(data):
+    """Income left after tax and spending is saved, and the assistant can see it."""
+    out = tools.retirement_projection(spending=5_000, until_age=70)
+    assert all("reinvested" in year for year in out["years"])
+    assert any(year["reinvested"] > 0 for year in out["years"])
+    assert any("reinvested" in note for note in out["notes"])

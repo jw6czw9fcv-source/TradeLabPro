@@ -10007,10 +10007,10 @@ class RetirementSimPanel(QWidget):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
-        self.results = QTableWidget(0, 8)
+        self.results = QTableWidget(0, 9)
         self.results.setHorizontalHeaderLabels(
             ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
-             "Unfunded", "Closing"])
+             "Reinvested", "Unfunded", "Closing"])
         self.results.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.results.setAlternatingRowColors(True)
         self.results.setMinimumHeight(260)
@@ -10024,6 +10024,10 @@ class RetirementSimPanel(QWidget):
             "stops, this is optimistic. An income you mark Indexed = No keeps paying the "
             "same cheque and quietly loses half its worth over thirty years. Tick "
             "Today's $ to read the whole table in today's purchasing power. "
+            "Income left over after tax and spending - a RRIF minimum you did not need, "
+            "a wage still coming in - is reinvested in a non-registered account drawn "
+            "last (the Reinvested column); its growth is not taxed here, which is "
+            "somewhat optimistic. "
             "And a single return path says nothing about the order returns arrive in: a "
             "bad first few years of drawing down hurts far more than the same average "
             "later. " + theme.NOT_ADVICE)
@@ -10364,10 +10368,10 @@ class RetirementSimPanel(QWidget):
         self.status.setText(message + self._dollars_note())
 
     def render_results(self):
-        self.results.setColumnCount(8)
+        self.results.setColumnCount(9)
         self.results.setHorizontalHeaderLabels(
             ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
-             "Unfunded", "Closing"])
+             "Reinvested", "Unfunded", "Closing"])
         from tradelab.core.retirement_plan import depletion_year
         # Whether the plan holds is decided on the nominal rows; only the
         # reading of them changes. Both agree about *when* it fails, because
@@ -10381,6 +10385,7 @@ class RetirementSimPanel(QWidget):
                      "{:,.0f}".format(row["forced_withdrawal"]),
                      "{:,.0f}".format(row["tax"]),
                      "{:,.0f}".format(row["drawn_from_capital"]),
+                     "{:,.0f}".format(row.get("surplus", 0.0)),
                      "{:,.0f}".format(row["unfunded"]),
                      "{:,.0f}".format(row["closing"])]
             for c, text in enumerate(cells):
