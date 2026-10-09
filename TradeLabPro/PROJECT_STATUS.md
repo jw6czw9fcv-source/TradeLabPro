@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.47.0
+Current version: 2.48.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.48.0 (Your numbers, in Claude)
+- **MCP server** (`tradelab_mcp.py`, `tradelab/mcp_server/`): eight read-only tools - retirement_projection (stored balances replaceable by live ones), quebec_tax, book_summary, look_through, dividend_income, portfolio, etf_screener, journal_summary. Database opened in SQLite read-only mode (`Database(read_only=True)`, `schema_behind()`); tools declared read-only to the client; errors translated into the SDK's ToolError so the assistant reads them. Optional dependency in `requirements-mcp.txt` (mcp 2.x: `MCPServer`, not FastMCP).
+- **Fixed: the retirement projection lost every dollar a plan did not spend** (since 2.44.0). After-tax surplus now goes to a non-registered "Surplus reinvested" account drawn last; Reinvested column in the tab. On the real plan: 110k -> 751k left at 95 (today's dollars), 87% -> 98% of 500 paths at 15% volatility.
+- Moved to core so the tab and the server share them: `retirement_plan.plan_from_rows`, `tax_quebec.household_tax_fn`; settings factory in `tradelab/settings.py` (QtCore only).
 
 ## Completed in 2.47.0 (Fresh when you open it)
 - **Auto-refresh on tab open** (`core/freshness.py`, `AutoRefresh` mixin, `MainWindow._auto_refresh_tab`): Home, Market, Analytics refresh when older than the Settings threshold (15 min); Dividends, Risk, Retirement once a day. ETF Screener manual by decision; Portfolio/Watchlists hold no prices. One shared stamp rule: "updated 14:32" / "as of 14:32" / with the date across days. Settings -> Data refresh.

@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.48.0 - Your numbers, in Claude - Claude Desktop and Claude Code can read TradeLab's figures and run its calculations through a read-only MCP server, beside IBKR's own connector; and the retirement projection no longer loses the money a plan does not spend
+
 2.47.0 - Fresh when you open it - the tabs showing market data bring themselves up to date when opened (prices after 15 minutes, dividends and sectors once a day) and say how old their figures are; plus six fixes from a full review, and an installer 9.4 MiB lighter
 
 2.46.1 - One rule for a bad download - a frame that came back with two 'Close' columns crashed a backtest optimisation, and would have taken the scanner, the alerts poller and the chart with it; the rule that prevents it now lives in one place instead of two

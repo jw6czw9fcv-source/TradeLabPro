@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.48.0 - Your numbers, in Claude
+
+### Added
+- **Claude can read your TradeLab figures.** A local MCP server (`tradelab_mcp.py`) lets Claude Desktop and Claude Code call eight tools: the **retirement projection** — whose stored balances can be replaced, for one question, by live ones from a brokerage connector — **Quebec + federal tax**, the **book summary**, **look-through** by company, **dividend income**, your stored **holdings**, your **ETF comparison** and your **trade journal**. Paired with Interactive Brokers' own connector, one conversation holds the live account and TradeLab's calculations on top of it: *"IBKR says my RRSP is at X — project my retirement with that."*
+- **Read-only by construction, not by promise.** The database is opened in SQLite's read-only mode, so a write is refused by the engine itself; a database older than the code is refused with an instruction rather than misread; every tool is declared read-only to the client, and only the three that download say they reach outside. It runs locally over stdio with no network port. Real money is never valued on synthetic prices, exactly as in the Analytics tab.
+- Setup in the manual (section 21) and the README; the MCP library is optional (`requirements-mcp.txt`) and the app does not need it.
+
+### Fixed
+- **The retirement projection lost every dollar a plan did not spend.** When the year's income after tax exceeded the spending — a wage still coming in, a RRIF minimum nobody needed — the difference vanished. On a real plan that was about **$408,000 over thirty years**, in today's dollars: enough to turn **751,000 left at 95 into 110,000**, and a 98% pass rate across 500 return orderings into 87%. It also made spending less look nearly useless, since the money saved joined the money lost. The surplus now goes into a non-registered **Surplus reinvested** account that grows with the rest and is drawn **last**; the tab shows it in a new **Reinvested** column. Its growth is not taxed in this model — somewhat optimistic, and said so beside the table. Every Retirement Sim projection since 2.44.0 was too pessimistic.
+
+### Changed
+- Building a plan from the stored rows and the household tax function moved from the Retirement Sim panel into `core` (`plan_from_rows`, `household_tax_fn`), so the tab and the MCP server project a plan the same way. The settings factory moved to `tradelab/settings.py`, which needs QtCore only.
+
+### Verified
+- Full pytest suite (1425) passes, including tests that launch the server exactly as Claude does, over real stdio — which fails if anything else ever reaches the wire — and the test that would have caught the lost surplus from the start: a plan whose income exceeds its needs must end richer when it spends less. Checked on the real data: the server reads it and the database file is byte-identical afterwards.
+
 ## 2.47.0 - Fresh when you open it
 
 ### Added
