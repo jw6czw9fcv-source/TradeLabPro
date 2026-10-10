@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.49.0** | *unreleased* | The whole account, at today's prices |
+| **2.49.0** | 2026-10-10 | The whole account, at today's prices |
 | **2.48.0** | 2026-10-08 | Your numbers, in Claude |
 | **2.47.0** | 2026-10-06 | Fresh when you open it |
 | **2.46.1** | 2026-10-05 | One rule for a bad download |
