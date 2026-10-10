@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.50.0 - An IBKR account, imported whole
+
+### Added
+- **Choose the portfolio an IBKR import fills.** An *into* box beside the import buttons names it - **IBKR** by default, as before. Use one name per account: each import replaces what that portfolio held and leaves the others alone, so importing a second account no longer overwrites the first.
+- **The cash comes with the positions.** When the report includes its Cash Report section - an Activity Statement does by default; a Flex query needs the section added - the ending cash per currency replaces what the portfolio has recorded, so a currency the account no longer holds does not linger. The base-currency summary row, which restates the other currencies converted, is skipped. A report without the section leaves the recorded cash as it is: a missing section is not an empty account. The confirmation dialog says which case applies before anything is written.
+
+### Verified
+- Full pytest suite (1468) passes, including 8 new tests: the cash in both report formats (Flex XML and Activity Statement CSV) without counting the base summary twice, a report with no cash section, one Flex pull bringing both, the replacement in the database, and the import on the Portfolio tab. No real IBKR report was at hand to test against; the first real import is the confirmation.
+
 ## 2.49.0 - The whole account, at today's prices
 
 ### Added

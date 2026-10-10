@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.49.0
+Current version: 2.50.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.50.0 (An IBKR account, imported whole)
+- **IBKR import into a chosen portfolio, cash included**: an "into" box on the Portfolio tab (`PortfolioPanel.import_portfolio`, default "IBKR", one per account). `portfolio_import.parse_ibkr_cash` reads Flex `CashReportCurrency@endingCash` and the Activity Statement's "Ending Cash" rows, skipping the base-currency summary; `fetch_ibkr_holdings` returns positions and cash from one Flex pull; `Database.replace_cash` swaps a portfolio's cash in one transaction. A report without a Cash Report section leaves the recorded cash untouched.
 
 ## Completed in 2.49.0 (The whole account, at today's prices)
 - **Cash per portfolio and currency** (schema v8 `portfolio_cash`; `Database.cash/set_cash/delete_cash`; Portfolio tab "Cash" section). `portfolio_analytics.summarize(cash=)` returns `cash`, `cash_value` and `account_value` (positions + cash, the broker's net liquidation); P&L, weights and risk unchanged. Home's `book_value`; the MCP `portfolio` tool lists cash and `book_summary` adds it.

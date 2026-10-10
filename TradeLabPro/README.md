@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.50.0 - An IBKR account, imported whole - an IBKR import fills the portfolio you name, one per account, and brings the account's cash along with its positions
+
 2.49.0 - The whole account, at today's prices - the cash an account holds now counts in its value, so Home and Analytics read like your broker's total; and the book is valued at today's trades even when Yahoo is hours late with the day's bar
 
 2.48.0 - Your numbers, in Claude - Claude Desktop and Claude Code can read TradeLab's figures and run its calculations through a read-only MCP server, beside IBKR's own connector; and the retirement projection no longer loses the money a plan does not spend
