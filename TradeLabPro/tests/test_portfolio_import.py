@@ -148,6 +148,74 @@ def test_fetch_uses_injected_transport():
     assert "AAPL" in out and out["AAPL"]["shares"] == 150
 
 
+# --- cash -----------------------------------------------------------------------
+
+_XML_WITH_CASH = """<FlexQueryResponse>
+ <FlexStatements><FlexStatement accountId="U1">
+  <OpenPositions>
+   <OpenPosition symbol="VTI" position="10" costBasisPrice="250" listingExchange="ARCA"
+                 currency="USD" multiplier="1"/>
+  </OpenPositions>
+  <CashReport>
+   <CashReportCurrency currency="BASE_SUMMARY" endingCash="1500.5"/>
+   <CashReportCurrency currency="CAD" endingCash="1200.25"/>
+   <CashReportCurrency currency="USD" endingCash="220"/>
+  </CashReport>
+ </FlexStatement></FlexStatements>
+</FlexQueryResponse>"""
+
+_ACTIVITY_CASH_CSV = (
+    "Cash Report,Header,Currency Summary,Currency,Total,Securities,Futures,Month to Date,Year to Date\n"
+    "Cash Report,Data,Starting Cash,Base Currency Summary,1000,1000,0,,\n"
+    "Cash Report,Data,Ending Cash,Base Currency Summary,1500.5,1500.5,0,,\n"
+    "Cash Report,Data,Starting Cash,CAD,900,900,0,,\n"
+    'Cash Report,Data,Ending Cash,CAD,"1,200.25",1200.25,0,,\n'
+    "Cash Report,Data,Ending Settled Cash,CAD,1200.25,1200.25,0,,\n"
+    "Cash Report,Data,Ending Cash,USD,220,220,0,,\n"
+)
+
+
+def test_flex_xml_cash_is_read_per_currency_without_the_base_summary():
+    # The base-currency row restates the others converted: counting it too
+    # would count the cash twice.
+    assert pi.parse_ibkr_cash_xml(_XML_WITH_CASH) == {"CAD": 1200.25, "USD": 220.0}
+
+
+def test_activity_statement_cash_is_its_ending_cash_rows():
+    assert pi.parse_ibkr_cash_csv(_ACTIVITY_CASH_CSV) == {"CAD": 1200.25, "USD": 220.0}
+
+
+def test_a_report_without_a_cash_section_has_no_cash():
+    assert pi.parse_ibkr_cash(_XML) == {}
+    assert pi.parse_ibkr_cash(_ACTIVITY_CSV) == {}
+    assert pi.parse_ibkr_cash("not a report") == {}
+
+
+def test_one_flex_pull_brings_positions_and_cash():
+    send = ('<FlexStatementResponse><Status>Success</Status>'
+            '<ReferenceCode>REF</ReferenceCode>'
+            '<Url>https://x/GetStatement</Url></FlexStatementResponse>')
+    calls = []
+
+    def transport(url):
+        calls.append(url)
+        return send if "SendRequest" in url or len(calls) == 1 else _XML_WITH_CASH
+
+    positions, cash = pi.fetch_ibkr_holdings("tok", "qid", transport=transport)
+    assert [p["symbol"] for p in positions] == ["VTI"]
+    assert cash == {"CAD": 1200.25, "USD": 220.0}
+
+
+def test_db_replace_cash_makes_a_portfolio_hold_exactly_the_report(tmp_path):
+    db = Database(str(tmp_path / "c.db"))
+    db.set_cash("RRSP", "USD", 99.0)              # the account no longer holds any
+    db.set_cash("Margin", "CAD", 10.0)            # another portfolio: untouched
+    db.replace_cash("RRSP", {"cad": 1200.25, "USD": 0.0})
+    assert [(c["portfolio"], c["currency"], c["amount"]) for c in db.cash()] == [
+        ("Margin", "CAD", 10.0), ("RRSP", "CAD", 1200.25)]
+    db.conn.close()
+
+
 def test_db_set_portfolio_positions_replaces(tmp_path):
     db = Database(str(tmp_path / "t.db"))
     db.add_position("OLD", 5, 1.0, portfolio="IBKR")

@@ -316,6 +316,23 @@ class Database:
             self.conn.execute("DELETE FROM portfolio_cash WHERE portfolio=? AND currency=?",
                               (str(portfolio).strip(), str(currency).strip().upper()))
 
+    def replace_cash(self, portfolio: str, balances: dict) -> None:
+        """Make a portfolio's cash exactly `balances` ({currency: amount}), in one
+        transaction - what an import from the broker does, so a currency the
+        account no longer holds does not linger. Zero amounts are not stored."""
+        portfolio = str(portfolio).strip()
+        if not portfolio:
+            raise ValueError("Cash needs a portfolio.")
+        stamp = _now_iso()
+        rows = [(portfolio, str(cur).strip().upper(), float(amount), stamp)
+                for cur, amount in (balances or {}).items()
+                if str(cur).strip() and float(amount)]
+        with self.conn:
+            self.conn.execute("DELETE FROM portfolio_cash WHERE portfolio=?", (portfolio,))
+            self.conn.executemany(
+                "INSERT INTO portfolio_cash(portfolio, currency, amount, updated_at) "
+                "VALUES (?,?,?,?)", rows)
+
     def set_portfolio_positions(self, portfolio: str, positions: list) -> int:
         """Replace all rows in a named portfolio with `positions` (dicts with
         symbol / shares / entry_price). Used to sync an imported book (e.g. from

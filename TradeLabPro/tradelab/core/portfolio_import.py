@@ -5,9 +5,12 @@ positions* — the holdings themselves — so they can populate the Portfolio ta
 be analysed. Two sources, mirroring the Journal:
 
 * an IBKR **Flex/Activity report** you export as XML or CSV (`parse_ibkr_positions`);
-* a direct **Flex Web Service** pull (`fetch_ibkr_positions`), reusing the same
+* a direct **Flex Web Service** pull (`fetch_ibkr_holdings`), reusing the same
   read-only token + query id the Journal uses — a single Flex query that includes
   the *Open Positions* section serves both.
+
+When the report also includes its *Cash Report* section, the cash per currency
+comes with the positions (`parse_ibkr_cash`).
 
 Read-only throughout: this reads what you hold, it never logs in to trade, routes
 orders, or moves funds — consistent with the app's simulated-only safety model.
@@ -216,6 +219,66 @@ def parse_ibkr_positions(text: str) -> list:
     return parse_ibkr_positions_xml(text) or parse_ibkr_positions_csv(text)
 
 
+# --- cash -------------------------------------------------------------------
+#
+# The same report can carry what the account holds in cash, per currency: the
+# Flex XML's Cash Report section (`<CashReportCurrency currency="CAD"
+# endingCash="..."/>`) and the Activity Statement's "Cash Report" rows labelled
+# "Ending Cash". Each also has a base-currency summary that restates the other
+# currencies converted; counting it as well would count the cash twice.
+
+_BASE_SUMMARY = {"BASE_SUMMARY", "BASE CURRENCY SUMMARY", "BASE"}
+
+
+def _add_cash(out: dict, currency, amount) -> None:
+    cur = str(currency or "").strip().upper()
+    value = _num(amount)
+    if cur and cur not in _BASE_SUMMARY and value is not None:
+        out[cur] = out.get(cur, 0.0) + value
+
+
+def parse_ibkr_cash_xml(text: str) -> dict:
+    """Ending cash per currency from a Flex XML report, {currency: amount}.
+    Empty when the report has no Cash Report section."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(text)
+    except Exception:
+        return {}
+    out: dict = {}
+    for e in root.iter("CashReportCurrency"):
+        _add_cash(out, e.attrib.get("currency"), e.attrib.get("endingCash"))
+    return out
+
+
+def parse_ibkr_cash_csv(text: str) -> dict:
+    """Ending cash per currency from an Activity Statement CSV's Cash Report
+    section, its columns found by their headings. Empty without one."""
+    import csv
+    import io
+    rows = [r for r in csv.reader(io.StringIO(text)) if r and str(r[0]).strip() == "Cash Report"]
+    header = next((r for r in rows if len(r) > 1 and str(r[1]).strip() == "Header"), None)
+    if not header:
+        return {}
+    label_i = _col(header, "currency summary")
+    cur_i = _col(header, "currency")
+    total_i = _col(header, "total")
+    if None in (label_i, cur_i, total_i):
+        return {}
+    out: dict = {}
+    for r in rows:
+        if len(r) <= max(label_i, cur_i, total_i) or str(r[1]).strip() != "Data":
+            continue
+        if str(r[label_i]).strip().lower() == "ending cash":
+            _add_cash(out, r[cur_i], r[total_i])
+    return out
+
+
+def parse_ibkr_cash(text: str) -> dict:
+    """Cash per currency from a report, trying XML first then CSV."""
+    return parse_ibkr_cash_xml(text) or parse_ibkr_cash_csv(text)
+
+
 # --- symbol resolution by cost-basis proximity ------------------------------
 #
 # IBKR reports bare tickers; when the exchange/currency fields are missing, a
@@ -300,6 +363,12 @@ def fetch_ibkr_positions(token: str, query_id: str, transport=None) -> list:
     """Pull the user's Flex report over the IBKR Flex Web Service and return its
     open positions. Reuses the Journal's read-only Flex fetch. `transport` is
     injectable for tests."""
+    return fetch_ibkr_holdings(token, query_id, transport=transport)[0]
+
+
+def fetch_ibkr_holdings(token: str, query_id: str, transport=None):
+    """One Flex Web Service pull -> (open positions, cash per currency). The
+    cash is empty when the query has no Cash Report section."""
     from tradelab.core.journal import fetch_ibkr_flex
     text = fetch_ibkr_flex(token, query_id, transport=transport)
-    return parse_ibkr_positions(text)
+    return parse_ibkr_positions(text), parse_ibkr_cash(text)

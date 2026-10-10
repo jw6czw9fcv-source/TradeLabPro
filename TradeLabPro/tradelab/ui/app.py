@@ -3174,10 +3174,10 @@ class _IbkrPositionsWorker(QThread):
 
     def run(self):
         try:
-            from tradelab.core.portfolio_import import fetch_ibkr_positions, resolve_positions
-            positions = fetch_ibkr_positions(self.token, self.query_id)
+            from tradelab.core.portfolio_import import fetch_ibkr_holdings, resolve_positions
+            positions, cash = fetch_ibkr_holdings(self.token, self.query_id)
             positions = resolve_positions(positions)   # correct symbols to Yahoo listings
-            self.done.emit(positions, "")
+            self.done.emit((positions, cash), "")
         except Exception as exc:
             self.done.emit(None, str(exc))
 
@@ -3224,10 +3224,19 @@ class PortfolioPanel(QWidget):
         csv_btn = QPushButton("Positions file (CSV/XML)…"); csv_btn.clicked.connect(self.import_ibkr_file)
         flex_btn = QPushButton("Fetch positions (Flex)"); flex_btn.clicked.connect(self.fetch_ibkr_positions)
         imp.addWidget(csv_btn); imp.addWidget(flex_btn)
-        imp.addWidget(_hint("Imports your open positions into an 'IBKR' portfolio (read-only; each "
-                            "import replaces the previous one). The Flex pull reuses the token and "
-                            "query id you saved in the Journal tab — use a query that includes the "
-                            "Open Positions section."))
+        imp.addWidget(QLabel("into"))
+        # Which portfolio an import fills: one per IBKR account, so a second
+        # account's import does not overwrite the first.
+        self.import_portfolio = QComboBox(); self.import_portfolio.setEditable(True)
+        self.import_portfolio.setMinimumWidth(110)
+        self.import_portfolio.setToolTip("The portfolio this import replaces - use one per "
+                                         "IBKR account.")
+        imp.addWidget(self.import_portfolio)
+        imp.addWidget(_hint("Imports your open positions - and the cash, when the report has its "
+                            "Cash Report section - into the portfolio named beside the buttons; "
+                            "each import replaces what that portfolio held (read-only). The Flex "
+                            "pull reuses the token and query id you saved in the Journal tab — "
+                            "use a query that includes the Open Positions section."))
         imp.addStretch()
         layout.addLayout(imp)
 
@@ -3298,7 +3307,7 @@ class PortfolioPanel(QWidget):
     # -- IBKR position import (read-only) --
     def import_ibkr_file(self):
         from pathlib import Path
-        from tradelab.core.portfolio_import import parse_ibkr_positions
+        from tradelab.core.portfolio_import import parse_ibkr_cash, parse_ibkr_positions
         path, _ = QFileDialog.getOpenFileName(
             self, "Import IBKR positions", "", "IBKR reports (*.xml *.csv);;All files (*)")
         if not path:
@@ -3308,16 +3317,16 @@ class PortfolioPanel(QWidget):
         except Exception as exc:
             self.status.setText(f"Could not read file: {exc}")
             return
-        parsed = parse_ibkr_positions(text)
+        parsed, cash = parse_ibkr_positions(text), parse_ibkr_cash(text)
         if not parsed:
-            self._apply_ibkr(parsed, "file")
+            self._apply_ibkr(parsed, "file", cash)
             return
         # Resolve symbols to the right Yahoo listings off-thread before applying.
         self.status.setText("Resolving symbols…")
         self._ibkr_worker = _ResolveSymbolsWorker(parsed)
         self._ibkr_worker.done.connect(lambda pos, err: (
             self.status.setText(f"IBKR file resolve failed: {err}") if err
-            else self._apply_ibkr(pos, "file")))
+            else self._apply_ibkr(pos, "file", cash)))
         self._ibkr_worker.start()
 
     def fetch_ibkr_positions(self):
@@ -3338,29 +3347,48 @@ class PortfolioPanel(QWidget):
         self._ibkr_worker.done.connect(self._on_ibkr_fetched)
         self._ibkr_worker.start()
 
-    def _on_ibkr_fetched(self, positions, error):
-        if error or positions is None:
+    def _on_ibkr_fetched(self, holdings, error):
+        if error or holdings is None:
             self.status.setText(f"IBKR fetch failed: {error or 'no data'}")
             return
-        self._apply_ibkr(positions, "Flex report")
+        positions, cash = holdings
+        self._apply_ibkr(positions, "Flex report", cash)
 
-    def _apply_ibkr(self, positions, source):
+    def _apply_ibkr(self, positions, source, cash=None):
+        """Replace one portfolio with what an IBKR report holds: its positions,
+        and its cash when the report carries a Cash Report section. Without
+        that section the recorded cash is left alone - a missing section is not
+        an empty account."""
         if not positions:
             self.status.setText(
                 f"No open positions found in the IBKR {source}. Make sure it includes the "
                 "Open Positions section.")
             return
+        portfolio = self.import_portfolio.currentText().strip() or "IBKR"
+        cash = cash or {}
+        if cash:
+            cash_note = ("Its cash replaces what the portfolio has recorded: "
+                         + ", ".join(f"{amount:,.2f} {ccy}" for ccy, amount in sorted(cash.items()))
+                         + ".")
+        else:
+            cash_note = ("The report has no Cash Report section, so the portfolio's recorded "
+                         "cash stays as it is.")
         ret = QMessageBox.question(
             self, "Import IBKR positions",
-            f"Import {len(positions)} position(s) into the 'IBKR' portfolio?\n"
-            "This replaces any previous IBKR import (your manually-added positions are untouched).",
+            f"Import {len(positions)} position(s) into the '{portfolio}' portfolio?\n"
+            "This replaces what that portfolio held (your other portfolios are untouched).\n"
+            + cash_note,
             QMessageBox.Yes | QMessageBox.No)
         if ret != QMessageBox.Yes:
             self.status.setText("Import cancelled.")
             return
-        written = self.db.set_portfolio_positions("IBKR", positions)
+        written = self.db.set_portfolio_positions(portfolio, positions)
+        if cash:
+            self.db.replace_cash(portfolio, cash)
         self.refresh()
-        self.status.setText(f"Imported {written} IBKR position(s) into the 'IBKR' portfolio. "
+        self.status.setText(f"Imported {written} IBKR position(s)"
+                            + (" and the cash" if cash else "")
+                            + f" into the '{portfolio}' portfolio. "
                             "Open the Analytics tab to review the book.")
 
     def shutdown(self):
@@ -3394,15 +3422,19 @@ class PortfolioPanel(QWidget):
                                         QTableWidgetItem(when))):
                 self.cash_table.setItem(r, col, item)
         self.cash_table.resizeColumnsToContents()
-        # Offer the portfolios that exist, keeping whatever is being typed.
+        # Offer the portfolios that exist, keeping whatever is being typed. An
+        # import defaults to "IBKR", the name it has always used.
         names = sorted(({str(p.get("portfolio") or "") for p in (positions or self.db.positions())}
                         | {c["portfolio"] for c in cash}) - {""})
-        typed = self.cash_portfolio.currentText()
-        self.cash_portfolio.blockSignals(True)
-        self.cash_portfolio.clear()
-        self.cash_portfolio.addItems(names)
-        self.cash_portfolio.setCurrentText(typed or (names[0] if names else ""))
-        self.cash_portfolio.blockSignals(False)
+        for combo, choices, fallback in (
+                (self.cash_portfolio, names, names[0] if names else ""),
+                (self.import_portfolio, sorted(set(names) | {"IBKR"}), "IBKR")):
+            typed = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(choices)
+            combo.setCurrentText(typed or fallback)
+            combo.blockSignals(False)
 
     def set_cash(self):
         portfolio = self.cash_portfolio.currentText().strip()

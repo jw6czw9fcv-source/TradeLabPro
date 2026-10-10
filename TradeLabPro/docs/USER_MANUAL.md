@@ -573,10 +573,20 @@ from Interactive Brokers. On the Portfolio tab, under **Import from IBKR**:
   reusing the **token and query id** you saved in the Journal tab (section 18).
   Your Flex query's Open Positions section must include at least Symbol, Quantity
   and Cost Price (add Currency / Listing Exchange too for the cleanest mapping).
+  Add its **Cash Report** section (with Currency and Ending Cash) and the cash
+  comes along too.
 
-Imported holdings land in a portfolio named **IBKR**; each import **replaces** the
-previous one, so re-importing never creates duplicates, and your manually-added
-positions are left alone.
+Imported holdings land in the portfolio named in the **into** box beside the
+buttons — **IBKR** unless you type another name. Use one name per IBKR account
+(say *IBKR* and *RRSP*): each import **replaces** what that portfolio held, so
+re-importing never creates duplicates, and your other portfolios are left alone.
+
+**Cash comes with the positions** when the report has a Cash Report section — an
+Activity Statement has one by default. The ending cash per currency then
+replaces what that portfolio has recorded, so a currency the account no longer
+holds does not linger. A report without the section leaves the recorded cash as
+it is: a missing section is not an empty account. The confirmation dialog says
+which case applies before anything is written.
 
 > **Read-only.** This reads what you hold — it never logs in to trade, routes
 > orders, or moves funds.
@@ -600,7 +610,8 @@ margin loan: it is owed, so it lowers the total.
 Home and Analytics add the cash to your positions, converted to the display
 currency, so their total matches your broker's net liquidation value. Only the
 total: unrealized P&L, weights and the risk figures still describe what is
-invested. The cash is typed by hand — update it when it changes.
+invested. Typed cash stays as you set it — update it when it changes, or let an
+IBKR import keep it current (above).
 
 ### Analytics — your book's risk profile
 

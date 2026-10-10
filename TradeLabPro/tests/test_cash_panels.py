@@ -58,6 +58,49 @@ def test_the_portfolio_tab_wants_a_currency_code(qapp, db):
     assert "three-letter" in panel.status.text()
 
 
+def _answer_yes(monkeypatch, asked=None):
+    import tradelab.ui.app as app
+
+    def question(parent, title, text, *rest):
+        if asked is not None:
+            asked.append(text)
+        return app.QMessageBox.Yes
+    monkeypatch.setattr(app.QMessageBox, "question", staticmethod(question))
+
+
+def test_an_ibkr_import_fills_the_chosen_portfolio_and_its_cash(qapp, db, monkeypatch):
+    import tradelab.ui.app as app
+    _answer_yes(monkeypatch)
+    db.set_cash("RRSP", "USD", 99.0)                   # gone afterwards: the account holds none
+    panel = app.PortfolioPanel(db)
+    panel.import_portfolio.setCurrentText("RRSP")
+    panel._apply_ibkr([{"symbol": "VTI", "shares": 10, "entry_price": 250.0}], "file",
+                      {"CAD": 1200.25})
+    assert [(p["portfolio"], p["symbol"]) for p in db.positions()] == [("RRSP", "VTI")]
+    assert [(c["currency"], c["amount"]) for c in db.cash()] == [("CAD", 1200.25)]
+    assert "and the cash into the 'RRSP' portfolio" in panel.status.text()
+
+
+def test_a_report_without_cash_leaves_the_recorded_cash_alone(qapp, db, monkeypatch):
+    import tradelab.ui.app as app
+    asked = []
+    _answer_yes(monkeypatch, asked)
+    db.set_cash("RRSP", "CAD", 500.0)
+    panel = app.PortfolioPanel(db)
+    panel.import_portfolio.setCurrentText("RRSP")
+    panel._apply_ibkr([{"symbol": "VTI", "shares": 10, "entry_price": 250.0}], "file", {})
+    assert [(c["currency"], c["amount"]) for c in db.cash()] == [("CAD", 500.0)]
+    assert "stays as it is" in asked[0]
+
+
+def test_an_import_goes_to_the_ibkr_portfolio_unless_told_otherwise(qapp, tmp_path):
+    import tradelab.ui.app as app
+    empty = Database(path=tmp_path / "empty.db")
+    panel = app.PortfolioPanel(empty)
+    assert panel.import_portfolio.currentText() == "IBKR"
+    empty.conn.close()
+
+
 def test_analytics_shows_the_account_value_and_the_date_of_its_prices(qapp, db):
     import tradelab.ui.app as app
     db.set_cash("RRSP", "CAD", 2500.0)
