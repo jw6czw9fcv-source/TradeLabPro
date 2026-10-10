@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.48.0
+Current version: 2.49.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.49.0 (The whole account, at today's prices)
+- **Cash per portfolio and currency** (schema v8 `portfolio_cash`; `Database.cash/set_cash/delete_cash`; Portfolio tab "Cash" section). `portfolio_analytics.summarize(cash=)` returns `cash`, `cash_value` and `account_value` (positions + cash, the broker's net liquidation); P&L, weights and risk unchanged. Home's `book_value`; the MCP `portfolio` tool lists cash and `book_summary` adds it.
+- **Fixed: valuations a session behind when Yahoo is late with the daily bar.** `market_data.get_latest_prices` (provider method; Yahoo reads the day's 5-minute bars) and `with_latest_prices`, over `portfolio_analytics.apply_latest_prices` (one more bar when the latest trade is from a later session, read in `exchange_timezone`). Used by Home, Analytics (`_MarketRefreshWorker(latest_for=)`), Dividends and the MCP tools; `prices_as_of`, the oldest price's trading day, shown beside every total.
 
 ## Completed in 2.48.0 (Your numbers, in Claude)
 - **MCP server** (`tradelab_mcp.py`, `tradelab/mcp_server/`): eight read-only tools - retirement_projection (stored balances replaceable by live ones), quebec_tax, book_summary, look_through, dividend_income, portfolio, etf_screener, journal_summary. Database opened in SQLite read-only mode (`Database(read_only=True)`, `schema_behind()`); tools declared read-only to the client; errors translated into the SDK's ToolError so the assistant reads them. Optional dependency in `requirements-mcp.txt` (mcp 2.x: `MCPServer`, not FastMCP).

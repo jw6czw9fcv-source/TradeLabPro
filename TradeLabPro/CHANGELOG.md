@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.49.0 - The whole account, at today's prices
+
+### Added
+- **Cash, beside the positions.** The Portfolio tab records the cash each account holds, one amount per portfolio and currency. Home and Analytics add it to the positions, converted to your display currency, so the total reads like the value your broker shows - its net liquidation. Only the total: the unrealized P&L, the weights and the risk figures still describe what is invested. A negative amount is a margin loan and lowers the total. Claude's `portfolio` and `book_summary` tools report it too (`account_value`).
+- **Every total says how current it is.** Home, Analytics and the book summary name the trading day of the oldest price behind the figure - *prices as of Fri 09 Oct* - because a value read on Friday evening from Thursday's closes looks exactly like a current one.
+
+### Fixed
+- **A book could be valued at yesterday's close, with yesterday's move shown as "today".** After the close, Yahoo can take hours to publish the day's daily bar; on 9 October it was still missing at 21:25 Eastern. Valued on that history, the book was a day behind, and Home's *Today* tile reported Thursday's drop on Friday evening. When a holding's latest trade - from the day's 5-minute bars - is from a later session than its daily history, Home, Analytics, Dividends and the MCP tools now add it as one more bar, read in the exchange's own time zone, so the value, the unrealized P&L, the day's move and the curve all agree. If that lookup fails, the valuation is what it was before.
+
+### Verified
+- Full pytest suite (1460) passes, including 35 new tests: storing cash and migrating an older database to it; valuing with and without cash, with a missing FX rate, and with an unpriced book (which never turns into a cash-only total); the late-bar top-up (same session, other time zones, nonsense prices, a failing source); and the Portfolio, Analytics and Home screens. A conftest stub keeps the new lookup off the network in every test. Checked on a real account: within 0.05% of the broker's net liquidation value - the remainder is the broker's after-hours marks and its exchange rate.
+
 ## 2.48.0 - Your numbers, in Claude
 
 ### Added
