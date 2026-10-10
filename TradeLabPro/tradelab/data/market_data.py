@@ -145,6 +145,63 @@ def _yahoo_download_chunk(symbols, period: str, interval: str) -> dict:
     return result
 
 
+def get_latest_prices(symbols) -> dict:
+    """Each symbol's most recent traded price from the active data provider, as
+    {symbol: {"price": float, "time": Timestamp}}. Symbols the source has
+    nothing for are absent. See with_latest_prices for what it is used for."""
+    from tradelab.data import providers
+    return providers.active().get_latest_prices(symbols)
+
+
+def _yahoo_latest_prices(symbols) -> dict:
+    """Each symbol's last regular-session trade, from Yahoo's 5-minute bars.
+
+    Yahoo can publish a session's daily bar hours after the close - on
+    9 October 2026 it was still missing at 21:25 Eastern. Until it appears, a
+    daily history ends the day before, and a book valued on it is a day behind.
+    The 5-minute bars exist as the session trades, so they carry the price the
+    daily bar has not caught up with. Five days back so a Monday morning still
+    finds Friday. Never raises: a symbol with nothing usable is simply absent.
+    """
+    unique = [s for s in dict.fromkeys(symbols or ()) if s]
+    if yf is None or not unique:
+        return {}
+    out: dict = {}
+    for start in range(0, len(unique), _BATCH_CHUNK):
+        frames = _yahoo_download_chunk(unique[start:start + _BATCH_CHUNK], "5d", "5m")
+        for sym, df in frames.items():
+            close = df["Close"]
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            close = pd.to_numeric(close, errors="coerce").dropna()
+            if not close.empty:
+                out[sym] = {"price": float(close.iloc[-1]), "time": pd.Timestamp(close.index[-1])}
+    return out
+
+
+def with_latest_prices(histories: dict, symbols) -> dict:
+    """`histories` with each of `symbols` carried up to its latest traded price,
+    when its daily bars stop short of the session that price comes from (see
+    portfolio_analytics.apply_latest_prices).
+
+    For the screens that value real money - Home, Analytics, Dividends and the
+    MCP tools - so a book is never priced at yesterday's close while today's
+    trades exist. Synthetic frames are left alone, since those screens refuse
+    them anyway. A failure leaves the histories as they were: a fresher price is
+    an improvement, never a requirement.
+    """
+    from tradelab.core.portfolio_analytics import apply_latest_prices
+    wanted = [s for s in dict.fromkeys(symbols or ())
+              if (histories or {}).get(s) is not None and not is_synthetic(histories[s])]
+    if not wanted:
+        return histories
+    try:
+        latest = get_latest_prices(wanted)
+    except Exception:
+        return histories
+    return apply_latest_prices(histories, latest)
+
+
 def get_dividends(symbol: str) -> pd.Series:
     """Dividend-per-share history for a symbol from the active provider, as a
     date-indexed Series (empty when the name pays none, or the source has no

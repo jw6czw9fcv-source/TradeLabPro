@@ -55,6 +55,79 @@ def currency_of(symbol: str) -> str:
     return "USD"
 
 
+# The time zone of the market a Yahoo symbol trades on, by the same suffixes.
+_TZ_BY_SUFFIX = {
+    ".TO": "America/Toronto", ".V": "America/Toronto", ".NE": "America/Toronto",
+    ".CN": "America/Toronto", ".L": "Europe/London", ".DE": "Europe/Berlin",
+    ".F": "Europe/Berlin", ".SG": "Europe/Berlin", ".PA": "Europe/Paris",
+    ".AS": "Europe/Amsterdam", ".MI": "Europe/Rome", ".MC": "Europe/Madrid",
+    ".VI": "Europe/Vienna", ".SW": "Europe/Zurich", ".AX": "Australia/Sydney",
+    ".HK": "Asia/Hong_Kong", ".T": "Asia/Tokyo", ".SI": "Asia/Singapore",
+}
+
+
+def exchange_timezone(symbol: str) -> str:
+    """Time zone of the market a Yahoo symbol trades on - where its trading day
+    begins and ends. Bare symbols (US listings) are New York."""
+    s = str(symbol or "").upper()
+    for suf, tz in _TZ_BY_SUFFIX.items():
+        if s.endswith(suf):
+            return tz
+    return "America/New_York"
+
+
+def _session_date(when, symbol: str) -> pd.Timestamp:
+    """The trading day a timestamp belongs to, read in the symbol's own market
+    (a 15:55 New York trade is still that day in Tokyo's terms, but not in
+    UTC's). Naive timestamps are taken as already local."""
+    ts = pd.Timestamp(when)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert(exchange_timezone(symbol)).tz_localize(None)
+    return ts.normalize()
+
+
+def apply_latest_prices(histories: dict, latest: dict) -> dict:
+    """Daily histories carried up to each symbol's latest traded price.
+
+    A daily history can stop a session short: Yahoo sometimes publishes the
+    day's bar hours after the close. Valued on such a history, a book is priced
+    at yesterday's close and "today's move" is really yesterday's. When a
+    symbol's latest price (see market_data.get_latest_prices) is from a later
+    session than its last daily bar, that session is added as one more bar at
+    that price, so the value, the unrealized P&L, the day's move and the equity
+    curve all read the same current number. A price from the session the last
+    bar already covers changes nothing - the daily bar is the record of it.
+
+    Returns a new dict; the frames passed in are left as they were.
+    """
+    out = dict(histories or {})
+    for symbol, quote in (latest or {}).items():
+        frame = out.get(symbol)
+        if (frame is None or getattr(frame, "empty", True)
+                or not isinstance(frame.index, pd.DatetimeIndex)):
+            continue
+        price, when = (quote or {}).get("price"), (quote or {}).get("time")
+        try:
+            price = float(price)
+        except (TypeError, ValueError):
+            continue
+        if when is None or not price == price or price <= 0:
+            continue
+        session = _session_date(when, symbol)
+        if session <= _session_date(frame.index[-1], symbol):
+            continue
+        row = {col: float("nan") for col in frame.columns}
+        for col in ("Open", "High", "Low", "Close", "Adj Close"):
+            if col in row:
+                row[col] = price
+        stamp = session if frame.index.tz is None else session.tz_localize(frame.index.tz)
+        bar = pd.DataFrame([row], index=pd.DatetimeIndex([stamp], name=frame.index.name))
+        fresh = pd.concat([frame, bar])
+        fresh.attrs = {**frame.attrs, "latest_price_time": pd.Timestamp(when)}
+        out[symbol] = fresh
+    return out
+
+
 def fx_pair_symbol(currency: str, target: str) -> str:
     """Yahoo FX symbol converting `currency` into `target`, e.g. USD->CAD is
     'USDCAD=X' (its price is how many CAD one unit of `currency` buys)."""
@@ -136,7 +209,8 @@ def holdings(positions: list, histories: dict, target: str = None, fx: dict = No
     currency -> rate series into the target) at the current rate. The unrealized %
     is the native price move and is unaffected by FX. Each row carries `currency`
     (the native trading currency), `avg_entry` and `last` (native), and
-    `converted` (False if conversion was needed but no FX rate was available)."""
+    `converted` (False if conversion was needed but no FX rate was available),
+    plus `price_date`, the trading day `last` is from."""
     agg = aggregate_positions(positions)
     rows = []
     for a in agg:
@@ -150,8 +224,10 @@ def holdings(positions: list, histories: dict, target: str = None, fx: dict = No
         cost = a["cost_basis"] * conv                                               # cost in target
         pnl = (mv - cost) if mv is not None else None
         pnl_pct = (pnl / cost * 100.0) if (pnl is not None and cost) else None
+        price_date = (_session_date(c.index[-1], a["symbol"]).date().isoformat()
+                      if last_native is not None else None)
         rows.append({**a, "cost_basis": cost, "currency": cur, "converted": converted,
-                     "last": last_native, "market_value": mv,
+                     "last": last_native, "price_date": price_date, "market_value": mv,
                      "unrealized": pnl, "unrealized_pct": pnl_pct})
     total = sum(h["market_value"] for h in rows if h["market_value"])
     for h in rows:
@@ -382,15 +458,45 @@ def correlation(histories: dict) -> dict:
     return {"symbols": syms, "matrix": matrix, "avg_pairwise": avg}
 
 
+def cash_rows(cash: list, target: str = None, fx: dict = None):
+    """Cash balances valued in the target currency -> (rows, total).
+
+    Each row keeps its portfolio, currency and amount; `value` is the amount at
+    the latest FX rate, and `converted` is False when a rate was needed but
+    missing - the amount then counts as is, the same rule holdings follow. A
+    negative amount (a margin loan) is kept: it is owed, and leaving it out
+    would overstate the account."""
+    rows, total = [], 0.0
+    for c in cash or []:
+        try:
+            amount = float(c.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not amount:
+            continue
+        cur = str(c.get("currency") or target or "").strip().upper()
+        rate = _latest_rate(fx, cur, target)
+        rows.append({"portfolio": str(c.get("portfolio") or ""), "currency": cur,
+                     "amount": amount, "value": amount * (rate if rate is not None else 1.0),
+                     "converted": target is None or cur == target or rate is not None})
+        total += rows[-1]["value"]
+    return rows, total
+
+
 def summarize(positions: list, histories: dict, benchmark_df=None,
               benchmark_symbol: str = "SPY", target_currency: str = None,
-              fx: dict = None) -> dict:
+              fx: dict = None, cash: list = None) -> dict:
     """Everything the Portfolio Analytics tab renders, computed offline. When
     `target_currency` (e.g. "CAD") and `fx` are supplied, all money is reported
     in that currency; otherwise values are in each holding's native currency
-    (the legacy mixed-currency behaviour)."""
+    (the legacy mixed-currency behaviour).
+
+    `cash` (rows of portfolio / currency / amount) is added to the account's
+    value - what a broker calls net liquidation - and nowhere else: the P&L,
+    weights and risk figures describe what is invested."""
     target = target_currency
     rows, total_mv = holdings(positions, histories, target, fx)
+    cash_list, cash_total = cash_rows(cash, target, fx)
     total_cost = sum(h["cost_basis"] for h in rows)
     # Correlation is between the user's holdings only — never the benchmark.
     hold_hist = {h["symbol"]: histories.get(h["symbol"]) for h in rows
@@ -453,9 +559,17 @@ def summarize(positions: list, histories: dict, benchmark_df=None,
             if full_days > 0 and eq_days < 0.9 * full_days:
                 window_limited_by = max(starts, key=lambda s: starts[s])
 
+    # The oldest price behind the totals: a book is only as current as its
+    # stalest holding, so that is the date worth showing.
+    priced_dates = [h["price_date"] for h in rows if h.get("price_date")]
+
     result = {
         "holdings": rows,
         "total_value": total_mv,
+        "cash": cash_list,
+        "cash_value": cash_total,
+        "account_value": total_mv + cash_total,
+        "prices_as_of": min(priced_dates) if priced_dates else None,
         "total_cost": total_cost,
         "total_unrealized": unreal,
         "total_unrealized_pct": (unreal / priced_cost * 100.0) if (unreal is not None and priced_cost) else None,
@@ -475,7 +589,7 @@ def summarize(positions: list, histories: dict, benchmark_df=None,
         "equity": equity,
         "currency": target,
         # Currencies that needed converting to the target but had no FX rate.
-        "fx_missing": sorted({h["currency"] for h in rows
+        "fx_missing": sorted({h["currency"] for h in rows + cash_list
                               if target and not h["converted"]}),
     }
     result["text"] = _summary_text(result)
@@ -487,7 +601,11 @@ def _summary_text(r: dict) -> str:
         return "No positions yet — add holdings in the Portfolio tab, then refresh."
     n = r["concentration"]["positions"]
     ccy = f" {r['currency']}" if r.get("currency") else ""
-    parts = [f"{n} position(s) worth ${r['total_value']:,.0f}{ccy}"]
+    positions = f"{n} position(s) worth ${r['total_value']:,.0f}{ccy}"
+    if r.get("cash"):
+        positions = (f"Account worth ${r['account_value']:,.0f}{ccy}: {positions} "
+                     f"+ cash ${r['cash_value']:,.0f}")
+    parts = [positions]
     if r["total_unrealized"] is not None:
         seg = f"unrealized {r['total_unrealized']:+,.0f}"
         if r["total_unrealized_pct"] is not None:      # None when cost basis is 0

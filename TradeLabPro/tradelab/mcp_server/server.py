@@ -64,8 +64,9 @@ Currency = Annotated[str, Field(description="CAD (default), USD, or 'native' to 
 @server.tool(annotations=LOCAL)
 def portfolio() -> dict[str, Any]:
     """List the holdings stored in TradeLab: symbol, shares, average entry price and the
-    portfolio each belongs to (an IBKR import lands in a portfolio named IBKR). No prices -
-    use book_summary for values, or a brokerage connector for live quantities."""
+    portfolio each belongs to (an IBKR import lands in a portfolio named IBKR), plus the
+    cash recorded per portfolio and currency. No prices - use book_summary for values, or
+    a brokerage connector for live quantities."""
     return _answer(tools.portfolio)
 
 
@@ -75,11 +76,13 @@ def book_summary(currency: Currency = "CAD",
                                                           "or 5y.")] = "1y",
                  benchmark: Annotated[str, Field(description="Benchmark symbol.")] = "SPY",
                  ) -> dict[str, Any]:
-    """Value the stored book at current prices, as TradeLab's Analytics tab does: total
-    value and cost, unrealized P&L, return and CAGR over the window versus the benchmark,
-    beta, annualised volatility, maximum drawdown, concentration and correlation, plus one
-    row per holding. Downloads prices (a few seconds); a symbol that cannot be priced is
-    listed under no_data rather than valued on made-up prices."""
+    """Value the stored book at current prices, as TradeLab's Analytics tab does: the
+    positions' value (total_value), recorded cash, and the two together (account_value, a
+    broker's net liquidation); cost and unrealized P&L, return and CAGR over the window
+    versus the benchmark, beta, annualised volatility, maximum drawdown, concentration and
+    correlation, plus one row per holding. prices_as_of is the trading day of the oldest
+    price used. Downloads prices (a few seconds); a symbol that cannot be priced is listed
+    under no_data rather than valued on made-up prices."""
     return _answer(tools.book_summary, currency=currency, period=period, benchmark=benchmark)
 
 

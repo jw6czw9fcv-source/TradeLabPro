@@ -66,6 +66,19 @@ def _isolate_data_provider():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _no_live_latest_prices(monkeypatch):
+    """The screens that value real money carry each holding up to its latest
+    trade (market_data.with_latest_prices), which would reach Yahoo from any
+    test that values a book. Off by default: the tests of that feature install
+    their own source."""
+    try:
+        import tradelab.data.market_data as market_data
+    except Exception:
+        return
+    monkeypatch.setattr(market_data, "get_latest_prices", lambda symbols: {})
+
+
 @pytest.fixture
 def ohlcv_df() -> pd.DataFrame:
     rng = np.random.default_rng(42)

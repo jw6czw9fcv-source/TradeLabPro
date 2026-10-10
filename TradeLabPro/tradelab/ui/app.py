@@ -3235,6 +3235,39 @@ class PortfolioPanel(QWidget):
         self.table.setToolTip("Click a position to chart its symbol.")
         self.table.cellClicked.connect(self._chart_row)
         layout.addWidget(self.table)
+
+        # --- Cash: what each account holds beside its positions ---
+        cash_row = QHBoxLayout()
+        cash_row.addWidget(QLabel("Cash:"))
+        self.cash_portfolio = QComboBox(); self.cash_portfolio.setEditable(True)
+        self.cash_portfolio.setMinimumWidth(120)
+        self.cash_portfolio.setToolTip("The portfolio this cash belongs to.")
+        self.cash_currency = QComboBox(); self.cash_currency.setEditable(True)
+        self.cash_currency.addItems(["CAD", "USD", "EUR", "GBP"])
+        self.cash_amount = QDoubleSpinBox(); self.cash_amount.setRange(-1e9, 1e9)
+        self.cash_amount.setDecimals(2); self.cash_amount.setPrefix("$")
+        self.cash_amount.setGroupSeparatorShown(True)
+        self.cash_amount.setToolTip("A negative amount is a margin loan: it is owed, so it "
+                                    "lowers the account's value.")
+        set_cash = QPushButton("Set cash"); set_cash.clicked.connect(self.set_cash)
+        remove_cash = QPushButton("Remove selected cash"); remove_cash.clicked.connect(self.delete_cash)
+        for w in (self.cash_portfolio, self.cash_currency, self.cash_amount, set_cash, remove_cash):
+            cash_row.addWidget(w)
+        cash_row.addStretch()
+        layout.addLayout(cash_row)
+        layout.addWidget(_hint(
+            "The cash each account holds, per currency. Home and Analytics add it to your "
+            "positions, so their total matches the value your broker shows. Setting it again "
+            "replaces the amount."))
+        self.cash_table = QTableWidget(0, 4)
+        self.cash_table.setHorizontalHeaderLabels(["Portfolio", "Currency", "Amount", "Set on"])
+        self.cash_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.cash_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.cash_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.cash_table.verticalHeader().setVisible(False)
+        self.cash_table.setMaximumHeight(130)
+        layout.addWidget(self.cash_table)
+
         self.status = StatusLabel("")
         layout.addWidget(self.status)
         self.refresh()
@@ -3347,6 +3380,54 @@ class PortfolioPanel(QWidget):
             for c, key in enumerate(["id","portfolio","symbol","shares","entry_price"]):
                 self.table.setItem(r,c,QTableWidgetItem(str(p.get(key,""))))
         self.table.resizeColumnsToContents(); self.status.setText(f"Portfolio positions: {len(pos)}")
+        self._refresh_cash(pos)
+
+    def _refresh_cash(self, positions=None):
+        cash = self.db.cash()
+        self.cash_table.setRowCount(len(cash))
+        for r, c in enumerate(cash):
+            amount = QTableWidgetItem(f"{c['amount']:,.2f}")
+            amount.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            when = str(c.get("updated_at") or "")[:10]
+            for col, item in enumerate((QTableWidgetItem(c["portfolio"]),
+                                        QTableWidgetItem(c["currency"]), amount,
+                                        QTableWidgetItem(when))):
+                self.cash_table.setItem(r, col, item)
+        self.cash_table.resizeColumnsToContents()
+        # Offer the portfolios that exist, keeping whatever is being typed.
+        names = sorted(({str(p.get("portfolio") or "") for p in (positions or self.db.positions())}
+                        | {c["portfolio"] for c in cash}) - {""})
+        typed = self.cash_portfolio.currentText()
+        self.cash_portfolio.blockSignals(True)
+        self.cash_portfolio.clear()
+        self.cash_portfolio.addItems(names)
+        self.cash_portfolio.setCurrentText(typed or (names[0] if names else ""))
+        self.cash_portfolio.blockSignals(False)
+
+    def set_cash(self):
+        portfolio = self.cash_portfolio.currentText().strip()
+        currency = self.cash_currency.currentText().strip().upper()
+        if not portfolio or len(currency) != 3 or not currency.isalpha():
+            self.status.setText("Cash needs a portfolio name and a three-letter currency "
+                                "code such as CAD or USD.")
+            return
+        amount = self.cash_amount.value()
+        self.db.set_cash(portfolio, currency, amount)
+        self._refresh_cash()
+        self.status.setText(f"Cash set: {portfolio} holds {amount:,.2f} {currency}. "
+                            "Home and Analytics include it at their next refresh.")
+
+    def delete_cash(self):
+        rows = sorted({idx.row() for idx in self.cash_table.selectionModel().selectedRows()})
+        removed = []
+        for row in rows:
+            portfolio, currency = self.cash_table.item(row, 0), self.cash_table.item(row, 1)
+            if portfolio and currency:
+                self.db.delete_cash(portfolio.text(), currency.text())
+                removed.append(f"{currency.text()} in {portfolio.text()}")
+        self._refresh_cash()
+        self.status.setText(("Removed cash: " + ", ".join(removed) + ".") if removed
+                            else "Select a cash row to remove.")
     def add(self):
         sym = self.sym.text().strip().upper()
         if sym:
@@ -3438,11 +3519,14 @@ class _MarketRefreshWorker(QThread):
     # between chunks.
     CHUNK = 40
 
-    def __init__(self, symbols, period="1y", interval="1d"):
+    def __init__(self, symbols, period="1y", interval="1d", latest_for=()):
         super().__init__()
         self.symbols = list(dict.fromkeys(symbols))   # de-dup, preserve order
         self.period = period
         self.interval = interval
+        # Symbols to carry up to their latest trade when the daily bars lag -
+        # the holdings a real-money screen values (see with_latest_prices).
+        self.latest_for = list(latest_for or ())
         self._stop = False
 
     def stop(self):
@@ -3467,6 +3551,9 @@ class _MarketRefreshWorker(QThread):
                 self.progress.emit(min(done, total), total)
             except RuntimeError:
                 pass
+        if self.latest_for and not self._stop:
+            from tradelab.data.market_data import with_latest_prices
+            history = with_latest_prices(history, self.latest_for)
         try:
             self.done.emit(history)
         except RuntimeError:          # panel already torn down
@@ -4394,6 +4481,18 @@ def _hint(text):
     lbl.setWordWrap(True)
     lbl.setStyleSheet("color:#8b98a5; font-style:italic;")
     return lbl
+
+
+def _prices_as_of(iso_date) -> str:
+    """'prices as of Fri 09 Oct' for a valuation's oldest price, or '' when
+    nothing was priced. Shown wherever a book is valued, because a total read
+    on Friday evening from Thursday's closes looks exactly like a current one."""
+    if not iso_date:
+        return ""
+    try:
+        return f"prices as of {pd.Timestamp(iso_date):%a %d %b}"
+    except (TypeError, ValueError):
+        return ""
 
 
 def _scroll_tab(widget):
@@ -7914,6 +8013,7 @@ class PortfolioAnalyticsPanel(AutoRefresh, QWidget):
         self.cfg = cfg
         self._worker = None
         self._chart_worker = None
+        self._cash = []
         self._lt_worker = None
         self._lt_rows = []
         self._lt_currency = None
@@ -8028,20 +8128,24 @@ class PortfolioAnalyticsPanel(AutoRefresh, QWidget):
             self.headline.setText("No positions yet — add holdings in the Portfolio tab first.")
             return
         self._positions = positions
+        self._cash = self.db.cash()
         self._bench_symbol = self.bench.text().strip().upper() or "SPY"
         choice = self.currency.currentText()
         self._target = None if choice.startswith("Native") else choice
 
         hold_syms = {str(p["symbol"]).upper() for p in positions}
-        # FX pairs needed to convert every non-target currency into the target.
+        # FX pairs needed to convert every non-target currency into the target,
+        # the cash's own currencies included.
         self._fx_pairs = {}
         if self._target:
-            needed = {currency_of(s) for s in hold_syms} | {currency_of(self._bench_symbol)}
+            needed = ({currency_of(s) for s in hold_syms} | {currency_of(self._bench_symbol)}
+                      | {str(c["currency"]).upper() for c in self._cash})
             for ccy in needed - {self._target}:
                 self._fx_pairs[ccy] = fx_pair_symbol(ccy, self._target)
         symbols = sorted(hold_syms | {self._bench_symbol} | set(self._fx_pairs.values()))
         self.status.setText(f"Loading {len(symbols)} symbols…")
-        self._worker = _MarketRefreshWorker(symbols, period=self.period.currentText())
+        self._worker = _MarketRefreshWorker(symbols, period=self.period.currentText(),
+                                            latest_for=sorted(hold_syms | {self._bench_symbol}))
         self._worker.done.connect(self._on_loaded)
         self._worker.start()
         self._start_lookthrough(sorted(hold_syms))
@@ -8061,7 +8165,7 @@ class PortfolioAnalyticsPanel(AutoRefresh, QWidget):
         bench_df = history.get(self._bench_symbol)
         data = pa.summarize(self._positions, history, benchmark_df=bench_df,
                             benchmark_symbol=self._bench_symbol,
-                            target_currency=self._target, fx=fx)
+                            target_currency=self._target, fx=fx, cash=self._cash)
         self._render(data)
         self.mark_refreshed()
         self._lt_rows = data.get("holdings") or []
@@ -8083,7 +8187,14 @@ class PortfolioAnalyticsPanel(AutoRefresh, QWidget):
         suf = f" {cur}" if cur else ""       # the currency unit, shown on money values
         self.headline.setText(d["text"])
         tv = d["total_value"]
-        self._set_metric("value", f"${tv:,.0f}{suf}" if tv else "—")
+        if tv and d.get("cash"):
+            # The account's value, as the broker shows it: positions plus cash.
+            self._set_metric("value", f"${d['account_value']:,.0f}{suf}")
+            self.metrics["value"].setToolTip(
+                f"Positions ${tv:,.0f} + cash ${d['cash_value']:,.0f}{suf}")
+        else:
+            self._set_metric("value", f"${tv:,.0f}{suf}" if tv else "—")
+            self.metrics["value"].setToolTip("")
         up, upp = d["total_unrealized"], d["total_unrealized_pct"]
         if up is None:
             unreal_txt = "—"
@@ -8117,6 +8228,9 @@ class PortfolioAnalyticsPanel(AutoRefresh, QWidget):
                 + (f"   ·   window {d['window_days']} days" if d['window_days'] else ""))
         if cur:
             parts.append(f"Totals and P&L in {cur}; per-share prices in each holding's native currency.")
+        as_of = _prices_as_of(d.get("prices_as_of"))
+        if as_of:
+            parts.append(as_of[0].upper() + as_of[1:] + ".")
         if d.get("window_limited_by"):
             parts.append(f"⚠ Window shortened by {d['window_limited_by']}'s limited history — "
                          "risk metrics cover the common dates only.")
@@ -8347,9 +8461,12 @@ class _DividendWorker(QThread):
 
     def run(self):
         try:
-            from tradelab.data.market_data import get_histories, get_dividends
+            from tradelab.data.market_data import (get_histories, get_dividends,
+                                                   with_latest_prices)
             hist = get_histories(sorted(set(self.symbols) | set(self.fx_symbols)),
                                  self.period, "1d")
+            # Yields are read at today's price, not at a close Yahoo is late with.
+            hist = with_latest_prices(hist, self.symbols)
             divs = {s: get_dividends(s) for s in self.symbols}
             self.done.emit(hist, divs, "")
         except Exception as exc:
@@ -9421,9 +9538,14 @@ class _HomeWorker(QThread):
     def run(self):
         try:
             from tradelab.data.market_data import (get_histories, get_dividends,
-                                                   get_fund_composition, get_calendar)
+                                                   get_fund_composition, get_calendar,
+                                                   with_latest_prices)
             hist = get_histories(sorted(set(self.symbols) | set(self.fx_symbols)),
                                  self.period, "1d")
+            # Without this, an evening when Yahoo is late with the day's bar
+            # shows yesterday's close as the value and yesterday's move as
+            # "today" - what happened on 9 October 2026.
+            hist = with_latest_prices(hist, self.symbols)
             divs = {s: get_dividends(s) for s in self.symbols}
             # Both are cached per symbol in market_data, so the Analytics tab's
             # own look-through afterwards costs nothing.
@@ -9464,6 +9586,7 @@ class HomePanel(AutoRefresh, QWidget):
         self._worker = None
         self._chart_worker = None
         self._loaded_once = False
+        self._cash = []
         layout = QVBoxLayout(self)
 
         top = QHBoxLayout()
@@ -9598,13 +9721,15 @@ class HomePanel(AutoRefresh, QWidget):
             self._loaded_once = True
             return
         self._positions = positions
+        self._cash = self.db.cash()
         choice = self.currency.currentText()
         self._target = None if choice.startswith("Native") else choice
         self._bench = "SPY"
         symbols = sorted({str(p["symbol"]).upper() for p in positions})
         self._fx_pairs = {}
         if self._target:
-            for ccy in {currency_of(s) for s in symbols} | {currency_of(self._bench)}:
+            for ccy in ({currency_of(s) for s in symbols} | {currency_of(self._bench)}
+                        | {str(c["currency"]).upper() for c in self._cash}):
                 if ccy != self._target:
                     self._fx_pairs[ccy] = fx_pair_symbol(ccy, self._target)
         self.status.setText("Refreshing…")
@@ -9628,8 +9753,10 @@ class HomePanel(AutoRefresh, QWidget):
             self._positions, history, divs or {},
             benchmark_df=history.get(self._bench), benchmark_symbol=self._bench,
             target_currency=self._target, fx=fx, compositions=comps,
-            calendars=cals)
-        self.status.setText(f"Updated {time.strftime('%H:%M')}")
+            calendars=cals, cash=self._cash)
+        as_of = _prices_as_of((data.get("analytics") or {}).get("prices_as_of"))
+        self.status.setText(f"Updated {time.strftime('%H:%M')}"
+                            + (f" · {as_of}" if as_of else ""))
         self._render(data)
 
     def _set_tile(self, key, text, colour=None):
@@ -9649,8 +9776,12 @@ class HomePanel(AutoRefresh, QWidget):
             return
 
         a = d["analytics"] or {}
-        value = a.get("total_value")
+        from tradelab.core.home import book_value
+        value = book_value(a)
         self._set_tile("value", f"${value:,.0f}{suf}" if value else "—")
+        self.metrics["value"].setToolTip(
+            f"Positions ${a['total_value']:,.0f} + cash ${a['cash_value']:,.0f}{suf}"
+            if value and a.get("cash") else "")
 
         day = d.get("day_change")
         self._set_tile("today", f"{day:+,.0f}{suf}" if day is not None else "—",

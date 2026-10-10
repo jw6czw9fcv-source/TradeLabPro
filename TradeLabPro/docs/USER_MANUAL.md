@@ -144,7 +144,11 @@ time you've looked at the window, the numbers are already there.
 ### The tiles
 
 **Book value** · **Today** · **Unrealized P&L** · **Annual income** — in your
-display currency (**CAD** by default; switch at the top right).
+display currency (**CAD** by default; switch at the top right). **Book value**
+includes any **cash** you recorded on the Portfolio tab (section 8), so it reads
+like the account value your broker shows; hover over it for the split between
+positions and cash. The line under the title says when Home last refreshed and
+which trading day its **prices are as of**.
 
 ### This year
 
@@ -584,15 +588,30 @@ importer maps each holding to the correct listing using its exchange/currency an
 as a fallback, by matching each candidate's price to your cost basis, so a mixed
 Canadian/US book prices correctly.
 
+### Cash
+
+An account holds cash beside its positions, and your broker counts it in the
+account's value. Record it under the positions table: pick the **portfolio**,
+the **currency** (a three-letter code such as CAD or USD) and the **amount**,
+then click **Set cash**. Setting the same portfolio and currency again replaces
+the amount; **Remove selected cash** deletes a line. A negative amount is a
+margin loan: it is owed, so it lowers the total.
+
+Home and Analytics add the cash to your positions, converted to the display
+currency, so their total matches your broker's net liquidation value. Only the
+total: unrealized P&L, weights and the risk figures still describe what is
+invested. The cash is typed by hand — update it when it changes.
+
 ### Analytics — your book's risk profile
 
 The **Analytics** tab treats your holdings as one book. Pick a **Benchmark**
 (default SPY), a **History** window, and a display **Currency** (default **CAD**),
 then click **Analyze**. It fetches prices in the background and shows:
 
-- **Metric tiles** — total value, unrealized P&L, return vs the benchmark (both
-  named, e.g. "+47.0% vs SPY +19.2%"), beta, annualized volatility, and max
-  drawdown.
+- **Metric tiles** — total value (your positions plus any cash recorded on the
+  Portfolio tab; hover for the split), unrealized P&L, return vs the benchmark
+  (both named, e.g. "+47.0% vs SPY +19.2%"), beta, annualized volatility, and max
+  drawdown. The line under the tiles says which trading day the prices are as of.
 - **Holdings table** — each position's native currency (**Ccy**), last price,
   market value, weight of the book, unrealized P&L, and its **Return** over the
   selected History window. **Click any row to chart that symbol.**
@@ -608,8 +627,17 @@ mixed-currency account:
 - **Per-share prices stay native** — Last and Avg entry show each holding's real
   quoted price (a US stock shows its US price, the one you recognize).
 - **Dollar amounts are in your chosen currency** (CAD by default) — market value,
-  cost, unrealized P&L and the total are converted with the live FX rate, so the
-  total matches your broker's Net Liquidity and everything is apples-to-apples.
+  cost, unrealized P&L and the total are converted with the live FX rate, so —
+  with your cash recorded — the total matches your broker's Net Liquidity and
+  everything is apples-to-apples.
+
+**Today's prices, even when Yahoo is late.** After the close, Yahoo can take
+hours to publish the day's daily bar. Valued on yesterday's close, the book would
+be a day behind, and Home would call yesterday's move "today". So when a
+holding's latest trade (from the day's 5-minute bars) is from a later session
+than its daily history, Home, Analytics and Dividends use that trade instead.
+The **prices as of** date shown with each total is the trading day of the oldest
+price used.
 - **Unreal %** is the stock's own price move (unaffected by FX), and choosing
   **Native (mixed)** shows each holding entirely in its own currency instead.
 
@@ -1284,7 +1312,7 @@ retirement with that."*
 | `retirement_projection` | the Retirement Sim plan, with any assumption — or live balances — overridden for that question only |
 | `quebec_tax` | Quebec + federal tax for an income and age, with the marginal rate |
 | `book_summary` · `look_through` · `dividend_income` | what the Analytics and Dividends tabs show |
-| `portfolio` · `etf_screener` · `journal_summary` | your stored holdings, ETF comparison and trade journal |
+| `portfolio` · `etf_screener` · `journal_summary` | your stored holdings and cash, ETF comparison and trade journal |
 
 **It cannot change anything.** It opens your database in SQLite's read-only mode,
 so a write is refused by the database itself, and TradeLab has no way to place an

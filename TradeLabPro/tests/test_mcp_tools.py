@@ -101,6 +101,20 @@ def test_portfolio_lists_what_is_stored(data):
     out = tools.portfolio()
     assert out["count"] == 2
     assert {p["symbol"] for p in out["positions"]} == {"RY.TO", "VTI"}
+    assert out["cash"] == []
+
+
+def _record_cash(path, portfolio, currency, amount):
+    from tradelab.data.database import Database
+    db = Database(path=path)
+    db.set_cash(portfolio, currency, amount)
+    db.conn.close()
+
+
+def test_portfolio_lists_the_cash_too(data):
+    _record_cash(data, "IBKR", "CAD", 1500.0)
+    cash = tools.portfolio()["cash"]
+    assert [(c["portfolio"], c["currency"], c["amount"]) for c in cash] == [("IBKR", "CAD", 1500.0)]
 
 
 def test_quebec_tax_is_the_core_model(data):
@@ -227,6 +241,26 @@ def test_book_summary_values_the_book_without_the_daily_curve(data, prices):
     assert out["total_value"] > 0
     assert "equity" not in out                     # 260 daily points stay out
     assert len(out["holdings"]) == 2
+    assert out["prices_as_of"] == "2026-10-01"     # the day of the oldest price used
+
+
+def test_book_summary_adds_the_cash_to_the_account_value(data, prices):
+    _record_cash(data, "IBKR", "USD", 1000.0)
+    out = tools.book_summary()
+    rate = prices(["USDCAD=X"])["USDCAD=X"]["Close"].iloc[-1]
+    assert out["cash_value"] == pytest.approx(1000.0 * rate)       # converted to CAD
+    assert out["account_value"] == pytest.approx(out["total_value"] + out["cash_value"])
+
+
+def test_book_summary_prices_at_a_trade_newer_than_the_daily_bars(data, prices, monkeypatch):
+    from tradelab.data import market_data
+    when = pd.Timestamp("2026-10-02 15:55", tz="America/New_York")
+    monkeypatch.setattr(market_data, "get_latest_prices",
+                        lambda symbols: {"VTI": {"price": 999.0, "time": when}})
+    out = tools.book_summary()
+    vti = next(h for h in out["holdings"] if h["symbol"] == "VTI")
+    assert vti["last"] == pytest.approx(999.0) and vti["price_date"] == "2026-10-02"
+    assert out["prices_as_of"] == "2026-10-01"     # RY.TO's close is still the oldest
 
 
 def test_made_up_prices_are_never_used_for_real_money(data, monkeypatch):

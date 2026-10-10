@@ -171,8 +171,21 @@ SCHEMA_V7 = """
 ALTER TABLE retirement_incomes ADD COLUMN indexed INTEGER NOT NULL DEFAULT 1;
 """
 
+# v8: the cash an account holds beside its positions, one amount per portfolio
+# and currency - what turns "positions worth X" into the account value a broker
+# shows. Typed by hand, so it carries the time it was last set.
+SCHEMA_V8 = """
+CREATE TABLE IF NOT EXISTS portfolio_cash (
+    portfolio TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    amount REAL NOT NULL DEFAULT 0,
+    updated_at TEXT,
+    PRIMARY KEY (portfolio, currency)
+);
+"""
+
 MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
-                         SCHEMA_V6, SCHEMA_V7]
+                         SCHEMA_V6, SCHEMA_V7, SCHEMA_V8]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
 SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
@@ -277,6 +290,31 @@ class Database:
     def delete_position(self, position_id: int):
         self.conn.execute("DELETE FROM portfolio_positions WHERE id=?", (position_id,))
         self.conn.commit()
+
+    def cash(self) -> list:
+        """Every cash balance, as dicts of portfolio / currency / amount /
+        updated_at, ordered by portfolio then currency."""
+        return [dict(r) for r in self.conn.execute(
+            "SELECT portfolio, currency, amount, updated_at FROM portfolio_cash "
+            "ORDER BY portfolio, currency").fetchall()]
+
+    def set_cash(self, portfolio: str, currency: str, amount: float) -> None:
+        """Record how much `currency` a portfolio holds, replacing any amount
+        already recorded for that pair."""
+        portfolio, currency = str(portfolio).strip(), str(currency).strip().upper()
+        if not portfolio or not currency:
+            raise ValueError("A cash balance needs a portfolio and a currency.")
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO portfolio_cash(portfolio, currency, amount, updated_at) "
+                "VALUES (?,?,?,?) ON CONFLICT(portfolio, currency) DO UPDATE SET "
+                "amount = excluded.amount, updated_at = excluded.updated_at",
+                (portfolio, currency, float(amount), _now_iso()))
+
+    def delete_cash(self, portfolio: str, currency: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM portfolio_cash WHERE portfolio=? AND currency=?",
+                              (str(portfolio).strip(), str(currency).strip().upper()))
 
     def set_portfolio_positions(self, portfolio: str, positions: list) -> int:
         """Replace all rows in a named portfolio with `positions` (dicts with

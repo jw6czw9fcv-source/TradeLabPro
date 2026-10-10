@@ -58,6 +58,13 @@ class DataProvider(ABC):
         per-symbol rate-limiting a long serial refresh hits."""
         return {s: self.get_history(s, period, interval) for s in dict.fromkeys(symbols)}
 
+    def get_latest_prices(self, symbols) -> dict:
+        """Each symbol's most recent traded price, {symbol: {"price": float,
+        "time": Timestamp}}, for valuing a book before the daily bars have caught
+        up with the session. Sources without intraday data return {} — a price is
+        never guessed."""
+        return {}
+
     def available(self) -> bool:
         return True
 
@@ -78,6 +85,10 @@ class YahooProvider(DataProvider):
     def get_histories(self, symbols, period="1y", interval="1d"):
         from tradelab.data import market_data as md
         return md._yahoo_histories(symbols, period, interval)
+
+    def get_latest_prices(self, symbols):
+        from tradelab.data import market_data as md
+        return md._yahoo_latest_prices(symbols)
 
     def get_dividends(self, symbol):
         from tradelab.data import market_data as md

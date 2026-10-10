@@ -315,9 +315,10 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
               benchmark_df=None, benchmark_symbol: str = "SPY",
               target_currency: str = None, fx: dict = None,
               market_read: dict = None, compositions: dict = None,
-              calendars: dict = None, today=None) -> dict:
+              calendars: dict = None, today=None, cash: list = None) -> dict:
     """Everything the Home tab renders. Reuses portfolio_analytics and dividends
-    so every figure agrees with its own tab."""
+    so every figure agrees with its own tab. `cash` counts toward the book's
+    value, as it does on Analytics."""
     if not positions:
         return {"has_positions": False, "currency": target_currency,
                 "analytics": None, "income": None, "movers": [], "attention": [],
@@ -328,7 +329,7 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
 
     analytics = pa.summarize(positions, histories, benchmark_df=benchmark_df,
                              benchmark_symbol=benchmark_symbol,
-                             target_currency=target_currency, fx=fx)
+                             target_currency=target_currency, fx=fx, cash=cash)
     prices = {}
     for pos in pa.aggregate_positions(positions):
         close = pa._close((histories or {}).get(pos["symbol"]))
@@ -366,11 +367,23 @@ def summarize(positions: list, histories: dict, dividends: dict = None,
     return result
 
 
+def book_value(analytics: dict):
+    """What the book is worth: its positions plus any cash recorded with them -
+    the figure a broker shows as the account's value. None when nothing could be
+    priced, cash or not: a total missing its holdings would look like a loss."""
+    a = analytics or {}
+    if not a.get("total_value"):
+        return None
+    return a.get("account_value", a["total_value"]) if a.get("cash") else a["total_value"]
+
+
 def _headline(r: dict) -> str:
     a = r["analytics"] or {}
     ccy = f" {r['currency']}" if r.get("currency") else ""
-    value = a.get("total_value")
+    value = book_value(a)
     parts = [f"Your book is worth ${value:,.0f}{ccy}" if value else "Book value unavailable"]
+    if value and a.get("cash"):
+        parts[0] += f", ${a['cash_value']:,.0f} of it in cash"
     day = r.get("day_change")
     if day is not None:
         direction = "up" if day >= 0 else "down"

@@ -98,34 +98,38 @@ def _target_currency(currency: str):
     return None if currency.lower().startswith("native") else currency.upper()
 
 
-def _fx_pairs(symbols, target, extra=()):
+def _fx_pairs(symbols, target, extra=(), currencies=()):
     from tradelab.core.portfolio_analytics import currency_of, fx_pair_symbol
     if not target:
         return {}
-    needed = {currency_of(s) for s in symbols} | {currency_of(s) for s in extra}
+    needed = ({currency_of(s) for s in symbols} | {currency_of(s) for s in extra}
+              | {str(c).upper() for c in currencies if c})
     return {ccy: fx_pair_symbol(ccy, target) for ccy in needed - {target}}
 
 
-def _real_histories(symbols, period: str):
+def _real_histories(symbols, period: str, latest_for=()):
     """Price histories, with the synthetic fallback removed. Real money is
     never valued on generated prices - a failed download shows as missing,
-    exactly as it does in the Analytics tab."""
-    from tradelab.data.market_data import get_histories, is_synthetic
+    exactly as it does in the Analytics tab. The symbols in `latest_for` are
+    carried up to their latest trade when the daily bars lag behind it."""
+    from tradelab.data.market_data import get_histories, is_synthetic, with_latest_prices
     history = get_histories(sorted(set(symbols)), period, "1d") or {}
-    return {s: df for s, df in history.items() if df is not None and not is_synthetic(df)}
+    history = {s: df for s, df in history.items() if df is not None and not is_synthetic(df)}
+    return with_latest_prices(history, sorted(set(latest_for))) if latest_for else history
 
 
 # -- the tools ------------------------------------------------------------------------
 
 def portfolio() -> dict:
-    """Holdings as TradeLab stores them."""
+    """Holdings and cash as TradeLab stores them."""
     db = open_database()
     try:
-        positions = db.positions()
+        positions, cash = db.positions(), db.cash()
     finally:
         db.conn.close()
     return {"positions": jsonable(positions), "count": len(positions),
-            "note": "Shares and entry (average cost) prices as stored in TradeLab - "
+            "cash": jsonable(cash),
+            "note": "Shares, entry (average cost) prices and cash as recorded in TradeLab - "
                     "for live quantities, ask the brokerage."}
 
 
@@ -134,17 +138,19 @@ def book_summary(currency: str = "CAD", period: str = "1y", benchmark: str = "SP
     from tradelab.core import portfolio_analytics as pa
     db = open_database()
     try:
-        positions = _positions(db)
+        positions, cash = _positions(db), db.cash()
     finally:
         db.conn.close()
     benchmark = (benchmark or "SPY").strip().upper()
     target = _target_currency(currency)
     holdings = sorted({str(p["symbol"]).upper() for p in positions})
-    fx_pairs = _fx_pairs(holdings, target, extra=[benchmark])
-    history = _real_histories(set(holdings) | {benchmark} | set(fx_pairs.values()), period)
+    fx_pairs = _fx_pairs(holdings, target, extra=[benchmark],
+                         currencies=[c["currency"] for c in cash])
+    history = _real_histories(set(holdings) | {benchmark} | set(fx_pairs.values()), period,
+                              latest_for=set(holdings) | {benchmark})
     fx = {ccy: history.get(sym) for ccy, sym in fx_pairs.items()} if target else None
     data = pa.summarize(positions, history, benchmark_df=history.get(benchmark),
-                        benchmark_symbol=benchmark, target_currency=target, fx=fx)
+                        benchmark_symbol=benchmark, target_currency=target, fx=fx, cash=cash)
     data.pop("equity", None)                       # 260 daily points: noise here
     data["note"] = NOT_ADVICE
     return jsonable(data)
@@ -186,7 +192,7 @@ def dividend_income(currency: str = "CAD") -> dict:
     target = _target_currency(currency)
     symbols = sorted({str(p["symbol"]).upper() for p in positions})
     fx_pairs = _fx_pairs(symbols, target)
-    history = _real_histories(set(symbols) | set(fx_pairs.values()), "1y")
+    history = _real_histories(set(symbols) | set(fx_pairs.values()), "1y", latest_for=symbols)
     fx = {ccy: history.get(sym) for ccy, sym in fx_pairs.items()} if target else None
     prices = {}
     for sym in symbols:
