@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.51.0 - Retirement, with its taxes paid - a registered withdrawal now pays its own tax, the money a plan saves goes into the TFSA first, and the growth of what is saved outside it is taxed
+
 2.50.0 - An IBKR account, imported whole - an IBKR import fills the portfolio you name, one per account, and brings the account's cash along with its positions
 
 2.49.0 - The whole account, at today's prices - the cash an account holds now counts in its value, so Home and Analytics read like your broker's total; and the book is valued at today's trades even when Yahoo is hours late with the day's bar

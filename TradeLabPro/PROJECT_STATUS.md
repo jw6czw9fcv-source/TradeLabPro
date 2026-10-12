@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.50.0
+Current version: 2.51.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.51.0 (Retirement, with its taxes paid)
+- **Fixed: registered withdrawals made to cover spending were not taxed** (only the forced RRIF minimum was). `retirement_plan.gross_up` (regula falsi, Illinois) finds the withdrawal that pays its own tax; treated as a RRIF payment, eligible pension income from 65.
+- **Surplus into the TFSA first**: per-person room today (People column "TFSA room", schema v9 `retirement_people.tfsa_room`), `tax_quebec.tfsa_dollar_limit` per person per year ($7,000 in 2026, indexed, nearest $500), the previous year's TFSA withdrawals. The rest goes to a non-registered account whose growth is taxed yearly as a capital gain (`tax_quebec.CAPITAL_GAINS_INCLUSION` = 0.5), declared the following year, losses carried, a household's gains split between the people. Rows gain `surplus_tfsa`, `taxable_gains`, `tfsa_room`; results table "Into TFSA"; MCP `into_tfsa`.
 
 ## Completed in 2.50.0 (An IBKR account, imported whole)
 - **IBKR import into a chosen portfolio, cash included**: an "into" box on the Portfolio tab (`PortfolioPanel.import_portfolio`, default "IBKR", one per account). `portfolio_import.parse_ibkr_cash` reads Flex `CashReportCurrency@endingCash` and the Activity Statement's "Ending Cash" rows, skipping the base-currency summary; `fetch_ibkr_holdings` returns positions and cash from one Flex pull; `Database.replace_cash` swaps a portfolio's cash in one transaction. A report without a Cash Report section leaves the recorded cash untouched.

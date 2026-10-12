@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.51.0 - Retirement, with its taxes paid
+
+### Fixed
+- **A withdrawal from a registered account to cover the spending was not taxed.** Only the forced RRIF minimum was. The projection now treats every registered withdrawal as its owner's income - a RRIF payment, so eligible pension income from 65 and splittable - and takes enough more to pay its own tax, solved against the real brackets and credits rather than an assumed rate. **From capital** shows the gross amount.
+- **The growth of the money a plan saves was not taxed.** It now goes first into the TFSA while there is room, and only the rest into a non-registered account, whose growth is taxed every year as a capital gain - half of it taxable, declared the following year, with losses carried forward. Taxing it every year is a little early for a buy-and-hold investor, never late: deferring it would leave a tax bill hidden inside the closing balance.
+
+### Added
+- **TFSA room in the People table** - the unused room each person has today (CRA's My Account shows it; blank counts as none). Each year adds the new limit for each person - $7,000 in 2026, indexed to inflation and rounded to the nearest $500, as canada.ca states it - and gives back the TFSA withdrawals of the year before.
+- An **Into TFSA** column beside Reinvested; Claude's retirement tool returns it too (`into_tfsa`).
+
+### Verified
+- Every rule read on the governments' own pages on 2026-10-10 and recorded with its source: the TFSA limit and its indexation (canada.ca), the one-half inclusion rate after the cancelled increase (pm.gc.ca, 21 March 2025; quebec.ca, 25 November 2025), RRIF payments as eligible pension income from 65 (canada.ca).
+- Full pytest suite (1487) passes, including 19 new tests checkable by hand: a $10,000 gap at a flat 25% takes $13,333 out of an RRSP; the gross-up across a kinked schedule; the TFSA room filled first, renewed each year per person and given back after a withdrawal; growth taxed the year after, a loss carried forward, a household's gains shared. 500 return paths still run in a fraction of a second.
+- Projections made from 2.48.0 to 2.50.0 were optimistic for plans that draw on registered accounts or save a large surplus.
+
 ## 2.50.0 - An IBKR account, imported whole
 
 ### Added
