@@ -44,15 +44,20 @@ import inspect
 from dataclasses import dataclass, field
 from datetime import date
 
-# Account kinds. The difference that matters is how a withdrawal is taxed and
-# whether it can be forced:
-#   REGISTERED   REER/FERR/FTQ - fully taxable on withdrawal, and after the
-#                year the holder turns 71 a minimum *must* come out whether it
-#                is needed or not.
-#   TFSA         CELI - withdrawals are not income, and nothing forces one.
-#   TAXABLE      non-registered - only the gain is taxed, and this module does
-#                not model an adjusted cost base, so it treats a withdrawal as
-#                tax-free and says so rather than guessing at a capital gain.
+# Account kinds. The difference that matters is how the money is taxed and
+# whether a withdrawal can be forced:
+#   REGISTERED   REER/FERR/FTQ - every withdrawal is the owner's income, taxed
+#                like a RRIF payment (eligible pension income from 65), and
+#                after the year the holder turns 71 a minimum *must* come out
+#                whether it is needed or not. Covering a gap takes more than the
+#                gap: the withdrawal has to pay its own tax too.
+#   TFSA         CELI - neither growth nor withdrawals are income, and nothing
+#                forces one. A withdrawal comes back as room the next year.
+#   TAXABLE      non-registered - growth is taxed as a capital gain (half of it
+#                is income) the year after it happens, as though the account
+#                were realised every year. That is a little early for a
+#                buy-and-hold investor, never late: deferring it instead would
+#                leave a tax bill hidden inside the closing balance.
 REGISTERED, TFSA, TAXABLE = "registered", "tfsa", "taxable"
 
 # The year a registered plan must start paying out: the holder turns 71 during
@@ -207,29 +212,42 @@ class Plan:
     # without a tax model and the rules can change without touching it.
     tax_fn: object = None
     # After-tax income beyond the spending - a RRIF minimum that was not
-    # needed, a wage still coming in - is reinvested in a non-registered
-    # account drawn last, instead of vanishing from the ledger. Until this
-    # existed it did vanish: on a real plan, several hundred thousand dollars
-    # over thirty years, which made every projection too pessimistic and made
-    # spending less look nearly worthless. Off only for comparison.
+    # needed, a wage still coming in - is saved instead of vanishing from the
+    # ledger: into the TFSA while there is room, then a non-registered account,
+    # both drawn last. Until this existed it did vanish: on a real plan,
+    # several hundred thousand dollars over thirty years, which made every
+    # projection too pessimistic and made spending less look nearly worthless.
+    # Off only for comparison.
     reinvest_surplus: bool = True
+    # Unused TFSA contribution room each person has today, by name - CRA's My
+    # Account shows it. A name left out counts as none, which can only make the
+    # plan look poorer than it is, never richer.
+    tfsa_room: dict | None = None
+    # The TFSA dollar limit for a calendar year, per person - injected like the
+    # tax model (see tax_quebec.tfsa_dollar_limit). None adds no new room.
+    tfsa_limit: object = None
+    # The share of a capital gain that is taxable income. One half: the
+    # increase to two-thirds was cancelled federally (21 March 2025) and in
+    # Québec (25 November 2025) - see tax_quebec.CAPITAL_GAINS_INCLUSION.
+    gains_inclusion: float = 0.5
 
 
-# The account the surplus goes to. Non-registered, so - like every taxable
-# account here - its withdrawals are not taxed and neither is its growth,
-# which is optimistic and said so wherever the figure is shown.
+# Where the surplus goes: the TFSA first, while there is room, because what
+# grows there is never taxed; then a non-registered account, whose growth is.
+SURPLUS_TFSA_ACCOUNT = "Surplus in TFSA"
 SURPLUS_ACCOUNT = "Surplus reinvested"
 
 
 # What happens *during* the year — the cheques, the tax, the withdrawals — and
 # the balance the year opens with. All of it is priced at the start of the year.
 FLOW_KEYS = ("opening", "income", "forced_withdrawal", "tax",
-             "drawn_from_capital", "surplus", "spending", "unfunded")
-# The balance *after* the year's growth, which is a year later and so a year
-# further from today's prices. Deflating it by the opening factor, which an
-# earlier draft did, quietly overstated every closing balance by one year of
-# inflation.
-CLOSING_KEYS = ("closing",)
+             "drawn_from_capital", "surplus", "surplus_tfsa", "taxable_gains",
+             "spending", "unfunded")
+# Amounts measured *after* the year's growth, which is a year later and so a
+# year further from today's prices. Deflating them by the opening factor,
+# which an earlier draft did, quietly overstated every closing balance by one
+# year of inflation.
+CLOSING_KEYS = ("closing", "tfsa_room")
 
 
 def deflate(rows: list[dict]) -> list[dict]:
@@ -306,6 +324,62 @@ def _order(plan: Plan) -> list[Account]:
     return sorted(plan.accounts, key=lambda a: rank.get(a.name, len(rank)))
 
 
+def _unused_name(name: str, taken) -> str:
+    """`name`, made distinct from every account the person named: a surplus
+    account is never merged into a real one."""
+    while name in taken:
+        name += " "
+    return name
+
+
+def gross_up(needed: float, available: float, added_tax) -> tuple:
+    """The withdrawal that still leaves `needed` once the tax it adds is paid.
+
+    A dollar out of a RRIF is income, so covering a $10,000 gap takes more than
+    $10,000 - how much more depends on where the withdrawal lands in the
+    brackets and the credits it erodes, which is why this solves for it rather
+    than assume a rate. `added_tax(w)` is the extra tax a withdrawal of `w`
+    causes; at most `available` can come out. Returns (withdrawal, tax added).
+    When even everything available does not cover the need, everything comes
+    out.
+
+    Regula falsi with the Illinois correction: what is left after tax rises
+    with the withdrawal (no marginal rate reaches 100%), so the answer is
+    always bracketed, and the correction keeps a kinked tax schedule from
+    stalling it.
+    """
+    if needed <= 0 or available <= 0:
+        return 0.0, 0.0
+    tax_hi = added_tax(available)
+    if available - tax_hi <= needed:
+        return available, tax_hi
+    lo, hi = needed, available
+    tax_lo = added_tax(lo)
+    f_lo, f_hi = lo - tax_lo - needed, available - tax_hi - needed
+    if f_lo >= 0:                          # a withdrawal that adds no tax
+        return lo, tax_lo
+    side = 0
+    for _ in range(100):
+        x = (lo * f_hi - hi * f_lo) / (f_hi - f_lo)
+        tax_x = added_tax(x)
+        f_x = x - tax_x - needed
+        if abs(f_x) < 0.01:
+            return x, tax_x
+        if f_x < 0:
+            lo, f_lo = x, f_x
+            if side == -1:
+                f_hi /= 2.0
+            side = -1
+        else:
+            hi, tax_hi, f_hi = x, tax_x, f_x
+            if side == 1:
+                f_lo /= 2.0
+            side = 1
+        if hi - lo < 0.01:
+            break
+    return hi, tax_hi                      # the side that never leaves the need short
+
+
 def project(plan: Plan) -> list[dict]:
     """One row per year: incomes, forced withdrawals, what had to be drawn to
     meet the spending, tax, and the closing balance.
@@ -316,21 +390,37 @@ def project(plan: Plan) -> list[dict]:
     """
     balances = {a.name: float(a.balance) for a in plan.accounts}
     ages = {p.name: p.age for p in plan.people}
+    names = [p.name for p in plan.people]
     start_year = plan.start_year or date.today().year
     accounts = _order(plan)
     tax_fn = _tax_caller(plan.tax_fn)
-    surplus_name = None
+    surplus_name = tfsa_name = None
     if plan.reinvest_surplus and plan.people:
-        surplus_name = SURPLUS_ACCOUNT
-        while surplus_name in balances:          # never merge into a real account
-            surplus_name += " "
+        surplus_name = _unused_name(SURPLUS_ACCOUNT, balances)
         balances[surplus_name] = 0.0
-        # Last in the withdrawal order: it is what the plan saved beyond its
-        # needs, so it is the last thing to spend.
-        accounts = accounts + [Account(surplus_name, TAXABLE, 0.0, plan.people[0].name)]
+        tfsa_name = _unused_name(SURPLUS_TFSA_ACCOUNT, balances)
+        balances[tfsa_name] = 0.0
+        # Last in the withdrawal order: they hold what the plan saved beyond
+        # its needs, so they are the last thing to spend - the taxed one
+        # before the one that grows tax-free.
+        accounts = accounts + [Account(surplus_name, TAXABLE, 0.0, ""),
+                               Account(tfsa_name, TFSA, 0.0, "")]
+    # The household's TFSA room: what each person has today, then each year's
+    # new limit per person and the withdrawals of the year before.
+    room = sum(max(0.0, float((plan.tfsa_room or {}).get(name) or 0.0)) for name in names)
+    restored = 0.0
+    # Capital gains already earned and declared the following year, by owner;
+    # losses carried forward against later gains, by account.
+    gains_due, losses = {}, {}
     rows = []
 
     for year in range(plan.years):
+        calendar_year = start_year + year
+        if year:
+            if plan.tfsa_limit is not None:
+                room += float(plan.tfsa_limit(calendar_year)) * len(names)
+            room += restored
+        restored = 0.0
         opening = sum(balances.values())
 
         # 1. Income that arrives whether or not it is wanted, kept per person:
@@ -341,6 +431,12 @@ def project(plan: Plan) -> list[dict]:
             by_owner[owner] = by_owner.get(owner, 0.0) + income.amount_at(
                 ages.get(owner, 0), year, plan.inflation)
         gross_income = sum(by_owner.values())
+        # Last year's taxable gains are this year's taxable income - not cash:
+        # the money stays invested, only the tax on it is paid from the year.
+        taxable_gains = sum(gains_due.values())
+        for owner, amount in gains_due.items():
+            by_owner[owner] = by_owner.get(owner, 0.0) + amount
+        gains_due = {}
 
         # 2. The registered minimum. It is forced, it is taxable to the
         #    account's *owner*, and it lands in the household's hands whether
@@ -362,34 +458,80 @@ def project(plan: Plan) -> list[dict]:
             pension_by_owner[account.owner] = pension_by_owner.get(
                 account.owner, 0.0) + take
 
-        taxable = gross_income + forced
         tax = (float(tax_fn(by_owner, ages, pension_by_owner, year))
                if tax_fn else 0.0)
-        available = taxable - tax
+        available = gross_income + forced - tax
 
         # 3. Whatever the spending still needs comes out of capital, in the
         #    order the person chose. Spending is given in today's dollars and
         #    inflated to the year being lived, like the income it is met from.
+        #    A registered withdrawal is the owner's income, so it is grossed up
+        #    to pay its own tax; a TFSA or non-registered one is not income.
         spending = plan.spending * (1.0 + plan.inflation) ** year
         shortfall = max(0.0, spending - available)
         drawn = 0.0
         for account in accounts:
-            if shortfall <= 0:
+            if shortfall <= 0.01:
                 break
-            take = min(balances[account.name], shortfall)
+            balance = balances[account.name]
+            if balance <= 0:
+                continue
+            if account.kind == REGISTERED and tax_fn:
+                owner = account.owner
+                pension = ages.get(owner, 0) >= 65    # a RRIF payment from 65
+
+                def added_tax(amount, owner=owner, pension=pension, base=tax):
+                    incomes = dict(by_owner)
+                    incomes[owner] = incomes.get(owner, 0.0) + amount
+                    pensions = dict(pension_by_owner)
+                    if pension:
+                        pensions[owner] = pensions.get(owner, 0.0) + amount
+                    return float(tax_fn(incomes, ages, pensions, year)) - base
+
+                take, extra = gross_up(shortfall, balance, added_tax)
+                by_owner[owner] = by_owner.get(owner, 0.0) + take
+                if pension:
+                    pension_by_owner[owner] = pension_by_owner.get(owner, 0.0) + take
+                tax += extra
+                received = take - extra
+            else:
+                take = received = min(balance, shortfall)
+                if account.kind == TFSA:
+                    restored += take          # room again next January
             balances[account.name] -= take
             drawn += take
-            shortfall -= take
+            shortfall -= received
+        shortfall = max(0.0, shortfall)
 
-        # 4. Anything left after the spending is saved, not lost.
+        # 4. Anything left after the spending is saved, not lost: into the
+        #    TFSA while there is room, the rest where its growth is taxed.
         surplus = max(0.0, available - spending)
+        into_tfsa = 0.0
         if surplus_name is not None and surplus > 0:
-            balances[surplus_name] += surplus
+            into_tfsa = min(surplus, room)
+            room -= into_tfsa
+            balances[tfsa_name] += into_tfsa
+            balances[surplus_name] += surplus - into_tfsa
 
-        # 5. Growth applies to what is left at the end of the year.
+        # 5. Growth applies to what is left at the end of the year. What a
+        #    non-registered account gained is taxed as a capital gain, declared
+        #    next year; a loss is carried against later gains.
         growth = plan.nominal_return
         if plan.returns:
             growth = plan.returns[year] if year < len(plan.returns) else plan.returns[-1]
+        for account in accounts:
+            if account.kind != TAXABLE:
+                continue
+            gain = balances[account.name] * growth
+            carried = losses.get(account.name, 0.0)
+            losses[account.name] = max(0.0, carried - gain)
+            taxable = max(0.0, gain - carried) * float(plan.gains_inclusion)
+            if taxable <= 0:
+                continue
+            # The surplus account is the household's; anyone else's is its owner's.
+            owners = names if account.name == surplus_name else [account.owner]
+            for owner in owners:
+                gains_due[owner] = gains_due.get(owner, 0.0) + taxable / len(owners)
         for name in balances:
             balances[name] *= (1.0 + growth)
 
@@ -399,12 +541,20 @@ def project(plan: Plan) -> list[dict]:
             "ages": dict(ages),
             "opening": opening,
             "income": gross_income,
+            # Taxable income by person: incomes, registered withdrawals and
+            # last year's taxable gains.
             "income_by_owner": dict(by_owner),
             "forced_withdrawal": forced,
             "tax": tax,
             "drawn_from_capital": drawn,
-            # After-tax income beyond the spending, put in the surplus account.
+            # After-tax income beyond the spending, saved - and how much of it
+            # went into the TFSA.
             "surplus": surplus if surplus_name is not None else 0.0,
+            "surplus_tfsa": into_tfsa,
+            # Capital gains taxed this year (the taxable half, earned last year).
+            "taxable_gains": taxable_gains,
+            # TFSA room left at the end of the year, for the whole household.
+            "tfsa_room": room,
             # What the spending had grown to by this year, so the reader can
             # see the cost rising rather than infer it from the drawdown.
             "spending": spending,
@@ -542,10 +692,17 @@ def plan_from_rows(people: list, accounts: list, incomes: list, *,
     `balances` replaces stored balances by account name (case-insensitive),
     for when a fresher figure is at hand - a brokerage's live balance, say -
     and the rows themselves should not be edited to try it.
+
+    Each person's `tfsa_room` (blank = none) is the TFSA room they have today;
+    the yearly limit and the taxable share of a capital gain come from
+    tax_quebec, which carries their sources.
     """
+    from tradelab.core.tax_quebec import CAPITAL_GAINS_INCLUSION, tfsa_dollar_limit
     override = {str(k).strip().lower(): float(v) for k, v in (balances or {}).items()}
     people_ = [Person(str(r["name"]), int(r.get("age") or 65))
                for r in people if str(r.get("name") or "").strip()]
+    room = {str(r["name"]): float(r.get("tfsa_room") or 0.0)
+            for r in people if str(r.get("name") or "").strip()}
     accounts_ = [Account(str(r["name"]), str(r.get("kind") or "registered").lower(),
                          override.get(str(r["name"]).strip().lower(),
                                       float(r.get("balance") or 0)),
@@ -558,7 +715,10 @@ def plan_from_rows(people: list, accounts: list, incomes: list, *,
     if not people_ or not accounts_:
         return None
     oldest = max(p.age for p in people_)
+    inflation = float(inflation)
     return Plan(people=people_, accounts=accounts_, incomes=incomes_,
                 spending=float(spending), nominal_return=float(nominal_return),
-                inflation=float(inflation), years=max(1, int(until_age) - oldest + 1),
-                tax_fn=tax_fn)
+                inflation=inflation, years=max(1, int(until_age) - oldest + 1),
+                tax_fn=tax_fn, tfsa_room=room,
+                tfsa_limit=lambda year: tfsa_dollar_limit(year, inflation),
+                gains_inclusion=float(CAPITAL_GAINS_INCLUSION))

@@ -280,3 +280,22 @@ def test_an_indexed_table_taxes_the_same_real_income_the_same_way():
     # is slightly higher in real terms. Within a percent, though, where a
     # frozen table would be out by a third.
     assert later / factor == pytest.approx(now, rel=0.01)
+
+
+# -- rules a retirement projection needs beyond the yearly table ------------------
+
+def test_the_tfsa_limit_is_the_published_one_then_indexed_in_500s():
+    from tradelab.core.tax_quebec import TFSA_DOLLAR_LIMIT, tfsa_dollar_limit
+    # canada.ca: $7,000 for 2024 to 2026, indexed and rounded to the nearest $500.
+    assert float(TFSA_DOLLAR_LIMIT) == 7_000 and TFSA_DOLLAR_LIMIT.verified
+    assert tfsa_dollar_limit(2026, 0.03) == 7_000
+    assert tfsa_dollar_limit(2027, 0.03) == 7_000        # 7,210 rounds down
+    assert tfsa_dollar_limit(2028, 0.03) == 7_500        # 7,426 rounds up
+    assert tfsa_dollar_limit(2027, 0.04) == 7_500        # 7,280 rounds up
+    assert tfsa_dollar_limit(2040, 0.0) == 7_000         # no inflation, no change
+
+
+def test_half_of_a_capital_gain_is_taxable():
+    from tradelab.core.tax_quebec import CAPITAL_GAINS_INCLUSION
+    # The increase to two-thirds was cancelled in Ottawa and in Québec.
+    assert float(CAPITAL_GAINS_INCLUSION) == 0.5 and CAPITAL_GAINS_INCLUSION.verified

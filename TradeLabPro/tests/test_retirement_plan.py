@@ -630,3 +630,139 @@ def test_the_old_behaviour_is_still_there_to_compare_against():
                          incomes=[Income("Travail", "me", 30_000, starts_at_age=0)]))
     assert rows[0]["closing"] == pytest.approx(100_000)
     assert rows[0]["surplus"] == 0
+
+
+# -- a registered withdrawal pays its own tax --------------------------------------
+#
+# Until this existed, only the forced RRIF minimum was taxed: a withdrawal made
+# to cover the spending came out of the REER tax-free.
+
+def _flat(rate):
+    return lambda by_owner, ages, pension: sum(by_owner.values()) * rate
+
+
+def test_a_registered_withdrawal_is_grossed_up_to_pay_its_tax():
+    # 10,000 needed at a flat 25%: 13,333 comes out, 3,333 of it is tax.
+    rows = project(_plan(accounts=[Account("REER", REGISTERED, 100_000, "me")],
+                         spending=10_000, years=1, tax_fn=_flat(0.25)))
+    assert rows[0]["drawn_from_capital"] == pytest.approx(13_333.33, abs=0.02)
+    assert rows[0]["tax"] == pytest.approx(3_333.33, abs=0.02)
+    assert rows[0]["unfunded"] == pytest.approx(0)
+    assert rows[0]["closing"] == pytest.approx(100_000 - 13_333.33, abs=0.02)
+
+
+def test_a_tfsa_withdrawal_is_not_income():
+    rows = project(_plan(spending=10_000, years=1, tax_fn=_flat(0.25)))
+    assert rows[0]["drawn_from_capital"] == pytest.approx(10_000)
+    assert rows[0]["tax"] == 0
+
+
+def test_the_withdrawal_is_pension_income_from_65_only():
+    # A RRIF payment qualifies for the pension amount and for splitting at 65.
+    seen = []
+
+    def tax_fn(by_owner, ages, pension):
+        seen.append(pension.get("me", 0.0))
+        return 0.0
+    for age, expect in ((65, True), (64, False)):
+        seen.clear()
+        project(_plan(people=[Person("me", age)], years=1, spending=1_000, tax_fn=tax_fn,
+                      accounts=[Account("REER", REGISTERED, 100_000, "me")]))
+        assert (max(seen) > 0) is expect
+
+
+def test_gross_up_solves_a_kinked_schedule():
+    # Nothing on the first 5,000, then 30%: W - 0.3 (W - 5,000) = 10,000.
+    from tradelab.core.retirement_plan import gross_up
+    take, tax = gross_up(10_000, 50_000, lambda w: max(0.0, w - 5_000) * 0.30)
+    assert take == pytest.approx(12_142.86, abs=0.02)
+    assert take - tax == pytest.approx(10_000, abs=0.02)
+
+
+def test_gross_up_takes_everything_when_it_is_not_enough():
+    from tradelab.core.retirement_plan import gross_up
+    assert gross_up(10_000, 5_000, lambda w: w * 0.25) == (5_000, 1_250)
+    assert gross_up(0, 5_000, lambda w: w * 0.25) == (0.0, 0.0)
+
+
+# -- the surplus goes to the TFSA first ----------------------------------------------
+
+def test_the_surplus_fills_the_tfsa_room_before_anything_else():
+    from tradelab.core.retirement_plan import SURPLUS_ACCOUNT, SURPLUS_TFSA_ACCOUNT
+    rows = project(_plan(spending=10_000, years=2, tfsa_room={"me": 5_000},
+                         tfsa_limit=lambda year: 1_000,
+                         incomes=[Income("Travail", "me", 30_000, starts_at_age=0)]))
+    # Year 1: 20,000 saved, the 5,000 of room first. Year 2: the new 1,000.
+    assert rows[0]["surplus_tfsa"] == pytest.approx(5_000)
+    assert rows[0]["balances"][SURPLUS_TFSA_ACCOUNT] == pytest.approx(5_000)
+    assert rows[0]["balances"][SURPLUS_ACCOUNT] == pytest.approx(15_000)
+    assert rows[1]["surplus_tfsa"] == pytest.approx(1_000)
+    assert rows[1]["balances"][SURPLUS_TFSA_ACCOUNT] == pytest.approx(6_000)
+    assert rows[1]["tfsa_room"] == pytest.approx(0)
+
+
+def test_each_person_brings_a_year_of_new_room():
+    rows = project(_plan(people=[Person("a", 65), Person("b", 62)], years=2,
+                         tfsa_limit=lambda year: 7_000,
+                         incomes=[Income("Travail", "a", 50_000, starts_at_age=0)]))
+    assert rows[0]["surplus_tfsa"] == 0                      # no room typed: none today
+    assert rows[1]["surplus_tfsa"] == pytest.approx(14_000)  # two people, 7,000 each
+
+
+def test_a_tfsa_withdrawal_comes_back_as_room_next_year():
+    rows = project(_plan(accounts=[Account("CELI", TFSA, 10_000, "me")], years=2,
+                         spending=5_000,
+                         incomes=[Income("Travail", "me", 25_000, starts_at_age=1,
+                                         ends_at_age=200)],
+                         people=[Person("me", 0)]))
+    # Age 0: no income, 5,000 out of the CELI. Age 1: 20,000 saved, and the
+    # 5,000 withdrawn is room again.
+    assert rows[0]["drawn_from_capital"] == pytest.approx(5_000)
+    assert rows[1]["surplus_tfsa"] == pytest.approx(5_000)
+
+
+# -- what grows outside the TFSA is taxed -----------------------------------------
+
+def test_non_registered_growth_is_taxed_the_following_year():
+    rows = project(_plan(accounts=[Account("Non-reg", TAXABLE, 100_000, "me")],
+                         nominal_return=0.10, years=2, tax_fn=_flat(0.50)))
+    # Year 1 gains 10,000; half of it is taxable income in year 2, taxed at 50%.
+    assert rows[0]["tax"] == 0
+    assert rows[1]["taxable_gains"] == pytest.approx(5_000)
+    assert rows[1]["tax"] == pytest.approx(2_500)
+    assert rows[1]["drawn_from_capital"] == pytest.approx(2_500)    # paid from the account
+
+
+def test_a_loss_is_carried_against_later_gains():
+    rows = project(_plan(accounts=[Account("Non-reg", TAXABLE, 100_000, "me")],
+                         returns=[-0.10, 0.20, 0.0], years=3))
+    # -10,000, then +18,000 on 90,000: only 8,000 is a gain, 4,000 taxable.
+    assert rows[1]["taxable_gains"] == 0
+    assert rows[2]["taxable_gains"] == pytest.approx(4_000)
+
+
+def test_the_household_surplus_gains_are_shared_between_the_people():
+    rows = project(_plan(people=[Person("a", 65), Person("b", 62)], years=2,
+                         nominal_return=0.10,
+                         incomes=[Income("Travail", "a", 20_000, starts_at_age=0)]))
+    # 20,000 saved, 2,000 of growth, 1,000 taxable - half each.
+    assert rows[1]["income_by_owner"]["b"] == pytest.approx(500)
+    assert rows[1]["income_by_owner"]["a"] == pytest.approx(20_500)
+
+
+def test_the_tfsa_part_of_the_surplus_is_never_taxed():
+    rows = project(_plan(spending=10_000, years=2, nominal_return=0.10,
+                         tfsa_room={"me": 100_000}, tax_fn=_flat(0.50),
+                         incomes=[Income("Travail", "me", 30_000, starts_at_age=0)]))
+    assert rows[1]["taxable_gains"] == 0
+
+
+def test_a_plan_from_the_tables_carries_the_tfsa_rules():
+    from tradelab.core.retirement_plan import plan_from_rows
+    plan = plan_from_rows([{"name": "Pierre", "age": 64, "tfsa_room": 12_000},
+                           {"name": "Conjointe", "age": 61, "tfsa_room": None}],
+                          [{"name": "REER", "kind": "registered", "balance": 1, "owner": "Pierre"}],
+                          [], spending=0, nominal_return=0.05, inflation=0.0, until_age=95)
+    assert plan.tfsa_room == {"Pierre": 12_000, "Conjointe": 0.0}
+    assert plan.tfsa_limit(2026) == 7_000
+    assert plan.gains_inclusion == 0.5

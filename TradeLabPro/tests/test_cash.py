@@ -49,14 +49,16 @@ def test_cash_needs_a_portfolio_and_a_currency(db):
 
 
 def test_a_database_from_before_cash_gains_the_table(tmp_path):
-    # Opening an older file runs the new migration; the positions stay put.
+    # Opening a file from before cash (schema 7) runs every later migration;
+    # the positions stay put.
     import sqlite3
     from tradelab.data import database
     path = tmp_path / "old.db"
     old = Database(path=path)
     old.set_portfolio_positions("IBKR", [{"symbol": "VTI", "shares": 1, "entry_price": 300}])
     old.conn.execute("DROP TABLE portfolio_cash")
-    old.conn.execute("DELETE FROM schema_version WHERE version = ?", (len(database.MIGRATIONS),))
+    old.conn.execute("ALTER TABLE retirement_people DROP COLUMN tfsa_room")   # v9
+    old.conn.execute("DELETE FROM schema_version WHERE version >= 8")
     old.conn.commit()
     old.conn.close()
     reopened = Database(path=path)

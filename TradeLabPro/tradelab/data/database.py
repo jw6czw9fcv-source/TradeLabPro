@@ -184,8 +184,15 @@ CREATE TABLE IF NOT EXISTS portfolio_cash (
 );
 """
 
+# v9: the TFSA room each person has today, which the retirement projection
+# fills with the surplus before anything goes where its growth is taxed.
+# Nullable: blank means none, the cautious reading.
+SCHEMA_V9 = """
+ALTER TABLE retirement_people ADD COLUMN tfsa_room REAL;
+"""
+
 MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
-                         SCHEMA_V6, SCHEMA_V7, SCHEMA_V8]
+                         SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
 SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
@@ -463,7 +470,7 @@ class Database:
         self.conn.commit()
 
     # -- Retirement simulator inputs -----------------------------------------
-    RETIREMENT_TABLES = {"people": ("retirement_people", ("name", "age")),
+    RETIREMENT_TABLES = {"people": ("retirement_people", ("name", "age", "tfsa_room")),
                          "accounts": ("retirement_accounts",
                                       ("name", "kind", "balance", "owner")),
                          "incomes": ("retirement_incomes",
@@ -479,7 +486,7 @@ class Database:
     # and blow up on a row someone simply typed sparsely.
     RETIREMENT_DEFAULTS = {"kind": "registered", "owner": "", "balance": 0.0,
                            "annual": 0.0, "starts_at_age": 65, "ends_at_age": None,
-                           "age": 65, "indexed": 1}
+                           "age": 65, "indexed": 1, "tfsa_room": None}
 
     def set_retirement_rows(self, what: str, rows: list[dict]) -> int:
         """Replace the whole set. These are edited as a table, and a partial

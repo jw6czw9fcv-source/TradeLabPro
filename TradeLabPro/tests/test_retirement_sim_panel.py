@@ -471,6 +471,9 @@ def test_the_brackets_are_indexed_along_with_the_income(panel):
           [["RRQ", "Pierre", 40_000, 65, "", "Yes"]])
     panel.spending.setValue(0)
     panel.inflation.setValue(3.0)
+    # No growth: the income saved earns no taxable gains, so what is measured
+    # is the brackets alone.
+    panel.nominal_return.setValue(0.0)
     panel.until_age.setValue(90)
     panel.run()
     first, last = panel.rows[0], panel.rows[-1]
@@ -504,3 +507,30 @@ def test_the_results_show_what_was_reinvested(panel):
     assert float(panel.results.item(0, col).text().replace(",", "")) > 0
     # And the money is still in the closing balance rather than gone.
     assert panel.rows[0]["closing"] > 500_000 * 0.99
+
+
+def test_each_person_s_tfsa_room_is_read_from_the_people_table(panel):
+    _fill(panel, [["Pierre", 64, "12,000"], ["Conjointe", 61, ""]],
+          [["CELI", "tfsa", 1000, "Pierre"]])
+    people = panel._read("people")
+    assert people[0]["tfsa_room"] == 12_000
+    assert people[1]["tfsa_room"] is None              # blank stays blank: none
+
+
+def test_the_tfsa_room_survives_a_save_and_reload(panel, tmp_path):
+    from tradelab.ui.app import RetirementSimPanel
+    _fill(panel, [["Pierre", 64, "12000"]], [["CELI", "tfsa", 1000, "Pierre"]])
+    panel.save()
+    again = RetirementSimPanel(Database(path=tmp_path / "sim.db"))
+    assert again._read("people")[0]["tfsa_room"] == 12_000
+
+
+def test_the_results_show_what_went_into_the_tfsa(panel):
+    _fill(panel, [["Pierre", 65, "5,000"]], [["CELI", "tfsa", 1000, "Pierre"]],
+          [["Travail", "Pierre", 30_000, 0, "", "Yes"]])
+    panel.spending.setValue(10_000)
+    panel.todays_dollars.setChecked(False)
+    panel.run()
+    headers = [panel.results.horizontalHeaderItem(c).text()
+               for c in range(panel.results.columnCount())]
+    assert panel.results.item(0, headers.index("Into TFSA")).text() == "5,000"

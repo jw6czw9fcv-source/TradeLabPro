@@ -129,6 +129,37 @@ RQ_CONVERSION = ("revenuquebec.ca — Baisse générale de l'impôt des particul
                  "à compter de 2023: conversion rate for personal credits reduced "
                  "to 14%, read 2026-08-12")
 UNCHECKED = "NOT YET CHECKED against the government page — correct before relying on it"
+CRA_TFSA = ("canada.ca — Before you contribute to a TFSA (dollar limit $7,000 for 2024 to "
+            "2026, 'indexed to inflation and rounded to the nearest $500') and Calculate "
+            "your TFSA contribution room (unused room carries forward; a withdrawal comes "
+            "back as room on January 1 of the following year), read 2026-10-10")
+GAINS_INCLUSION_SOURCE = ("pm.gc.ca — 2025-03-21, the proposed increase in the capital "
+                          "gains inclusion rate is cancelled (canada.ca: the CRA administers "
+                          "the enacted one-half rate); quebec.ca — 2025-11-25, Québec "
+                          "cancels its increase too, read 2026-10-10")
+
+# Rules a retirement projection needs beyond the yearly tables.
+TFSA_LIMIT_YEAR = 2026
+TFSA_DOLLAR_LIMIT = Figure(7_000, CRA_TFSA, verified=True)
+TFSA_ROUNDING = 500
+# One half of a capital gain is taxable income. The increase to two-thirds was
+# announced, deferred, then cancelled by both governments.
+CAPITAL_GAINS_INCLUSION = Figure(0.5, GAINS_INCLUSION_SOURCE, verified=True, indexed=False)
+
+
+def tfsa_dollar_limit(calendar_year: int, inflation: float = 0.0) -> float:
+    """The TFSA dollar limit for a year, per person.
+
+    2026 is the published $7,000. A later year is that amount indexed to
+    `inflation` and rounded to the nearest $500, the way the law indexes it -
+    except that the law indexes the unrounded figure since 2009 with the actual
+    CPI, which a projection cannot know, so a projected year can land one $500
+    step away from the one later published.
+    """
+    import math
+    years = max(0, int(calendar_year) - TFSA_LIMIT_YEAR)
+    raw = float(TFSA_DOLLAR_LIMIT) * (1.0 + float(inflation or 0.0)) ** years
+    return math.floor(raw / TFSA_ROUNDING + 0.5) * TFSA_ROUNDING
 
 
 def year_2026() -> TaxYear:

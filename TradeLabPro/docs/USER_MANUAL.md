@@ -802,7 +802,7 @@ the spending — up to the age you name.
 
 | Table | Columns | Notes |
 | --- | --- | --- |
-| **People** | Name, Age | One row per person. Every **Owner** elsewhere has to match a Name here exactly, or the app can't tell whose age applies. |
+| **People** | Name, Age, TFSA room | One row per person. Every **Owner** elsewhere has to match a Name here exactly, or the app can't tell whose age applies. **TFSA room** is the unused contribution room the person has today — CRA's My Account shows it; blank counts as none. |
 | **Accounts** | Account, Kind, Balance, Owner | **Kind** is `registered` (REER/FERR/FTQ), `tfsa` (CELI) or `taxable` (non-registered). Balances accept `$` and commas — `$164,000` reads fine. |
 | **Incomes** | Income, Owner, Per year, Starts, Ends, Indexed | **Per year** is what it's worth **today**. **Starts** / **Ends** are the owner's age; a blank End means for life. A wage is just an income that ends. |
 
@@ -827,7 +827,7 @@ half its worth doing so.
 | **paths** | How many return orderings **Run many paths** uses. |
 
 **What a run gives you.** *Run projection* fills the table below — **Year,
-Ages, Income, RRIF minimum, Tax, From capital, Reinvested, Unfunded, Closing** — and draws
+Ages, Income, RRIF minimum, Tax, From capital, Reinvested, Into TFSA, Unfunded, Closing** — and draws
 the closing balance in the right-hand pane where the chart normally sits. Any
 year the plan can't fund is shown in red, and **the projection keeps going past
 the year it fails** rather than stopping and leaving you to guess at the rest.
@@ -839,14 +839,32 @@ you can see what arrived because you needed it and what arrived because the law
 said so. Capital is drawn **in the order the accounts are listed** — reorder the
 rows to change it. Nothing here picks a withdrawal strategy for you.
 
+**A registered withdrawal pays its own tax.** Money taken out of a REER/FERR/FTQ
+is its owner's income, so covering a $10,000 gap takes more than $10,000: the
+projection works out how much more, from the real brackets and the credits the
+withdrawal erodes, and **From capital** shows the gross amount. It is treated as
+a RRIF payment — eligible pension income from 65, so it can be split. A TFSA
+withdrawal is not income and comes out as is.
+
 **Money you don't spend is kept.** When the year's income after tax is more than
 the spending — a wage still coming in, or a RRIF minimum you didn't need — the
-difference goes into a *Surplus reinvested* account, non-registered, and the
-**Reinvested** column shows how much. It grows like the rest and is drawn
-**last**, after every account you listed. Its growth is not taxed in this model,
-so the figure is somewhat optimistic for anyone with a large surplus. (Earlier
-versions let this money vanish from the projection, which made every plan with a
-surplus look poorer than it is — and made spending less look nearly useless.)
+difference is saved, and the **Reinvested** column shows how much:
+
+- **Into the TFSA first**, while there is room — **Into TFSA** shows that part.
+  Room is what each person has today (the People table), plus each year's new
+  limit for each person — $7,000 in 2026, indexed to inflation and rounded to the
+  nearest $500 as the law does — plus the TFSA withdrawals of the year before.
+- **The rest in a non-registered account.** Its growth is taxed every year as a
+  capital gain — half of it is taxable income, declared the following year — and
+  a loss is carried against later gains. Taxing it every year is a little early
+  for a buy-and-hold investor, never late: deferring it would leave a tax bill
+  hidden inside the closing balance.
+
+Both are drawn **last**, after every account you listed — the taxed one first,
+the TFSA after it. (Before 2.51.0, a withdrawal from a registered account to
+cover the spending was not taxed, and neither was the growth of the money saved,
+so projections were optimistic. Before 2.48.0 the saved money vanished
+altogether, which made them pessimistic.)
 
 **Which dollars you are reading.** The projection runs in the dollars of the
 year each thing happens: the RRQ grows the way it really does, the spending

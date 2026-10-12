@@ -343,3 +343,12 @@ def test_a_successful_replace_still_replaces(tmp_db_path):
     assert db.set_portfolio_positions("IBKR", [{"symbol": "VTI", "shares": 5, "entry_price": 250}]) == 1
     db.conn.close()
     assert [p["symbol"] for p in Database(path=tmp_db_path).positions()] == ["VTI"]
+
+
+def test_a_person_keeps_their_tfsa_room_and_blank_stays_blank(tmp_db_path):
+    db = Database(path=tmp_db_path)
+    db.set_retirement_rows("people", [{"name": "Pierre", "age": 64, "tfsa_room": 12_000},
+                                      {"name": "Conjointe", "age": 61}])
+    rooms = {r["name"]: r["tfsa_room"] for r in db.retirement_rows("people")}
+    db.conn.close()
+    assert rooms == {"Pierre": 12_000, "Conjointe": None}

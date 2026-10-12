@@ -10045,7 +10045,7 @@ class RetirementSimPanel(QWidget):
 
     SETTING = "RetirementSim"
     SPECS = {
-        "people": (["Name", "Age"], ["name", "age"]),
+        "people": (["Name", "Age", "TFSA room"], ["name", "age", "tfsa_room"]),
         "accounts": (["Account", "Kind", "Balance", "Owner"],
                      ["name", "kind", "balance", "owner"]),
         "incomes": (["Income", "Owner", "Per year", "Starts", "Ends", "Indexed"],
@@ -10165,15 +10165,19 @@ class RetirementSimPanel(QWidget):
             self.tables[key] = table
             inputs.addWidget(box)
         layout.addLayout(inputs)
+        room_header = self.tables["people"].horizontalHeaderItem(2)
+        if room_header is not None:
+            room_header.setToolTip(
+                "The TFSA contribution room this person has today - CRA's My Account "
+                "shows it. Money the plan saves fills it before going where its growth "
+                "is taxed. Blank counts as none.")
 
         self.status = StatusLabel("Fill in the tables, then Run projection.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
-        self.results = QTableWidget(0, 9)
-        self.results.setHorizontalHeaderLabels(
-            ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
-             "Reinvested", "Unfunded", "Closing"])
+        self.results = QTableWidget(0, len(self.RESULT_HEADERS))
+        self.results.setHorizontalHeaderLabels(self.RESULT_HEADERS)
         self.results.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.results.setAlternatingRowColors(True)
         self.results.setMinimumHeight(260)
@@ -10187,10 +10191,12 @@ class RetirementSimPanel(QWidget):
             "stops, this is optimistic. An income you mark Indexed = No keeps paying the "
             "same cheque and quietly loses half its worth over thirty years. Tick "
             "Today's $ to read the whole table in today's purchasing power. "
-            "Income left over after tax and spending - a RRIF minimum you did not need, "
-            "a wage still coming in - is reinvested in a non-registered account drawn "
-            "last (the Reinvested column); its growth is not taxed here, which is "
-            "somewhat optimistic. "
+            "A withdrawal from a registered account is income: covering a gap takes "
+            "enough more to pay its own tax. Income left over after tax and spending - "
+            "a RRIF minimum you did not need, a wage still coming in - is saved, drawn "
+            "last: into the TFSA while there is room (each person's room today, in the "
+            "People table, plus each year's new limit), the rest in a non-registered "
+            "account whose growth is taxed every year as a capital gain. "
             "And a single return path says nothing about the order returns arrive in: a "
             "bad first few years of drawing down hurts far more than the same average "
             "later. " + theme.NOT_ADVICE)
@@ -10272,6 +10278,11 @@ class RetirementSimPanel(QWidget):
                 elif field in ("balance", "annual"):
                     cleaned = text.replace(",", "").replace("$", "").replace(" ", "")
                     row[field] = float(cleaned) if cleaned else 0.0
+                elif field == "tfsa_room":
+                    # Blank stays blank: "none", the cautious reading, without
+                    # pretending someone typed a zero.
+                    cleaned = text.replace(",", "").replace("$", "").replace(" ", "")
+                    row[field] = float(cleaned) if cleaned else None
                 elif field == "indexed":
                     row[field] = 0 if text.lower() in self.NOT_INDEXED else 1
                 else:
@@ -10530,11 +10541,12 @@ class RetirementSimPanel(QWidget):
                     "years than markets actually do.")
         self.status.setText(message + self._dollars_note())
 
+    RESULT_HEADERS = ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
+                      "Reinvested", "Into TFSA", "Unfunded", "Closing"]
+
     def render_results(self):
-        self.results.setColumnCount(9)
-        self.results.setHorizontalHeaderLabels(
-            ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
-             "Reinvested", "Unfunded", "Closing"])
+        self.results.setColumnCount(len(self.RESULT_HEADERS))
+        self.results.setHorizontalHeaderLabels(self.RESULT_HEADERS)
         from tradelab.core.retirement_plan import depletion_year
         # Whether the plan holds is decided on the nominal rows; only the
         # reading of them changes. Both agree about *when* it fails, because
@@ -10549,6 +10561,7 @@ class RetirementSimPanel(QWidget):
                      "{:,.0f}".format(row["tax"]),
                      "{:,.0f}".format(row["drawn_from_capital"]),
                      "{:,.0f}".format(row.get("surplus", 0.0)),
+                     "{:,.0f}".format(row.get("surplus_tfsa", 0.0)),
                      "{:,.0f}".format(row["unfunded"]),
                      "{:,.0f}".format(row["closing"])]
             for c, text in enumerate(cells):

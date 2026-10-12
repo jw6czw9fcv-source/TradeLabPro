@@ -298,13 +298,17 @@ def retirement_projection(spending: float | None = None,
                    "rrif_minimum": r["forced_withdrawal"], "tax": r["tax"],
                    "spending": r["spending"], "from_capital": r["drawn_from_capital"],
                    "reinvested": r.get("surplus", 0.0),
+                   "into_tfsa": r.get("surplus_tfsa", 0.0),
                    "unfunded": r["unfunded"], "closing": r["closing"]} for r in shown],
         "notes": [
             "Nominal return and inflation are projected explicitly; indexed benefits, "
             "spending and the tax brackets rise with inflation, a fixed pension does not.",
-            "After-tax income beyond the spending is reinvested in a non-registered "
-            "account drawn last ('reinvested'); its growth is not taxed in this model, "
-            "which is somewhat optimistic.",
+            "A withdrawal from a registered account is taxed as income, so the amount "
+            "drawn ('from_capital') includes the tax it pays.",
+            "After-tax income beyond the spending is saved and drawn last ('reinvested'): "
+            "into the TFSA up to the room entered for each person plus each year's new "
+            "limit ('into_tfsa'), the rest in a non-registered account whose growth is "
+            "taxed every year as a capital gain (half taxable).",
             "One return path says nothing about the order returns arrive in - ask for "
             "paths > 0 to see sequence risk.",
             NOT_ADVICE],
