@@ -134,10 +134,11 @@ def retirement_projection(
 ) -> dict[str, Any]:
     """Project the household's retirement year by year, from the plan stored in
     TradeLab's Retirement Sim tab: incomes (RRQ, PSV, pensions - indexed or not), the
-    forced RRIF minimum from 71, real Quebec + federal tax with pension splitting and
-    indexed brackets, and what must come out of capital to cover the spending. Returns
-    whether and when the money runs short. Any assumption can be overridden for this
-    call only; nothing is saved."""
+    forced RRIF minimum from 71, real Quebec + federal tax with pension splitting,
+    indexed brackets and the OAS clawback, registered withdrawals grossed up for their
+    own tax, the surplus saved in the TFSA first, and what must come out of capital to
+    cover the spending. Returns whether and when the money runs short. Any assumption
+    can be overridden for this call only; nothing is saved."""
     return _answer(tools.retirement_projection, 
         spending=spending, nominal_return_pct=nominal_return_pct,
         inflation_pct=inflation_pct, until_age=until_age,
@@ -164,7 +165,8 @@ def quebec_tax(
     """Quebec + federal income tax for one person with TradeLab's model: 2026 brackets
     and credits (basic personal amounts, age amount, pension income amount, Quebec's
     family-income reduction, the Quebec abatement), the average rate and the marginal
-    rate on the next dollar. The OAS recovery tax is not modelled."""
+    rate on the next dollar. The OAS recovery tax is not modelled here (this tool does
+    not know the OAS received); retirement_projection includes it."""
     return _answer(tools.quebec_tax, income=income, age=age, pension_income=pension_income,
                             family_income=family_income, years_ahead=years_ahead,
                             inflation_pct=inflation_pct)

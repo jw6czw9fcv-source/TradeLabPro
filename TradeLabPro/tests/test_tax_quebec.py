@@ -295,6 +295,28 @@ def test_the_tfsa_limit_is_the_published_one_then_indexed_in_500s():
     assert tfsa_dollar_limit(2040, 0.0) == 7_000         # no inflation, no change
 
 
+def test_oas_is_clawed_back_above_the_threshold_and_never_beyond_itself():
+    from tradelab.core.tax_quebec import oas_recovery
+    table = year_2026()
+    # canada.ca: 15% of net income above $95,323 (2026), capped at the OAS received.
+    assert oas_recovery(90_000, 8_000, table) == 0
+    assert oas_recovery(100_000, 8_000, table) == pytest.approx((100_000 - 95_323) * 0.15)
+    assert oas_recovery(200_000, 8_000, table) == pytest.approx(8_000)
+    assert oas_recovery(200_000, 0, table) == 0
+
+
+def test_splitting_pension_income_lowers_the_clawback():
+    from tradelab.core.tax_quebec import household_tax_fn
+    ages, incomes, pension, oas = ({"a": 70, "b": 70}, {"a": 110_000, "b": 20_000},
+                                   {"a": 40_000}, {"a": 8_000})
+
+    def clawback(fraction):
+        fn = household_tax_fn(fraction)
+        return fn(incomes, ages, pension, 0, oas) - fn(incomes, ages, pension, 0, None)
+    assert clawback(0.0) == pytest.approx((110_000 - 95_323) * 0.15)
+    assert clawback(0.5) == 0          # 20,000 moved: 90,000 is under the threshold
+
+
 def test_half_of_a_capital_gain_is_taxable():
     from tradelab.core.tax_quebec import CAPITAL_GAINS_INCLUSION
     # The increase to two-thirds was cancelled in Ottawa and in Québec.

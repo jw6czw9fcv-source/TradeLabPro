@@ -757,6 +757,30 @@ def test_the_tfsa_part_of_the_surplus_is_never_taxed():
     assert rows[1]["taxable_gains"] == 0
 
 
+# -- the OAS clawback ------------------------------------------------------------
+
+def test_an_income_named_psv_is_the_oas_pension():
+    assert Income("PSV", "me", 8_000).is_oas
+    assert Income("OAS", "me", 8_000).is_oas
+    assert Income("Pension de la sécurité de la vieillesse", "me", 8_000).is_oas
+    assert not Income("RRQ", "me", 13_000).is_oas
+    assert not Income("Travail", "me", 1).is_oas
+    assert Income("Mystery", "me", 1, oas=True).is_oas            # said explicitly
+
+
+def test_the_oas_clawback_is_in_the_tax_and_reported_apart():
+    from tradelab.core.tax_quebec import household_tax_fn
+    incomes = [Income("Travail", "me", 120_000, starts_at_age=0),
+               Income("PSV", "me", 8_000, starts_at_age=65)]
+    rows = project(_plan(people=[Person("me", 66)], years=1, incomes=incomes,
+                         tax_fn=household_tax_fn()))
+    assert rows[0]["oas_recovery"] == pytest.approx((128_000 - 95_323) * 0.15)
+    # A tax model that knows nothing of it reports none rather than a guess.
+    flat = project(_plan(people=[Person("me", 66)], years=1, incomes=incomes,
+                         tax_fn=_flat(0.30)))
+    assert flat[0]["oas_recovery"] == 0
+
+
 def test_a_plan_from_the_tables_carries_the_tfsa_rules():
     from tradelab.core.retirement_plan import plan_from_rows
     plan = plan_from_rows([{"name": "Pierre", "age": 64, "tfsa_room": 12_000},

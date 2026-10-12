@@ -525,6 +525,19 @@ def test_the_tfsa_room_survives_a_save_and_reload(panel, tmp_path):
     assert again._read("people")[0]["tfsa_room"] == 12_000
 
 
+def test_the_results_show_the_oas_clawback(panel):
+    _fill(panel, [["Pierre", 66]], [["CELI", "tfsa", 1000, "Pierre"]],
+          [["Travail", "Pierre", 150_000, 0, "", "Yes"],
+           ["PSV", "Pierre", 8_000, 65, "", "Yes"]])
+    panel.spending.setValue(50_000)
+    panel.todays_dollars.setChecked(False)
+    panel.run()
+    headers = [panel.results.horizontalHeaderItem(c).text()
+               for c in range(panel.results.columnCount())]
+    clawback = panel.results.item(0, headers.index("OAS clawback")).text()
+    assert float(clawback.replace(",", "")) > 0
+
+
 def test_the_results_show_what_went_into_the_tfsa(panel):
     _fill(panel, [["Pierre", 65, "5,000"]], [["CELI", "tfsa", 1000, "Pierre"]],
           [["Travail", "Pierre", 30_000, 0, "", "Yes"]])

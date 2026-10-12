@@ -139,6 +139,8 @@ def test_the_projection_runs_the_stored_plan(data):
     assert out["years"][-1]["ages"] == {"Pierre": 90}
     assert "lasts_to_age" in out["summary"] or "runs_short_at_age" in out["summary"]
     assert any("not financial advice" in n for n in out["notes"])
+    # Every year says what went into the TFSA and what OAS was paid back.
+    assert {"into_tfsa", "oas_clawback"} <= set(out["years"][0])
 
 
 def test_the_projection_matches_the_tab(data):

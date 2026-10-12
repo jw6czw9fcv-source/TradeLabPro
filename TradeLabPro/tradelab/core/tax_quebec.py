@@ -133,6 +133,9 @@ CRA_TFSA = ("canada.ca — Before you contribute to a TFSA (dollar limit $7,000 
             "2026, 'indexed to inflation and rounded to the nearest $500') and Calculate "
             "your TFSA contribution room (unused room carries forward; a withdrawal comes "
             "back as room on January 1 of the following year), read 2026-10-10")
+CRA_OAS = ("canada.ca — Old Age Security pension recovery tax: 15% of net world income "
+           "above the threshold ($93,454 for 2025, $95,323 for 2026), never more than the "
+           "OAS received, read 2026-10-11")
 GAINS_INCLUSION_SOURCE = ("pm.gc.ca — 2025-03-21, the proposed increase in the capital "
                           "gains inclusion rate is cancelled (canada.ca: the CRA administers "
                           "the enacted one-half rate); quebec.ca — 2025-11-25, Québec "
@@ -145,6 +148,23 @@ TFSA_ROUNDING = 500
 # One half of a capital gain is taxable income. The increase to two-thirds was
 # announced, deferred, then cancelled by both governments.
 CAPITAL_GAINS_INCLUSION = Figure(0.5, GAINS_INCLUSION_SOURCE, verified=True, indexed=False)
+# The OAS pension recovery tax ("clawback"): this share of net income above the
+# year's threshold (TaxYear.oas_recovery_threshold) is paid back.
+OAS_RECOVERY_RATE = Figure(0.15, CRA_OAS, verified=True, indexed=False)
+
+
+def oas_recovery(net_income: float, oas_received: float, table: "TaxYear" = None) -> float:
+    """The OAS pension paid back for a year: 15% of net income above the
+    threshold, never more than the OAS received - so someone still earning a
+    good income at 65 can lose most of it, which is the whole question behind
+    deferring it. The repayment is itself deductible, which is not modelled
+    here; leaving it out overstates the bill slightly, never understates it."""
+    table = table or year_2026()
+    oas = max(0.0, float(oas_received or 0.0))
+    if not oas:
+        return 0.0
+    excess = max(0.0, float(net_income) - float(table.oas_recovery_threshold))
+    return min(oas, excess * float(OAS_RECOVERY_RATE))
 
 
 def tfsa_dollar_limit(calendar_year: int, inflation: float = 0.0) -> float:
@@ -355,7 +375,7 @@ def household_tax_fn(splitting_fraction: float = 0.0, inflation: float = 0.0,
             tables[years_elapsed] = base.inflated(years_elapsed, inflation)
         return tables[years_elapsed]
 
-    def tax_fn(by_owner, ages, pension_by_owner, years_elapsed=0):
+    def tax_fn(by_owner, ages, pension_by_owner, years_elapsed=0, oas_by_owner=None):
         incomes = dict(by_owner)
         pensions = dict(pension_by_owner)
         names = sorted(incomes, key=lambda n: -incomes.get(n, 0.0))
@@ -368,6 +388,12 @@ def household_tax_fn(splitting_fraction: float = 0.0, inflation: float = 0.0,
             incomes[lower] = incomes.get(lower, 0.0) + moved
             pensions[higher] -= moved
             pensions[lower] = pensions.get(lower, 0.0) + moved
-        return household_tax(incomes, ages, pensions, table_for(years_elapsed))
+        table = table_for(years_elapsed)
+        total = household_tax(incomes, ages, pensions, table)
+        # The OAS clawback, on each person's income *after* the split -
+        # moving pension income to a spouse is exactly what lowers it.
+        for name, oas in (oas_by_owner or {}).items():
+            total += oas_recovery(incomes.get(name, 0.0), oas, table)
+        return total
 
     return tax_fn

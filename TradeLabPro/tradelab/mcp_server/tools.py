@@ -296,6 +296,7 @@ def retirement_projection(spending: float | None = None,
         "summary": summary,
         "years": [{"year": r["calendar_year"], "ages": r["ages"], "income": r["income"],
                    "rrif_minimum": r["forced_withdrawal"], "tax": r["tax"],
+                   "oas_clawback": r.get("oas_recovery", 0.0),
                    "spending": r["spending"], "from_capital": r["drawn_from_capital"],
                    "reinvested": r.get("surplus", 0.0),
                    "into_tfsa": r.get("surplus_tfsa", 0.0),
@@ -305,6 +306,9 @@ def retirement_projection(spending: float | None = None,
             "spending and the tax brackets rise with inflation, a fixed pension does not.",
             "A withdrawal from a registered account is taxed as income, so the amount "
             "drawn ('from_capital') includes the tax it pays.",
+            "The tax includes the OAS clawback ('oas_clawback'): 15% of each person's "
+            "income above the threshold, after pension splitting, never more than the "
+            "OAS received. An income counts as OAS when it is named PSV, SV or OAS.",
             "After-tax income beyond the spending is saved and drawn last ('reinvested'): "
             "into the TFSA up to the room entered for each person plus each year's new "
             "limit ('into_tfsa'), the rest in a non-registered account whose growth is "

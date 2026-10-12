@@ -10541,8 +10541,8 @@ class RetirementSimPanel(QWidget):
                     "years than markets actually do.")
         self.status.setText(message + self._dollars_note())
 
-    RESULT_HEADERS = ["Year", "Ages", "Income", "RRIF minimum", "Tax", "From capital",
-                      "Reinvested", "Into TFSA", "Unfunded", "Closing"]
+    RESULT_HEADERS = ["Year", "Ages", "Income", "RRIF minimum", "Tax", "OAS clawback",
+                      "From capital", "Reinvested", "Into TFSA", "Unfunded", "Closing"]
 
     def render_results(self):
         self.results.setColumnCount(len(self.RESULT_HEADERS))
@@ -10559,6 +10559,7 @@ class RetirementSimPanel(QWidget):
                      "{:,.0f}".format(row["income"]),
                      "{:,.0f}".format(row["forced_withdrawal"]),
                      "{:,.0f}".format(row["tax"]),
+                     "{:,.0f}".format(row.get("oas_recovery", 0.0)),
                      "{:,.0f}".format(row["drawn_from_capital"]),
                      "{:,.0f}".format(row.get("surplus", 0.0)),
                      "{:,.0f}".format(row.get("surplus_tfsa", 0.0)),

@@ -827,7 +827,7 @@ half its worth doing so.
 | **paths** | How many return orderings **Run many paths** uses. |
 
 **What a run gives you.** *Run projection* fills the table below — **Year,
-Ages, Income, RRIF minimum, Tax, From capital, Reinvested, Into TFSA, Unfunded, Closing** — and draws
+Ages, Income, RRIF minimum, Tax, OAS clawback, From capital, Reinvested, Into TFSA, Unfunded, Closing** — and draws
 the closing balance in the right-hand pane where the chart normally sits. Any
 year the plan can't fund is shown in red, and **the projection keeps going past
 the year it fails** rather than stopping and leaving you to guess at the rest.
@@ -885,6 +885,16 @@ indexed along with everything else, because both governments index theirs;
 freezing them would invent bracket creep that will not happen. **Only eligible
 pension income is split**: a wage can't be, and the RRQ has its own separate
 mechanism.
+
+**The OAS clawback is in the tax.** Above an income threshold — $95,323 for
+2026, indexed — 15% of each person's net income over it is paid back, never more
+than the OAS (PSV) received. It is worked out after pension splitting, since
+moving pension income to a spouse is exactly what lowers it, and the **OAS
+clawback** column shows the part of **Tax** it accounts for — the number behind
+deciding when to start the PSV while a wage is still coming in. An income counts
+as OAS when it is named **PSV**, **SV** or **OAS** (or Old Age Security, Sécurité
+de la vieillesse). The repayment is itself deductible, which is not modelled:
+the figure is slightly high, never low.
 
 **The forced RRIF minimum.** From the year an account's owner turns 71, a
 registered account pays out the CRA's prescribed minimum whether the spending

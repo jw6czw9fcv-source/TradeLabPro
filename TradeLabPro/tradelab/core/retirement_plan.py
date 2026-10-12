@@ -131,6 +131,11 @@ class Account:
     owner: str
 
 
+# What the OAS pension is called in an Incomes table, read case-insensitively.
+OAS_NAMES = {"psv", "sv", "oas", "pension de la sécurité de la vieillesse",
+             "sécurité de la vieillesse", "old age security"}
+
+
 @dataclass
 class Income:
     """A benefit or wage, in today's dollars per year.
@@ -152,6 +157,19 @@ class Income:
     starts_at_age: int = 0
     ends_at_age: int | None = None
     indexed: bool = True
+    # Whether this is the OAS pension (PSV), which is clawed back above an
+    # income threshold. None reads it from the name - see `is_oas`.
+    oas: bool | None = None
+
+    @property
+    def is_oas(self) -> bool:
+        """The OAS pension, recognised by what people call it - PSV, SV, OAS,
+        Old Age Security, Sécurité de la vieillesse - unless set explicitly."""
+        if self.oas is not None:
+            return bool(self.oas)
+        name = " ".join(str(self.name or "").lower().split())
+        return (name in OAS_NAMES or name.startswith(("psv", "oas "))
+                or "old age security" in name or "sécurité de la vieillesse" in name)
 
     def amount_at(self, age: int, years_elapsed: int = 0,
                   inflation: float = 0.0) -> float:
@@ -240,7 +258,7 @@ SURPLUS_ACCOUNT = "Surplus reinvested"
 
 # What happens *during* the year — the cheques, the tax, the withdrawals — and
 # the balance the year opens with. All of it is priced at the start of the year.
-FLOW_KEYS = ("opening", "income", "forced_withdrawal", "tax",
+FLOW_KEYS = ("opening", "income", "forced_withdrawal", "tax", "oas_recovery",
              "drawn_from_capital", "surplus", "surplus_tfsa", "taxable_gains",
              "spending", "unfunded")
 # Amounts measured *after* the year's growth, which is a year later and so a
@@ -296,25 +314,29 @@ def nominal_from_real(real: float, inflation: float) -> float:
 
 
 def _tax_caller(fn):
-    """Normalise an injected `tax_fn` to the four-argument form.
+    """Normalise an injected `tax_fn` to the five-argument form ->
+    (callable, whether it knows the OAS clawback).
 
-    The year offset only matters to a model that indexes its brackets; a flat
-    rate, or any of the stand-ins the ledger is tested with, has no use for it
-    and should not have to grow an argument it ignores. The arity is read once
-    here rather than by catching TypeError around each call, which would
-    silently swallow a real TypeError raised inside the callee.
+    The year offset only matters to a model that indexes its brackets, and the
+    OAS amounts only to one that claws them back; a flat rate, or any of the
+    stand-ins the ledger is tested with, has no use for either and should not
+    have to grow arguments it ignores. The arity is read once here rather than
+    by catching TypeError around each call, which would silently swallow a
+    real TypeError raised inside the callee.
     """
     if fn is None:
-        return None
+        return None, False
     try:
-        params = inspect.signature(fn).parameters.values()
+        params = list(inspect.signature(fn).parameters.values())
     except (TypeError, ValueError):        # a builtin or C callable
-        return fn
+        return (lambda by_owner, ages, pension, year, _oas: fn(by_owner, ages, pension, year)), False
     positional = [p for p in params
                   if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-    if len(positional) >= 4 or any(p.kind == p.VAR_POSITIONAL for p in params):
-        return fn
-    return lambda by_owner, ages, pension, _year: fn(by_owner, ages, pension)
+    if len(positional) >= 5 or any(p.kind == p.VAR_POSITIONAL for p in params):
+        return fn, True
+    if len(positional) == 4:
+        return (lambda by_owner, ages, pension, year, _oas: fn(by_owner, ages, pension, year)), False
+    return (lambda by_owner, ages, pension, _year, _oas: fn(by_owner, ages, pension)), False
 
 
 def _order(plan: Plan) -> list[Account]:
@@ -393,7 +415,7 @@ def project(plan: Plan) -> list[dict]:
     names = [p.name for p in plan.people]
     start_year = plan.start_year or date.today().year
     accounts = _order(plan)
-    tax_fn = _tax_caller(plan.tax_fn)
+    tax_fn, knows_oas = _tax_caller(plan.tax_fn)
     surplus_name = tfsa_name = None
     if plan.reinvest_surplus and plan.people:
         surplus_name = _unused_name(SURPLUS_ACCOUNT, balances)
@@ -426,10 +448,13 @@ def project(plan: Plan) -> list[dict]:
         # 1. Income that arrives whether or not it is wanted, kept per person:
         #    a wage belongs to whoever earned it and cannot be moved.
         by_owner = {name: 0.0 for name in ages}
+        oas_by_owner = {}                 # the part that can be clawed back
         for income in plan.incomes:
             owner = income.owner
-            by_owner[owner] = by_owner.get(owner, 0.0) + income.amount_at(
-                ages.get(owner, 0), year, plan.inflation)
+            amount = income.amount_at(ages.get(owner, 0), year, plan.inflation)
+            by_owner[owner] = by_owner.get(owner, 0.0) + amount
+            if amount and income.is_oas:
+                oas_by_owner[owner] = oas_by_owner.get(owner, 0.0) + amount
         gross_income = sum(by_owner.values())
         # Last year's taxable gains are this year's taxable income - not cash:
         # the money stays invested, only the tax on it is paid from the year.
@@ -458,7 +483,7 @@ def project(plan: Plan) -> list[dict]:
             pension_by_owner[account.owner] = pension_by_owner.get(
                 account.owner, 0.0) + take
 
-        tax = (float(tax_fn(by_owner, ages, pension_by_owner, year))
+        tax = (float(tax_fn(by_owner, ages, pension_by_owner, year, oas_by_owner))
                if tax_fn else 0.0)
         available = gross_income + forced - tax
 
@@ -486,7 +511,7 @@ def project(plan: Plan) -> list[dict]:
                     pensions = dict(pension_by_owner)
                     if pension:
                         pensions[owner] = pensions.get(owner, 0.0) + amount
-                    return float(tax_fn(incomes, ages, pensions, year)) - base
+                    return float(tax_fn(incomes, ages, pensions, year, oas_by_owner)) - base
 
                 take, extra = gross_up(shortfall, balance, added_tax)
                 by_owner[owner] = by_owner.get(owner, 0.0) + take
@@ -502,6 +527,12 @@ def project(plan: Plan) -> list[dict]:
             drawn += take
             shortfall -= received
         shortfall = max(0.0, shortfall)
+        # How much of the year's tax is OAS paid back: the same bill with and
+        # without the clawback, on the year's final incomes.
+        oas_recovery = 0.0
+        if tax_fn and knows_oas and oas_by_owner:
+            oas_recovery = max(0.0, tax - float(
+                tax_fn(by_owner, ages, pension_by_owner, year, None)))
 
         # 4. Anything left after the spending is saved, not lost: into the
         #    TFSA while there is room, the rest where its growth is taxed.
@@ -546,6 +577,8 @@ def project(plan: Plan) -> list[dict]:
             "income_by_owner": dict(by_owner),
             "forced_withdrawal": forced,
             "tax": tax,
+            # The part of `tax` that is OAS paid back.
+            "oas_recovery": oas_recovery,
             "drawn_from_capital": drawn,
             # After-tax income beyond the spending, saved - and how much of it
             # went into the TFSA.
