@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.52.0 - The OAS clawback, counted - the retirement projection takes back the OAS pension above the income threshold, after pension splitting, and shows how much
+
 2.51.0 - Retirement, with its taxes paid - a registered withdrawal now pays its own tax, the money a plan saves goes into the TFSA first, and the growth of what is saved outside it is taxed
 
 2.50.0 - An IBKR account, imported whole - an IBKR import fills the portfolio you name, one per account, and brings the account's cash along with its positions

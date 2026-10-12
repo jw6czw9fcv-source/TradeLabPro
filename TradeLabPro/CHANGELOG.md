@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.52.0 - The OAS clawback, counted
+
+### Fixed
+- **The retirement projection never clawed back the OAS pension.** The threshold was in the tax table and never used, so someone drawing the PSV while still earning kept all of it. Now 15% of each person's net income above the threshold - $95,323 for 2026, indexed - is paid back, never more than the OAS received, as canada.ca states it. It is worked out after pension splitting, since moving pension income to a spouse is exactly what lowers it. The repayment's own deduction is not modelled, so the figure is slightly high, never low.
+
+### Added
+- An **OAS clawback** column showing the part of the tax that is OAS paid back - the number behind deciding when to start the PSV while a wage is still coming in. An income counts as OAS when it is named PSV, SV or OAS. Claude's retirement tool returns it too (`oas_clawback`).
+
+### Verified
+- Full pytest suite (1492) passes, including 5 new tests: the threshold, the 15% and the cap; splitting lowering the clawback; an income recognised as OAS by its name; the clawback reported apart from the tax, and never invented by a tax model that knows nothing of it.
+
 ## 2.51.0 - Retirement, with its taxes paid
 
 ### Fixed

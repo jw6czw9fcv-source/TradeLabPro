@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.51.0
+Current version: 2.52.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.52.0 (The OAS clawback, counted)
+- **Fixed: the OAS pension was never clawed back.** `tax_quebec.oas_recovery` (15% of net income above `oas_recovery_threshold`, capped at the OAS received) applied inside `household_tax_fn` after pension splitting, via a fifth argument `oas_by_owner`; `retirement_plan._tax_caller` passes it when the tax model accepts it. `Income.is_oas` recognises PSV/SV/OAS by name. Rows `oas_recovery`; "OAS clawback" column; MCP `oas_clawback`.
 
 ## Completed in 2.51.0 (Retirement, with its taxes paid)
 - **Fixed: registered withdrawals made to cover spending were not taxed** (only the forced RRIF minimum was). `retirement_plan.gross_up` (regula falsi, Illinois) finds the withdrawal that pays its own tax; treated as a RRIF payment, eligible pension income from 65.
