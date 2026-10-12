@@ -141,6 +141,7 @@ def test_the_projection_runs_the_stored_plan(data):
     assert any("not financial advice" in n for n in out["notes"])
     # Every year says what went into the TFSA and what OAS was paid back.
     assert {"into_tfsa", "oas_clawback"} <= set(out["years"][0])
+    assert out["assumptions"]["deferred_benefits"] == []      # the RRQ starts at 65
 
 
 def test_the_projection_matches_the_tab(data):

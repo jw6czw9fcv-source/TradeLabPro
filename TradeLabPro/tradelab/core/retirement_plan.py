@@ -100,8 +100,13 @@ def rrif_minimum_factor(age: int) -> float:
 # you live, what the survivor keeps, and what you need in the meantime - none
 # of which this module knows.
 #
-# RRQ:  +0.7%/month after 65, stopping at 72 (+58.8%). Source: Retraite Québec.
-# PSV:  +0.6%/month after 65, stopping at 70 (+36%).  Source: canada.ca.
+# RRQ:  +0.7%/month after 65, stopping at 72 (+58.8%). Source: Retraite Québec,
+#       "At what age should you apply for your retirement pension?", read 2026-10-12.
+# PSV:  +0.6%/month after 65, stopping at 70 (+36%); it cannot start before 65.
+#       Source: canada.ca, "Old Age Security - When to start", read 2026-10-12.
+# Starting the RRQ *before* 65 lowers it by 0.5% to 0.6% a month depending on the
+# pension's size, which this cannot know - an amount typed for an earlier start is
+# used as typed.
 DEFERRAL = {
     "RRQ": {"rate_per_month": 0.007, "from_age": 65, "max_age": 72},
     "PSV": {"rate_per_month": 0.006, "from_age": 65, "max_age": 70},
@@ -134,6 +139,10 @@ class Account:
 # What the OAS pension is called in an Incomes table, read case-insensitively.
 OAS_NAMES = {"psv", "sv", "oas", "pension de la sécurité de la vieillesse",
              "sécurité de la vieillesse", "old age security"}
+# And the Québec Pension Plan. The federal CPP is left out on purpose: its
+# deferral stops at 70, not 72, and applying the RRQ's rule to it would be wrong.
+QPP_NAMES = {"rrq", "qpp", "régime de rentes du québec", "quebec pension plan",
+             "rente de retraite du rrq"}
 
 
 @dataclass
@@ -160,6 +169,13 @@ class Income:
     # Whether this is the OAS pension (PSV), which is clawed back above an
     # income threshold. None reads it from the name - see `is_oas`.
     oas: bool | None = None
+    # For the RRQ and the PSV, `annual` is the amount at 65 and a later start
+    # adds the increase the law gives for waiting (DEFERRAL). False uses the
+    # amount as typed whatever the start.
+    apply_deferral: bool = True
+
+    def _plain_name(self) -> str:
+        return " ".join(str(self.name or "").lower().split())
 
     @property
     def is_oas(self) -> bool:
@@ -167,9 +183,29 @@ class Income:
         Old Age Security, Sécurité de la vieillesse - unless set explicitly."""
         if self.oas is not None:
             return bool(self.oas)
-        name = " ".join(str(self.name or "").lower().split())
+        name = self._plain_name()
         return (name in OAS_NAMES or name.startswith(("psv", "oas "))
                 or "old age security" in name or "sécurité de la vieillesse" in name)
+
+    @property
+    def benefit(self) -> str | None:
+        """'PSV' or 'RRQ' when this is one of the two public pensions whose
+        deferral rule is modelled, else None."""
+        if self.is_oas:
+            return "PSV"
+        name = self._plain_name()
+        if name in QPP_NAMES or name.startswith("rrq"):
+            return "RRQ"
+        return None
+
+    @property
+    def deferral_increase(self) -> float:
+        """The share added for starting after 65 - 0.36 for a PSV taken at 70,
+        0 when nothing is added."""
+        rule = DEFERRAL.get(self.benefit) if self.apply_deferral else None
+        if not rule:
+            return 0.0
+        return deferred_amount(1.0, int(self.starts_at_age or 0), rule) - 1.0
 
     def amount_at(self, age: int, years_elapsed: int = 0,
                   inflation: float = 0.0) -> float:
@@ -178,7 +214,7 @@ class Income:
             return 0.0
         if self.ends_at_age is not None and age > self.ends_at_age:
             return 0.0
-        amount = float(self.annual)
+        amount = float(self.annual) * (1.0 + self.deferral_increase)
         if self.indexed and inflation and years_elapsed > 0:
             amount *= (1.0 + inflation) ** years_elapsed
         return amount
@@ -608,6 +644,20 @@ def project(plan: Plan) -> list[dict]:
             ages[name] += 1
 
     return rows
+
+
+def deferrals(plan: Plan) -> list[dict]:
+    """The public pensions this plan starts after 65, with the increase the
+    law adds for it - so a screen can say why a cheque is larger than the one
+    typed, rather than leave it unexplained."""
+    out = []
+    for income in plan.incomes:
+        increase = income.deferral_increase
+        if increase > 0:
+            out.append({"income": income.name, "owner": income.owner,
+                        "starts_at_age": int(income.starts_at_age),
+                        "increase_pct": round(increase * 100.0, 2)})
+    return out
 
 
 def depletion_year(rows: list[dict]) -> int | None:

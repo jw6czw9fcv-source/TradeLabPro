@@ -292,7 +292,9 @@ def retirement_projection(spending: float | None = None,
         summary["first_year_short_by"] = shown[failed]["unfunded"]
 
     result = {
-        "assumptions": {**a, "balances_overridden": sorted(balances) if balances else []},
+        "assumptions": {**a, "balances_overridden": sorted(balances) if balances else [],
+                        # RRQ / PSV started after 65, with the increase applied.
+                        "deferred_benefits": rp.deferrals(plan)},
         "summary": summary,
         "years": [{"year": r["calendar_year"], "ages": r["ages"], "income": r["income"],
                    "rrif_minimum": r["forced_withdrawal"], "tax": r["tax"],

@@ -10165,6 +10165,14 @@ class RetirementSimPanel(QWidget):
             self.tables[key] = table
             inputs.addWidget(box)
         layout.addLayout(inputs)
+        deferral_tip = ("For the RRQ and the PSV, type the amount at 65 and the age it "
+                        "starts: a later start adds the increase the law gives for waiting "
+                        "- RRQ +0.7% a month up to 72, PSV +0.6% a month up to 70. An RRQ "
+                        "started before 65 is used as typed.")
+        for column in (2, 3):                       # Per year, Starts
+            header = self.tables["incomes"].horizontalHeaderItem(column)
+            if header is not None:
+                header.setToolTip(deferral_tip)
         room_header = self.tables["people"].horizontalHeaderItem(2)
         if room_header is not None:
             room_header.setToolTip(
@@ -10317,14 +10325,16 @@ class RetirementSimPanel(QWidget):
 
     # -- the projection -----------------------------------------------------
     def build_plan(self):
-        from tradelab.core.retirement_plan import plan_from_rows
-        return plan_from_rows(
+        from tradelab.core.retirement_plan import deferrals, plan_from_rows
+        plan = plan_from_rows(
             self._read("people"), self._read("accounts"), self._read("incomes"),
             spending=self.spending.value(),
             nominal_return=self.nominal_return.value() / 100.0,
             inflation=self.inflation.value() / 100.0,
             until_age=self.until_age.value(),
             tax_fn=self.tax_fn())
+        self._deferrals = deferrals(plan) if plan is not None else []
+        return plan
 
     def tax_fn(self):
         """Real Quebec + federal tax, each person taxed as a person, pension
@@ -10377,6 +10387,19 @@ class RetirementSimPanel(QWidget):
         return (" Figures are in today's dollars."
                 if self._in_todays_dollars()
                 else " Figures are in the dollars of each year, not today's.")
+
+    def _deferral_note(self) -> str:
+        """Which public pensions start after 65 and what the law added for it,
+        so a larger cheque than the one typed is never a mystery."""
+        items = getattr(self, "_deferrals", None) or []
+        if not items:
+            return ""
+        return " Started after 65, with the increase for waiting: " + "; ".join(
+            "{} ({}) at {}, +{:g}%".format(d["income"], d["owner"], d["starts_at_age"],
+                                          d["increase_pct"]) for d in items) + "."
+
+    def _status_notes(self) -> str:
+        return self._dollars_note() + self._deferral_note()
 
     def _redraw_results(self):
         """Re-read what is already on screen, whichever view it is."""
@@ -10539,7 +10562,7 @@ class RetirementSimPanel(QWidget):
                     "spending by five thousand and it shifts more than any market will. "
                     "Returns are drawn from a normal curve, which has fewer very bad "
                     "years than markets actually do.")
-        self.status.setText(message + self._dollars_note())
+        self.status.setText(message + self._status_notes())
 
     RESULT_HEADERS = ["Year", "Ages", "Income", "RRIF minimum", "Tax", "OAS clawback",
                       "From capital", "Reinvested", "Into TFSA", "Unfunded", "Closing"]
@@ -10580,13 +10603,13 @@ class RetirementSimPanel(QWidget):
                 "The money lasts to age {} — {:,.0f}$ left at the end. That is this one "
                 "return path, not a promise: the same average arriving in a worse order "
                 "can end differently.".format(oldest, last["closing"])
-                + self._dollars_note())
+                + self._status_notes())
         else:
             age = max(rows[failed]["ages"].values())
             self.status.setText(
                 "Runs short at age {}, first year {:,.0f}$ under the spending. The years "
                 "after it are still shown rather than cut off.".format(
-                    age, rows[failed]["unfunded"]) + self._dollars_note())
+                    age, rows[failed]["unfunded"]) + self._status_notes())
 
 
 class MainWindow(QMainWindow):

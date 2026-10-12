@@ -812,6 +812,16 @@ and the AOW do by law. Type `No`, `non` or `fixe` for a fixed private pension:
 it keeps paying the same number of dollars for thirty years, and loses about
 half its worth doing so.
 
+**Waiting raises the RRQ and the PSV, and the projection applies it.** For an
+income named **RRQ** or **PSV**, type the amount at 65 and the age it starts: a
+later start adds what the law gives for waiting — the RRQ **+0.7% a month** up
+to 72 (+58.8%), the PSV **+0.6% a month** up to 70 (+36%), nothing more after
+that. So trying a PSV at 70 is one cell, not a calculation. The status line
+names each pension started late and the increase it got. An RRQ started
+**before** 65 is used as typed: its reduction depends on the pension's size,
+which only your Retraite Québec statement knows. Whether waiting pays depends on
+how long you live, which no projection can tell you.
+
 **The controls along the top.**
 
 | Control | What it does |

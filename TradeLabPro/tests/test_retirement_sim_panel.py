@@ -525,6 +525,14 @@ def test_the_tfsa_room_survives_a_save_and_reload(panel, tmp_path):
     assert again._read("people")[0]["tfsa_room"] == 12_000
 
 
+def test_a_pension_started_late_is_named_with_its_increase(panel):
+    _fill(panel, [["Pierre", 64]], [["CELI", "tfsa", 500_000, "Pierre"]],
+          [["PSV", "Pierre", 8_000, 70, "", "Yes"]])
+    panel.spending.setValue(20_000)
+    panel.run()
+    assert "PSV (Pierre) at 70, +36%" in panel.status.text()
+
+
 def test_the_results_show_the_oas_clawback(panel):
     _fill(panel, [["Pierre", 66]], [["CELI", "tfsa", 1000, "Pierre"]],
           [["Travail", "Pierre", 150_000, 0, "", "Yes"],

@@ -781,6 +781,45 @@ def test_the_oas_clawback_is_in_the_tax_and_reported_apart():
     assert flat[0]["oas_recovery"] == 0
 
 
+# -- waiting raises the RRQ and the PSV ---------------------------------------------
+# Retraite Québec: +0.7% a month after 65, up to 72. canada.ca: +0.6% up to 70.
+
+def test_a_psv_started_at_70_is_36_percent_larger():
+    psv = Income("PSV", "me", 10_000, starts_at_age=70)
+    assert psv.amount_at(69) == 0
+    assert psv.amount_at(70) == pytest.approx(13_600)
+    # Nothing more for waiting past 70.
+    assert Income("PSV", "me", 10_000, starts_at_age=75).amount_at(75) == pytest.approx(13_600)
+
+
+def test_an_rrq_started_later_grows_by_the_month_up_to_72():
+    assert Income("RRQ", "me", 10_000, starts_at_age=66).amount_at(66) == pytest.approx(10_840)
+    assert Income("RRQ", "me", 10_000, starts_at_age=72).amount_at(72) == pytest.approx(15_880)
+
+
+def test_anything_else_is_used_as_typed():
+    # An early RRQ's reduction depends on its size; the CPP stops at 70, not 72.
+    assert Income("RRQ", "me", 10_000, starts_at_age=60).amount_at(60) == pytest.approx(10_000)
+    assert Income("CPP", "me", 10_000, starts_at_age=70).amount_at(70) == pytest.approx(10_000)
+    assert Income("AOW (Pays-Bas)", "me", 10_000, starts_at_age=67).amount_at(67) == 10_000
+    assert Income("PSV", "me", 10_000, starts_at_age=70,
+                  apply_deferral=False).amount_at(70) == pytest.approx(10_000)
+
+
+def test_the_increase_rides_on_top_of_indexation():
+    psv = Income("PSV", "me", 10_000, starts_at_age=70)
+    assert psv.amount_at(70, years_elapsed=5, inflation=0.02) == pytest.approx(
+        13_600 * 1.02 ** 5)
+
+
+def test_the_plan_names_what_started_late():
+    from tradelab.core.retirement_plan import deferrals
+    plan = _plan(incomes=[Income("PSV", "me", 8_000, starts_at_age=70),
+                          Income("RRQ", "me", 12_000, starts_at_age=65)])
+    assert deferrals(plan) == [{"income": "PSV", "owner": "me", "starts_at_age": 70,
+                                "increase_pct": 36.0}]
+
+
 def test_a_plan_from_the_tables_carries_the_tfsa_rules():
     from tradelab.core.retirement_plan import plan_from_rows
     plan = plan_from_rows([{"name": "Pierre", "age": 64, "tfsa_room": 12_000},
