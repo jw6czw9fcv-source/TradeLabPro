@@ -555,3 +555,26 @@ def test_the_results_show_what_went_into_the_tfsa(panel):
     headers = [panel.results.horizontalHeaderItem(c).text()
                for c in range(panel.results.columnCount())]
     assert panel.results.item(0, headers.index("Into TFSA")).text() == "5,000"
+
+
+def test_start_ages_are_compared_in_a_window(panel):
+    _fill(panel, [["Anne", 64]], [["CELI", "tfsa", 200_000, "Anne"]],
+          [["RRQ", "Anne", 10_000, 65, ""], ["PSV", "Anne", 8_000, 65, ""]])
+    panel.spending.setValue(30_000)
+    from PySide6.QtWidgets import QTableWidget
+    panel.compare_ages()
+    table = panel.age_dialog.findChild(QTableWidget)
+    assert table.rowCount() == 8 + 6
+    marks = [table.item(r, 6).text() for r in range(table.rowCount())]
+    assert sum("★" in m for m in marks) == 2
+    assert sum("(your plan)" in m for m in marks) == 2
+    panel.age_dialog.close()
+
+
+def test_comparing_start_ages_without_a_pension_pops_up(panel, monkeypatch):
+    from tradelab.ui import app as appmod
+    shown = []
+    monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
+    _fill(panel, [["Anne", 64]], [["CELI", "tfsa", 200_000, "Anne"]])
+    panel.compare_ages()
+    assert shown and "no RRQ or PSV" in shown[0]

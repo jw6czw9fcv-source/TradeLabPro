@@ -929,6 +929,15 @@ of orderings and reports **Worst 10% / Median / Best 10%** per year, plus the
 share of paths **still solvent**, with the 10–90 band shaded behind the median
 on the chart. The draw is seeded, so the same inputs give the same answer twice.
 
+**Compare start ages.** Runs the plan with each **RRQ** (65 to 72) and **PSV**
+(65 to 70) started at every age, one pension at a time with the rest of the plan
+unchanged, and lists in a window what each start leaves at the end (in today's
+dollars) and the year the money runs out, if it does. **★** marks the start that
+leaves the most; *(your plan)* the one in the Incomes table. A later start pays
+more each year but for fewer years, so it only comes out ahead for a life long
+enough to pass the break-even age — the comparison assumes you reach the
+projection's last age. A calculation on your assumptions, not advice.
+
 **Save inputs** writes the three tables and every control to the database, so
 the plan is there next launch. **Save sim** keeps the current run on the chart
 as the line to compare against — it stays through later runs and through closing
@@ -1413,6 +1422,20 @@ already running is never started twice, and clicking Refresh yourself resets the
 clock. **The ETF Screener stays manual**, and nothing you run yourself — scans,
 backtests, projections — ever starts on its own. Untick the box, or change the
 number of minutes, under **Settings → Data refresh**.
+
+**Updates.** Set **Installer folder** once to where new versions are built
+(`TradeLabPro\installer\Output`). When TradeLab starts, it looks there for a
+newer `TradeLabPro-Setup-X.Y.Z.exe` and offers to install it in one click
+(TradeLab closes while the installer runs). It also checks which version is
+published on GitHub and tells you, once, when one is out whose installer is not
+in the folder yet. **Check now** does the same on demand.
+
+**Backups.** Once a week, a few seconds after starting, TradeLab copies your
+data — portfolios, cash, journal, retirement plan, alerts, links, notes — into a
+zip in the **backups** folder inside the data folder; the last 8 are kept.
+**Back up now** makes one on demand and **Open backup folder** shows them. To
+restore: close TradeLab, unzip a backup and copy its files back into the data
+folder.
 
 **Data source.** A dropdown selects where prices and fundamentals come from:
 - **Yahoo Finance** *(default)* — live data via `yfinance`, with the synthetic

@@ -36,6 +36,8 @@ from tradelab.core.notes import load_notes, save_notes
 from tradelab.core.news import fetch_news, MARKET_SYMBOLS, GEO_SYMBOLS, SECTOR_ETFS
 from tradelab.core import heatmap as hm
 from tradelab.core import freshness
+from tradelab.core import backup, updates
+from tradelab.core.updates import parse_version, version_text
 from tradelab.data.universe import US_NASDAQ, US_NYSE, US_AMEX, CAN_TSX, CAN_TSX_EXPANDED
 from tradelab.strategies import strategy_choices
 from tradelab.ui.chart_widget import ChartWorkspace, ChartWidget
@@ -362,6 +364,45 @@ def _bring_forward(exe):
 
 AUTO_REFRESH_KEY = "AutoRefresh/enabled"
 AUTO_REFRESH_MINUTES_KEY = "AutoRefresh/minutes"
+UPDATE_FOLDER_KEY = "Updates/installerFolder"
+UPDATE_AT_START_KEY = "Updates/checkAtStartup"
+UPDATE_TOLD_KEY = "Updates/toldAbout"   # GitHub version already announced
+
+
+class _UpdateCheckWorker(QThread):
+    """Asks GitHub for the newest published version, off the UI thread."""
+    done = Signal(object)   # version tuple, or None if GitHub could not be read
+
+    def run(self):
+        try:
+            result = updates.latest_published()
+        except Exception:
+            result = None
+        try:
+            self.done.emit(result)
+        except RuntimeError:
+            pass
+
+
+class _BackupWorker(QThread):
+    """Makes one backup of the data folder, off the UI thread."""
+    done = Signal(str, str)   # zip path, error ("" when it worked)
+
+    def __init__(self, data_dir):
+        super().__init__()
+        self.data_dir = data_dir
+
+    def run(self):
+        path, err = "", ""
+        try:
+            path = str(backup.make_backup(self.data_dir))
+            log.info("Backed up the data folder to %s", path)
+        except Exception as exc:
+            err = str(exc) or type(exc).__name__
+        try:
+            self.done.emit(path, err)
+        except RuntimeError:
+            pass
 
 
 def auto_refresh_settings(settings) -> tuple:
@@ -2742,7 +2783,7 @@ class EtfScreenerPanel(QWidget):
     def add_fund(self):
         ticker = self.ticker_edit.text().strip().upper()
         if not ticker:
-            self.status.setText("Enter a ticker to add.")
+            flag_problem(self.status, "Enter a ticker to add.")
             return
         typed = self.yahoo_edit.text().strip()
         existing = self.db.etf_get(ticker)
@@ -2766,7 +2807,7 @@ class EtfScreenerPanel(QWidget):
         rows = {i.row() for i in self.table.selectedIndexes()}
         tickers = [self.table.item(r, 0).text() for r in rows if self.table.item(r, 0)]
         if not tickers:
-            self.status.setText("Select one or more rows first.")
+            flag_problem(self.status, "Select one or more rows first.")
             return
         for ticker in tickers:
             self.db.etf_delete(ticker)
@@ -2906,7 +2947,7 @@ class EtfScreenerPanel(QWidget):
     def add_selected_to_watchlist(self):
         symbols = self._symbols_for(self.selected_tickers())
         if not symbols:
-            self.status.setText("Select one or more funds first.")
+            flag_problem(self.status, "Select one or more funds first.")
             return
         for symbol in symbols:
             self.db.add_watch_symbol(symbol)
@@ -2920,7 +2961,7 @@ class EtfScreenerPanel(QWidget):
         you want to hold, never what you actually bought."""
         symbols = self._symbols_for(self.selected_tickers())
         if not symbols:
-            self.status.setText("Select one or more funds first.")
+            flag_problem(self.status, "Select one or more funds first.")
             return
         held = {str(p.get("symbol", "")).upper() for p in self.db.positions()}
         added = [s for s in symbols if s not in held]
@@ -3051,7 +3092,7 @@ class EtfScreenerPanel(QWidget):
         start. Two or more, since one fund rebased to 100 compares nothing."""
         symbols = self._symbols_for(self.selected_tickers())
         if len(symbols) < 2:
-            self.status.setText("Select at least two funds to compare.")
+            flag_problem(self.status, "Select at least two funds to compare.")
             return
         if self._busy():
             return
@@ -3110,8 +3151,8 @@ class EtfScreenerPanel(QWidget):
         weight_key = self.current_weight_key()
         result = rebalance(self.db.etf_list(), rows, weight_key)
         if not result["rows"]:
-            self.status.setText("Nothing to compare: that allocation is empty and none of "
-                                "your holdings are in the Screener.")
+            flag_problem(self.status, "Nothing to compare: that allocation is empty and none of "
+                                      "your holdings are in the Screener.")
             return
 
         label = dict((k, l) for l, k in self.COMPOSITIONS).get(weight_key, weight_key)
@@ -5084,7 +5125,7 @@ class BacktestPanel(QWidget):
         cfg=self._base_cfg()
         syms=[s.strip().upper() for s in self.multi_symbols.text().replace(";",",").split(",") if s.strip()]
         if not syms:
-            self.status.setText("Enter at least one symbol."); return
+            flag_problem(self.status, "Enter at least one symbol."); return
         self.status.setText(f"Backtesting {len(syms)} symbols...")
         result=backtest_multi(syms, cfg)
         _fill_table(self.multi_table, ["Symbol","Trades","Win rate %","Total return %","Profit factor","Max drawdown %"],
@@ -5138,7 +5179,7 @@ class BacktestPanel(QWidget):
         except ValueError:
             self.status.setText("Values must be numbers."); return
         if not values:
-            self.status.setText("Enter at least one value to test."); return
+            flag_problem(self.status, "Enter at least one value to test."); return
         self.status.setText(f"Optimizing {param} over {len(values)} values...")
         df=optimize(sym, cfg, param, values)
         cols=list(df.columns) if not df.empty else [param]
@@ -5262,7 +5303,7 @@ class ReplayPanel(QWidget):
     def load_replay(self):
         self.symbol_text = self.symbol.text().strip().upper()
         if not self.symbol_text:
-            self.status.setText("Enter a symbol first.")
+            flag_problem(self.status, "Enter a symbol first.")
             return
         self.cfg.period = self.period.currentText()
         self.cfg.interval = "1d"
@@ -6427,7 +6468,7 @@ class HeatmapPanel(QWidget):
         symbols = self._symbols_for_market()[: self.max_tiles.value()]
         if not symbols:
             src = self.market.currentText().lower()
-            self.status.setText(f"No symbols for {src} (add some in that tab first).")
+            flag_problem(self.status, f"No symbols for {src} (add some in that tab first).")
             return
         size_by = "dollar_volume" if self.size_by.currentText() == "Dollar volume" else "market_cap"
         period = self.period_sel.currentText()
@@ -6738,7 +6779,7 @@ class AlertsPanel(QWidget):
     def add_alert(self):
         symbol = self.symbol_edit.text().strip().upper()
         if not symbol:
-            self.status.setText("Enter a symbol first.")
+            flag_problem(self.status, "Enter a symbol first.")
             return
         condition = _row_to_condition(self._cond_widgets)
         alert = Alert(symbol=symbol, condition=condition,
@@ -7201,7 +7242,7 @@ class JournalPanel(QWidget):
     def add_trade(self):
         symbol = self.f_symbol.text().strip().upper()
         if not symbol:
-            self.status.setText("Enter a symbol first.")
+            flag_problem(self.status, "Enter a symbol first.")
             return
         stop = self.f_stop.value() or None
         entry = JournalEntry(
@@ -7218,7 +7259,7 @@ class JournalPanel(QWidget):
         ids = self._selected_ids()
         open_ids = [i for i in ids if self.journal.get(i) and self.journal.get(i).is_open]
         if not open_ids:
-            self.status.setText("Select an open trade to close.")
+            flag_problem(self.status, "Select an open trade to close.")
             return
         price, ok = QInputDialog.getDouble(self, "Close trade", "Exit price:", 0.0, 0.0, 1e9, 2)
         if not ok:
@@ -7231,7 +7272,7 @@ class JournalPanel(QWidget):
     def edit_note(self):
         ids = self._selected_ids()
         if not ids:
-            self.status.setText("Select a trade to annotate.")
+            flag_problem(self.status, "Select a trade to annotate.")
             return
         entry = self.journal.get(ids[0])
         text, ok = QInputDialog.getMultiLineText(self, "Edit note", f"Note for {entry.symbol}:", entry.notes)
@@ -7734,7 +7775,7 @@ class NewsPanel(QWidget):
             return
         symbols = self._symbols()
         if not symbols:
-            self.status.setText("Enter a symbol first.")
+            flag_problem(self.status, "Enter a symbol first.")
             return
         geo = self.mode.currentText() == "Geopolitical"
         macro = self.macro_only.isChecked() and not geo
@@ -8046,10 +8087,169 @@ class SettingsPanel(QWidget):
         rv.addLayout(rrow)
         layout.addWidget(refresh_box)
 
+        self.data_dir = DATA_DIR
+        self._update_worker = None
+        self._backup_worker = None
+
+        upd_box = QGroupBox("Updates")
+        uv = QVBoxLayout(upd_box)
+        uv.addWidget(_hint(
+            "TradeLab looks for a newer installer in the folder below (where new "
+            "versions are built - TradeLabPro\\installer\\Output) and offers to install "
+            "it in one click; it also checks which version is published on GitHub."))
+        urow = QHBoxLayout()
+        self.update_folder = QLineEdit(str(self._settings.value(UPDATE_FOLDER_KEY, "") or ""))
+        self.update_folder.setPlaceholderText("Folder holding TradeLabPro-Setup-X.Y.Z.exe")
+        self.update_folder.editingFinished.connect(self._save_update_folder)
+        browse = QPushButton("Browse…"); browse.clicked.connect(self._browse_update_folder)
+        check = QPushButton("Check now"); check.clicked.connect(lambda: self.check_updates())
+        urow.addWidget(QLabel("Installer folder")); urow.addWidget(self.update_folder, 1)
+        urow.addWidget(browse); urow.addWidget(check)
+        uv.addLayout(urow)
+        self.update_at_start = QCheckBox("Check when TradeLab starts")
+        self.update_at_start.setChecked(
+            str(self._settings.value(UPDATE_AT_START_KEY, "true")).lower() in ("true", "1"))
+        self.update_at_start.toggled.connect(
+            lambda on: (self._settings.setValue(UPDATE_AT_START_KEY, on), self._settings.sync()))
+        uv.addWidget(self.update_at_start)
+        self.update_status = StatusLabel(f"You have {version_text(parse_version(APP_VERSION))}.")
+        uv.addWidget(self.update_status)
+        layout.addWidget(upd_box)
+
+        bak_box = QGroupBox("Backups")
+        bv = QVBoxLayout(bak_box)
+        bv.addWidget(_hint(
+            f"Once a week TradeLab copies your data (portfolios, cash, journal, retirement "
+            f"plan, alerts, links, notes) into a zip in the backups folder; the last "
+            f"{backup.KEEP} are kept. To restore, close TradeLab, unzip a backup and copy "
+            f"its files back into the data folder."))
+        brow = QHBoxLayout()
+        now_btn = QPushButton("Back up now"); now_btn.clicked.connect(lambda: self.backup_now())
+        open_btn = QPushButton("Open backup folder"); open_btn.clicked.connect(self._open_backups)
+        brow.addWidget(now_btn); brow.addWidget(open_btn); brow.addStretch()
+        bv.addLayout(brow)
+        self.backup_status = StatusLabel()
+        bv.addWidget(self.backup_status)
+        layout.addWidget(bak_box)
+        self._show_backup_state()
+
         self.info = QTextEdit(); self.info.setReadOnly(True)
         layout.addWidget(self.info, 1)
         self._refresh_info()
         self._update_desc()
+
+    # --- updates -------------------------------------------------------------
+    def _save_update_folder(self):
+        self._settings.setValue(UPDATE_FOLDER_KEY, self.update_folder.text().strip())
+        self._settings.sync()
+
+    def _browse_update_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Installer folder", self.update_folder.text())
+        if folder:
+            self.update_folder.setText(folder)
+            self._save_update_folder()
+
+    def check_updates(self, quiet=False):
+        """Offer a newer installer from the folder; else ask GitHub what is
+        published. quiet (at startup): say nothing unless there is news."""
+        mine = parse_version(APP_VERSION)
+        folder = self.update_folder.text().strip()
+        found = updates.newer_installer(folder, APP_VERSION)
+        if found:
+            self._offer_install(*found)
+            return
+        if not quiet and folder and not Path(folder).is_dir():
+            flag_problem(self.update_status, f"The installer folder does not exist: {folder}")
+            return
+        if self._update_worker is not None and self._update_worker.isRunning():
+            return
+        self.update_status.setText(f"You have {version_text(mine)}. Asking GitHub…")
+        self._update_worker = _UpdateCheckWorker()
+        self._update_worker.done.connect(lambda v: self._on_published(v, quiet))
+        self._update_worker.start()
+
+    def _offer_install(self, version, path):
+        mine = version_text(parse_version(APP_VERSION))
+        self.update_status.setText(f"TradeLab {version_text(version)} is ready to install (you have {mine}).")
+        answer = QMessageBox.question(
+            self.window(), "Update available",
+            f"TradeLab {version_text(version)} is ready to install - you have {mine}.\n\n"
+            "Install it now? TradeLab closes while the installer runs.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer != QMessageBox.Yes:
+            return
+        reason = open_external(QUrl.fromLocalFile(str(path)))
+        if reason is not None:
+            flag_problem(self.update_status, f"Could not start the installer: {reason}", str(path))
+            return
+        QTimer.singleShot(300, self.window().close)
+
+    def _on_published(self, version, quiet):
+        mine = parse_version(APP_VERSION)
+        if version is None:
+            text = f"You have {version_text(mine)}. GitHub could not be reached to compare."
+            if quiet:
+                self.update_status.setText(text)
+            else:
+                flag_problem(self.update_status, text)
+            return
+        if version <= mine:
+            self.update_status.setText(f"You have {version_text(mine)}, the latest version.")
+            return
+        text = (f"TradeLab {version_text(version)} is published on GitHub (you have "
+                f"{version_text(mine)}), but its installer is not in the installer folder yet.")
+        self.update_status.setText(text)
+        told = str(self._settings.value(UPDATE_TOLD_KEY, ""))
+        if not quiet or told != version_text(version):
+            self._settings.setValue(UPDATE_TOLD_KEY, version_text(version))
+            QMessageBox.information(self.window(), "Update available", text)
+
+    # --- backups -------------------------------------------------------------
+    def _show_backup_state(self):
+        last = backup.latest(backup.backup_dir(self.data_dir))
+        self.backup_status.setText(
+            f"Last backup: {last[0]:%Y-%m-%d %H:%M} ({last[1].name})." if last
+            else "No backup yet.")
+
+    def backup_now(self, quiet=False):
+        if self._backup_worker is not None and self._backup_worker.isRunning():
+            return
+        self.backup_status.setText("Backing up…")
+        self._backup_worker = _BackupWorker(self.data_dir)
+        self._backup_worker.done.connect(lambda path, err: self._on_backup_done(path, err, quiet))
+        self._backup_worker.start()
+
+    def _on_backup_done(self, path, error, quiet):
+        if error:
+            flag_problem(self.backup_status, f"Backup failed: {error}")
+            return
+        self._show_backup_state()
+        if not quiet:
+            self.backup_status.setText(f"Backed up to {path}.")
+
+    def _open_backups(self):
+        folder = backup.backup_dir(self.data_dir)
+        folder.mkdir(parents=True, exist_ok=True)
+        reason = open_external(QUrl.fromLocalFile(str(folder)))
+        if reason is not None:
+            flag_problem(self.backup_status, f"Could not open {folder}: {reason}")
+
+    def startup_checks(self):
+        """At launch: the weekly backup when due, and - in the installed app -
+        the update check."""
+        try:
+            if backup.due(backup.backup_dir(self.data_dir)):
+                self.backup_now(quiet=True)
+        except Exception:
+            log.exception("Could not start the weekly backup")
+        from tradelab.core import config as _config
+        if _config.FROZEN and self.update_at_start.isChecked():
+            self.check_updates(quiet=True)
+
+    def shutdown(self):
+        for worker in (self._update_worker, self._backup_worker):
+            if worker is not None and worker.isRunning():
+                worker.wait(7000)
 
     def _save_auto_refresh(self, *_):
         self._settings.setValue(AUTO_REFRESH_KEY, self.auto_refresh.isChecked())
@@ -9492,7 +9692,7 @@ class RetirementPanel(AutoRefresh, QWidget):
             return
         fund = account.fund(self.published_fund.currentData() or "")
         if fund is None:
-            self.status.setText("Pick the fund this sheet belongs to.")
+            flag_problem(self.status, "Pick the fund this sheet belongs to.")
             return
         out = rt.parse_published(self.published_text.toPlainText())
         if not out["records"]:
@@ -9608,7 +9808,7 @@ class RetirementPanel(AutoRefresh, QWidget):
             return
         fund = account.fund(self.flow_fund.currentData() or "")
         if fund is None:
-            self.status.setText("Pick the fund the money went into.")
+            flag_problem(self.status, "Pick the fund the money went into.")
             return
         when = rt._parse_date(self.flow_date.text().strip())
         amount = rt.parse_number(self.flow_amount.text())
@@ -10425,6 +10625,10 @@ class RetirementSimPanel(QWidget):
         trajectories.setToolTip("Run the same plan over hundreds of return orderings. One "
                                 "average cannot show sequence risk; this can.")
         trajectories.clicked.connect(self.run_paths)
+        ages = QPushButton("Compare start ages")
+        ages.setToolTip("Run the plan with each RRQ and PSV started at every age from 65 "
+                        "to 72 (RRQ) or 70 (PSV) and show what each leaves at the end.")
+        ages.clicked.connect(self.compare_ages)
         save = QPushButton("Save inputs"); save.clicked.connect(self.save)
         save_sim = QPushButton("Save sim")
         save_sim.setToolTip("Keep the current run on the chart as the line to compare "
@@ -10438,7 +10642,7 @@ class RetirementSimPanel(QWidget):
                        self.volatility, QLabel("  Project"),
                        self.until_age, QLabel("  Pension"), self.splitting,
                        self.todays_dollars,
-                       self.paths, run, trajectories, save, save_sim, clear_sim):
+                       self.paths, run, trajectories, ages, save, save_sim, clear_sim):
             controls.addWidget(widget)
         layout.addWidget(bar)
 
@@ -10644,7 +10848,7 @@ class RetirementSimPanel(QWidget):
         from tradelab.core.retirement_plan import project
         plan = self.build_plan()
         if plan is None:
-            self.status.setText("Add at least one person and one account first.")
+            flag_problem(self.status, "Add at least one person and one account first.")
             self.results.setRowCount(0)
             return
         self.rows = project(plan)
@@ -10724,7 +10928,7 @@ class RetirementSimPanel(QWidget):
     def save_sim(self):
         """Keep what is on screen as the line to compare against."""
         if not self._last_series:
-            self.status.setText("Run a projection first — there is nothing to save yet.")
+            flag_problem(self.status, "Run a projection first — there is nothing to save yet.")
             return
         settings = app_settings()
         settings.beginGroup(self.SETTING)
@@ -10791,6 +10995,57 @@ class RetirementSimPanel(QWidget):
                                        series.get("label", "Current"),
                                        band=band)
 
+    AGE_HEADERS = ["Pension", "Person", "Starts at", "Increase", "Left at the end (today's $)",
+                   "Money runs out", ""]
+
+    def compare_ages(self):
+        """Every start age of each RRQ and PSV, one at a time, in a window -
+        the comparison that used to take one edit and one run per age."""
+        from tradelab.core.retirement_plan import compare_start_ages
+        plan = self.build_plan()
+        if plan is None:
+            flag_problem(self.status, "Add at least one person and one account first.")
+            return
+        options = compare_start_ages(plan)
+        if not options:
+            flag_problem(self.status, "There is no RRQ or PSV starting at 65 or later in the "
+                                      "Incomes table to compare.")
+            return
+        self.age_options = options
+        dialog = QDialog(self)
+        dialog.setWindowTitle("RRQ and PSV - start ages compared")
+        dialog.resize(820, 520)
+        v = QVBoxLayout(dialog)
+        v.addWidget(_hint(
+            f"Each pension started at every age, the rest of the plan unchanged, projected "
+            f"to age {self.until_age.value()}. ★ leaves the most at the end. A later start "
+            "pays more each year but for fewer years: it comes out ahead only for a life "
+            "long enough to pass the break-even age. Surviving spouses and health are not "
+            "in it. " + theme.NOT_ADVICE))
+        table = QTableWidget(len(options), len(self.AGE_HEADERS))
+        table.setHorizontalHeaderLabels(self.AGE_HEADERS)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        for r, o in enumerate(options):
+            marks = " ".join(m for m, on in (("★ most left", o["best"]),
+                                              ("(your plan)", o["current"])) if on)
+            cells = [o["income"], o["owner"], str(o["starts_at_age"]),
+                     f"+{o['increase_pct']:g}%" if o["increase_pct"] else "-",
+                     f"{o['capital_at_end']:,.0f} $",
+                     str(o["runs_out"]) if o["runs_out"] else "never", marks]
+            for c, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if o["best"]:
+                    font = item.font(); font.setBold(True); item.setFont(font)
+                table.setItem(r, c, item)
+        table.resizeColumnsToContents()
+        v.addWidget(table, 1)
+        close = QPushButton("Close"); close.clicked.connect(dialog.accept)
+        v.addWidget(close, 0, Qt.AlignRight)
+        self.age_dialog = dialog
+        self.status.setText("Start ages compared - see the window.")
+        dialog.show()
+
     def run_paths(self):
         """The same plan over many return orderings.
 
@@ -10802,7 +11057,7 @@ class RetirementSimPanel(QWidget):
         from tradelab.core.retirement_plan import simulate
         plan = self.build_plan()
         if plan is None:
-            self.status.setText("Add at least one person and one account first.")
+            flag_problem(self.status, "Add at least one person and one account first.")
             return
         out = simulate(plan, paths=self.paths.value(),
                        mean=self.nominal_return.value() / 100.0,
@@ -11376,6 +11631,11 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(3000, self._warm_market)
         except Exception:
             log.exception("Could not schedule the market warm-up")
+        # The weekly backup and the update check, once the window has settled.
+        try:
+            QTimer.singleShot(6000, self.settings_panel.startup_checks)
+        except Exception:
+            log.exception("Could not schedule the backup and update check")
 
     def _warm_market(self):
         try:
@@ -11392,6 +11652,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.alerts_panel.shutdown()  # stop poller + worker cleanly
+        except Exception:
+            pass
+        try:
+            self.settings_panel.shutdown()  # let a backup in progress finish
         except Exception:
             pass
         try:

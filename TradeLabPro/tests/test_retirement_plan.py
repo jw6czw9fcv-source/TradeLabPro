@@ -829,3 +829,45 @@ def test_a_plan_from_the_tables_carries_the_tfsa_rules():
     assert plan.tfsa_room == {"Pierre": 12_000, "Conjointe": 0.0}
     assert plan.tfsa_limit(2026) == 7_000
     assert plan.gains_inclusion == 0.5
+
+
+# -- comparing start ages -------------------------------------------------------------
+
+def test_every_start_age_of_each_pension_is_compared():
+    from tradelab.core.retirement_plan import compare_start_ages
+    plan = _plan(people=[Person("me", 65)], years=40, spending=20_000,
+                 incomes=[Income("RRQ", "me", 10_000, starts_at_age=65),
+                          Income("PSV", "me", 8_000, starts_at_age=67),
+                          Income("Travail", "me", 5_000)])
+    options = compare_start_ages(plan)
+    rrq = [o for o in options if o["income"] == "RRQ"]
+    psv = [o for o in options if o["income"] == "PSV"]
+    assert [o["starts_at_age"] for o in rrq] == list(range(65, 73))
+    assert [o["starts_at_age"] for o in psv] == list(range(65, 71))
+    assert rrq[-1]["increase_pct"] == pytest.approx(58.8)
+    assert psv[-1]["increase_pct"] == pytest.approx(36.0)
+    assert [o["current"] for o in psv] == [False, False, True, False, False, False]
+    assert sum(o["best"] for o in rrq) == 1 and sum(o["best"] for o in psv) == 1
+    # Only one income moves at a time: the plan given is left as it was.
+    assert plan.incomes[1].starts_at_age == 67
+
+
+def test_a_long_life_favours_waiting_and_a_short_one_does_not():
+    from tradelab.core.retirement_plan import compare_start_ages
+
+    def best_age(years):
+        plan = _plan(people=[Person("me", 65)], years=years, spending=0.0,
+                     incomes=[Income("PSV", "me", 10_000, starts_at_age=65)])
+        return next(o["starts_at_age"] for o in compare_start_ages(plan) if o["best"])
+
+    # Zero return: waiting to 70 gives up 5 x 10,000 and gains 3,600 a year,
+    # so it pays only after ~14 years of payments - past 84.
+    assert best_age(10) == 65
+    assert best_age(30) == 70
+
+
+def test_an_rrq_typed_for_a_start_before_65_is_not_compared():
+    from tradelab.core.retirement_plan import compare_start_ages
+    plan = _plan(incomes=[Income("RRQ", "me", 7_000, starts_at_age=62),
+                          Income("Pension", "me", 5_000, starts_at_age=65)])
+    assert compare_start_ages(plan) == []

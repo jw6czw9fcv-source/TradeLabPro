@@ -660,6 +660,49 @@ def deferrals(plan: Plan) -> list[dict]:
     return out
 
 
+def compare_start_ages(plan: Plan) -> list[dict]:
+    """Each RRQ and PSV of the plan started at every age from 65 to its last
+    (72 and 70), one at a time, the rest of the plan as it is.
+
+    One row per income and age: the increase the law adds, what is left at the
+    end of the projection in today's dollars, and the calendar year the money
+    runs out (None = never). `best` marks, per income, the start that leaves
+    the most; `current` the one in the plan. An RRQ typed for a start before 65
+    is left out - its amount is the reduced one, which a later start would not
+    raise from.
+
+    The ranking holds only for a life as long as the projection: a later start
+    pays more each year but for fewer years, so it comes out ahead only past
+    the break-even age. A calculation on the plan's assumptions, not advice.
+    """
+    from dataclasses import replace
+    out = []
+    for i, income in enumerate(plan.incomes):
+        rule = DEFERRAL.get(income.benefit) if income.apply_deferral else None
+        current = int(income.starts_at_age or 0)
+        if not rule or current < rule["from_age"]:
+            continue
+        options = []
+        for age in range(rule["from_age"], rule["max_age"] + 1):
+            trial = replace(plan, incomes=[replace(inc, starts_at_age=age) if j == i else inc
+                                           for j, inc in enumerate(plan.incomes)])
+            rows = project(trial)
+            last = rows[-1] if rows else None
+            failed = depletion_year(rows)
+            options.append({
+                "income": income.name, "owner": income.owner, "starts_at_age": age,
+                "increase_pct": round((deferred_amount(1.0, age, rule) - 1.0) * 100.0, 2),
+                "capital_at_end": (last["closing"] / last["closing_deflator"]) if last else 0.0,
+                "runs_out": rows[failed]["calendar_year"] if failed is not None else None,
+                "current": age == current, "best": False,
+            })
+        best = max(options, key=lambda o: (o["runs_out"] is None, o["runs_out"] or 0,
+                                           round(o["capital_at_end"], 2), -o["starts_at_age"]))
+        best["best"] = True
+        out.extend(options)
+    return out
+
+
 def depletion_year(rows: list[dict]) -> int | None:
     """The first year the plan could not fund the spending. None means it
     never failed over the horizon projected — which is not the same as "it
