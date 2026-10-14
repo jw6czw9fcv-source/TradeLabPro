@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.54.0 - Kept current, kept safe
+
+### Added
+- **Updates in one click.** Settings → Updates: point **Installer folder** at where new versions are built, and the installed app offers a newer `TradeLabPro-Setup-X.Y.Z.exe` from there at startup and runs it in one click. It also reads the versions tagged on GitHub and says, once, when one is published whose installer is not in the folder yet. **Check now** on demand. The installed app had fallen two months behind without anyone noticing.
+- **Weekly backups.** A few seconds after starting, when the last one is a week old, the data folder - the database copied through SQLite's backup API, plus the JSON and text files (links, journal, alerts, notes) - goes into a zip in `backups/`; the last 8 are kept. **Back up now** and **Open backup folder** in Settings → Backups.
+- **Compare start ages** in Retirement Sim: each RRQ (65 to 72) and PSV (65 to 70) started at every age, one pension at a time, with what it leaves at the end in today's dollars and the year the money runs out. ★ marks the start that leaves the most. It assumes a life as long as the projection - a calculation, not advice.
+- **Input mistakes pop up** like other problems: nothing selected, no symbol entered, no fund picked, no person or account yet.
+
+### Verified
+- Full pytest suite passes (1534), including 19 new tests: installers found and compared as numbers, GitHub tags read and an unreachable GitHub reported only when asked, the newer installer offered and run, the GitHub news told once; a backup holding the database (restored and read back) and the small files but no caches or logs, due weekly, pruned to 8, a failed one popping up, and startup backing up when due but checking updates only in the installed app; every start age listed with its increase, a short life favouring 65 and a long one 70, and an RRQ typed before 65 left out.
+- The first real backup was made on launch (data folder zipped, 29 KB).
+
 ## 2.53.0 - Waiting for a pension, counted
 
 ### Fixed

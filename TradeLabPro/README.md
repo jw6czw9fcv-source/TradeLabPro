@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.54.0 - Kept current, kept safe - a newer installer offered and run in one click, weekly backups of your data, and the RRQ/PSV start ages compared side by side
+
 2.53.0 - Waiting for a pension, counted - starting the RRQ or the PSV after 65 now adds the increase the law gives for waiting, so a later start can be tried in one cell; links open with the browser in front, and every problem shows a pop-up
 
 2.52.0 - The OAS clawback, counted - the retirement projection takes back the OAS pension above the income threshold, after pension splitting, and shows how much

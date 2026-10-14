@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.53.0
+Current version: 2.54.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.54.0 (Kept current, kept safe)
+- **Updates:** `core/updates.py` (`newer_installer(folder, current)` from `TradeLabPro-Setup-X.Y.Z.exe` names, `latest_published()` from GitHub's tags API); Settings → Updates (QSettings `Updates/installerFolder`, `checkAtStartup`, `toldAbout`), `_UpdateCheckWorker`; checked at startup only when `config.FROZEN`.
+- **Backups:** `core/backup.py` (`make_backup` = SQLite backup API + top-level JSON/TXT, no caches/logs, zip in `DATA_DIR/backups`, keep 8; `due` weekly); `_BackupWorker`; `SettingsPanel.startup_checks()` 6 s after launch.
+- **Start ages:** `retirement_plan.compare_start_ages(plan)` - each RRQ/PSV at every age one at a time (`best`, `current`, `capital_at_end` in today's $, `runs_out`); Retirement Sim "Compare start ages" window.
+- **Input mistakes pop up:** 20 validation messages moved to `flag_problem`.
 
 ## Completed in 2.53.0 (Waiting for a pension, counted)
 - **Fixed: a later RRQ/PSV start never raised the pension** (`deferred_amount`/`DEFERRAL` were unused). `Income.amount_at` now applies `deferral_increase` to incomes named RRQ (QPP names; CPP excluded) or PSV/OAS starting after 65 (`apply_deferral=False` opts out); an RRQ before 65 is used as typed. `retirement_plan.deferrals(plan)` names them for the Retirement Sim status line and the MCP tool (`assumptions.deferred_benefits`).
