@@ -70,6 +70,69 @@ def test_double_click_opens_in_browser(qapp, tmp_path, monkeypatch):
     assert opened["u"] == "https://finviz.com"
 
 
+def _with_finviz(qapp, tmp_path):
+    panel = _panel(qapp, tmp_path)
+    panel.f_name.setText("Finviz"); panel.f_url.setText("finviz.com"); panel.save()
+    return panel
+
+
+def test_a_real_double_click_opens_the_link(qapp, tmp_path, monkeypatch):
+    # Mouse events through the table's viewport, as Windows delivers a
+    # person's double-click: press, release, then the double-click (which
+    # QTest.mouseDClick alone sends without the press before it).
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from tradelab.ui import app as appmod
+    opened = []
+    monkeypatch.setattr(appmod, "open_external", lambda url: opened.append(url))
+    panel = _with_finviz(qapp, tmp_path)
+    panel.resize(900, 500)
+    panel.show()
+    qapp.processEvents()
+    centre = panel.table.visualItemRect(panel.table.item(0, 0)).center()
+    viewport = panel.table.viewport()
+    QTest.mousePress(viewport, Qt.LeftButton, Qt.NoModifier, centre)
+    QTest.mouseRelease(viewport, Qt.LeftButton, Qt.NoModifier, centre)
+    QTest.mouseDClick(viewport, Qt.LeftButton, Qt.NoModifier, centre)
+    assert opened == ["https://finviz.com"]
+    assert panel.status.text() == "Opened Finviz in your browser."
+
+
+def test_open_selected_opens_and_says_so(qapp, tmp_path, monkeypatch):
+    from tradelab.ui import app as appmod
+    opened = []
+    monkeypatch.setattr(appmod, "open_external", lambda url: opened.append(url))
+    panel = _with_finviz(qapp, tmp_path)
+    panel.table.selectRow(0)
+    panel.open_selected()
+    assert opened == ["https://finviz.com"]
+    assert panel.status.text() == "Opened Finviz in your browser."
+
+
+def test_open_selected_with_nothing_selected_pops_up(qapp, tmp_path, monkeypatch):
+    from tradelab.ui import app as appmod
+    shown = []
+    monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr(appmod, "open_external", lambda url: pytest.fail("nothing to open"))
+    panel = _with_finviz(qapp, tmp_path)
+    panel.open_selected()
+    assert shown == ["Select a link in the list first, then click Open selected."]
+
+
+def test_a_link_that_will_not_open_pops_up_with_its_address(qapp, tmp_path, monkeypatch):
+    from tradelab.ui import app as appmod
+    shown = []
+    monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr(appmod, "open_external", lambda url: "Access is denied.")
+    panel = _with_finviz(qapp, tmp_path)
+    panel._open_row(0, 0)
+    assert len(shown) == 1
+    assert shown[0].startswith("Could not open Finviz: Access is denied.")
+    assert "https://finviz.com" in shown[0]
+    assert QApplication.clipboard().text() == "https://finviz.com"
+    assert panel.status.text() == "Could not open Finviz: Access is denied."
+
+
 def test_remove_selected(qapp, tmp_path):
     panel = _panel(qapp, tmp_path)
     panel.f_name.setText("A"); panel.f_url.setText("a.com"); panel.save()

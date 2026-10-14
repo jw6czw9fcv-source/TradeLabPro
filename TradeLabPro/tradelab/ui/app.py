@@ -1,13 +1,14 @@
 import os
 import sys
 import json
+import logging
 import re
 import traceback
 import time
 from pathlib import Path
 import pandas as pd
 from PySide6.QtCore import (Qt, QThread, Signal, QSettings, QTimer, QUrl, QSize, QRect,
-                            QPoint, QEvent)
+                            QPoint, QEvent, QObject, Slot)
 from PySide6.QtGui import QAction, QImage, QTextCursor, QColor, QIcon, QPainter, QFont, QPen, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -77,6 +78,286 @@ class StatusLabel(QLabel):
         super().setText(text)
         if text:
             self.messageChanged.emit(text)
+
+
+# --- problems: never silent --------------------------------------------------
+# Set by the test suite, so a failure path under test does not leave a pop-up
+# over every later test.
+NO_POPUPS_ENV = "TRADELAB_NO_POPUPS"
+_PROBLEMS_LISTED = 6     # problems one pop-up lists before "...and N more"
+_problem_box = None      # the pop-up on screen, if any
+_problem_lines = []      # what it lists, oldest first
+
+
+def show_problem(text, parent=None):
+    """Show a problem in a Windows pop-up, so nothing goes wrong silently.
+
+    One pop-up at a time: problems arriving while it is open (a refresh failing
+    in several tabs at once) are added to it instead of piling up behind it.
+    Modal but not blocking - it returns at once, so a failure inside a worker's
+    callback does not stall the window. GUI thread only; report_problem() is
+    the way in from anywhere else."""
+    global _problem_box
+    log.warning("Problem shown: %s", text)
+    if os.environ.get(NO_POPUPS_ENV) or QApplication.instance() is None:
+        return
+    if _problem_box is not None:
+        _problem_lines.append(text)
+        listed = _problem_lines[:_PROBLEMS_LISTED]
+        body = "\n\n".join(listed)
+        if len(_problem_lines) > len(listed):
+            body += f"\n\n...and {len(_problem_lines) - len(listed)} more (see the log)."
+        _problem_box.setText(body)
+        return
+    box = QMessageBox(QMessageBox.Warning, f"{APP_NAME} - problem", text,
+                      QMessageBox.Ok, parent)
+    box.setWindowModality(Qt.ApplicationModal)
+    box.setAttribute(Qt.WA_DeleteOnClose)
+    box.finished.connect(_problem_closed)
+    _problem_lines[:] = [text]
+    _problem_box = box
+    box.show()
+    box.raise_()
+    box.activateWindow()
+
+
+def _problem_closed(*_):
+    global _problem_box
+    _problem_box = None
+    _problem_lines.clear()
+
+
+def flag_problem(label, text, details=""):
+    """A failure: say it on the panel's status line and in a pop-up. details,
+    when given, goes in the pop-up only - too long for a status line."""
+    label.setText(text)
+    show_problem(f"{text}\n\n{details}" if details else text, label.window())
+
+
+class _ProblemBridge(QObject):
+    """Carries a problem from any thread to the pop-up on the GUI thread."""
+    raised = Signal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.raised.connect(self._show)
+
+    @Slot(str)
+    def _show(self, text):
+        show_problem(text, QApplication.activeWindow())
+
+
+_problem_bridge = None
+
+
+def report_problem(text):
+    """show_problem() from any thread."""
+    if _problem_bridge is not None:
+        _problem_bridge.raised.emit(text)
+        return
+    app = QApplication.instance()
+    if app is not None and QThread.currentThread() == app.thread():
+        show_problem(text, QApplication.activeWindow())
+    else:
+        log.warning("Problem with no window to show it: %s", text)
+
+
+class ProblemPopupHandler(logging.Handler):
+    """The app's own logged errors, as pop-ups: a refresh or a worker failing in
+    the background logs it, and nobody reads the log while it happens. A record
+    logged with extra={"popup": False} has shown its own pop-up already."""
+
+    def __init__(self):
+        super().__init__(level=logging.ERROR)
+
+    def emit(self, record):
+        if getattr(record, "popup", True) is False:
+            return
+        try:
+            text = (record.getMessage().splitlines() or [""])[0]
+            exc = record.exc_info[1] if record.exc_info else None
+            if exc is not None:
+                text = f"{text}: {exc}"
+            report_problem(text)
+        except Exception:
+            self.handleError(record)
+
+
+def install_problem_popups():
+    """Route problems from every thread, and the app's logged errors, to the
+    pop-up. Once, on the GUI thread, after the QApplication exists."""
+    global _problem_bridge
+    if _problem_bridge is None:
+        _problem_bridge = _ProblemBridge()
+        logging.getLogger("tradelab").addHandler(ProblemPopupHandler())
+
+
+# --- opening links: in front, and never silently -----------------------------
+_ASFW_ANY = 0xFFFFFFFF
+
+
+def open_external(target):
+    """Open a web address (or a file) with its Windows program, in front.
+
+    Returns None when it went, else the reason it did not. Two ways this used
+    to look like a dead button: QDesktopServices.openUrl reports a refusal only
+    through its return value, which was dropped; and a browser already running
+    took the link in a tab behind this maximised window, because Windows does
+    not let a background program jump in front. Now a refusal gets a second try
+    through the shell, and the browser is brought to the front."""
+    url = target if isinstance(target, QUrl) else QUrl(str(target))
+    if url.isEmpty() or not url.isValid():
+        return f"'{url.toString()}' is not an address that can be opened."
+    text = url.toLocalFile() if url.isLocalFile() else url.toString(QUrl.FullyEncoded)
+    web = not url.isLocalFile()
+    if web:
+        _allow_foreground()
+    if QDesktopServices.openUrl(url):
+        log.info("Opened %s", text)
+    else:
+        log.warning("Qt could not open %s; asking the shell directly", text)
+        reason = _shell_open(text)
+        if reason is not None:
+            log.warning("The shell could not open %s either: %s", text, reason)
+            return reason
+        log.info("Opened %s through the shell", text)
+    if web:
+        _bring_browser_forward_soon(url.scheme())
+    return None
+
+
+def _shell_open(text):
+    """A second try outside Qt: None when it went, else the reason. Never on the
+    headless (offscreen) platform the tests run on, where Qt refuses every
+    link: there is no desktop there, and a test must not launch the browser."""
+    if QApplication.platformName() == "offscreen":
+        return "there is no desktop to open it on"
+    if sys.platform == "win32":
+        try:
+            os.startfile(text)
+            return None
+        except OSError as exc:
+            return exc.strerror or str(exc)
+    import webbrowser
+    return None if webbrowser.open(text) else "no web browser is set up"
+
+
+def _allow_foreground():
+    """Let whichever process takes the link (the browser) come to the front.
+    Only the program in front may grant that - which, right after a click on a
+    link, this one is."""
+    if sys.platform != "win32" or QApplication.platformName() == "offscreen":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        ctypes.WinDLL("user32").AllowSetForegroundWindow(wintypes.DWORD(_ASFW_ANY))
+    except Exception:
+        log.debug("AllowSetForegroundWindow failed", exc_info=True)
+
+
+def browser_exe_from_command(command):
+    """The program's file name in a Windows open command:
+    '"C:\\...\\opera.exe" -noautoupdate -- "%1"' -> 'opera.exe'."""
+    m = re.search(r'([^"\\/]+\.exe)', os.path.expandvars(command or ""), re.IGNORECASE)
+    return m.group(1).strip().lower() if m else None
+
+
+def _default_browser_exe(scheme="https"):
+    """The program Windows opens web links with (opera.exe), from the registry."""
+    if sys.platform != "win32":
+        return None
+    import winreg
+    try:
+        key = rf"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\{scheme}\UserChoice"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as k:
+            prog_id = winreg.QueryValueEx(k, "ProgId")[0]
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, rf"{prog_id}\shell\open\command") as k:
+            command = winreg.QueryValueEx(k, "")[0]
+    except OSError:
+        return None
+    return browser_exe_from_command(command)
+
+
+def _bring_browser_forward_soon(scheme="https"):
+    """Put the browser in front once it has had a moment to take the link - two
+    tries, since a browser that was closed takes longer to show a window. Each
+    acts only while this program is still the one in front, so it never pulls
+    focus from wherever the person has gone since."""
+    if sys.platform != "win32" or QApplication.platformName() == "offscreen":
+        return
+    exe = _default_browser_exe(scheme)
+    if not exe:
+        return
+    for delay in (400, 1500):
+        QTimer.singleShot(delay, lambda: _bring_forward(exe))
+
+
+def _bring_forward(exe):
+    """Put the front-most window of program exe in front, if this program's
+    window is still the foreground one. True when it moved."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32, kernel32 = ctypes.WinDLL("user32"), ctypes.WinDLL("kernel32")
+        enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        user32.EnumWindows.argtypes = [enum_proc, wintypes.LPARAM]
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetWindow.restype = wintypes.HWND
+        user32.IsIconic.argtypes = [wintypes.HWND]
+        user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.QueryFullProcessImageNameW.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+        def pid_of(hwnd):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            return pid.value
+
+        def exe_of(pid):
+            handle = kernel32.OpenProcess(0x1000, False, pid)  # query limited information
+            if not handle:
+                return ""
+            try:
+                buf = ctypes.create_unicode_buffer(1024)
+                size = wintypes.DWORD(len(buf))
+                if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                    return Path(buf.value).name.lower()
+                return ""
+            finally:
+                kernel32.CloseHandle(handle)
+
+        if pid_of(user32.GetForegroundWindow()) != os.getpid():
+            return False
+        found = []
+
+        def visit(hwnd, _):
+            # Visible, not owned by another window, the browser's, titled: a
+            # browser window rather than one of its pop-ups. EnumWindows goes
+            # front to back, so the first match is the one used last.
+            if (user32.IsWindowVisible(hwnd) and not user32.GetWindow(hwnd, 4)  # GW_OWNER
+                    and exe_of(pid_of(hwnd)) == exe and user32.GetWindowTextLengthW(hwnd)):
+                found.append(hwnd)
+                return False
+            return True
+
+        user32.EnumWindows(enum_proc(visit), 0)
+        if not found:
+            return False
+        if user32.IsIconic(found[0]):
+            user32.ShowWindow(found[0], 9)  # SW_RESTORE
+        return bool(user32.SetForegroundWindow(found[0]))
+    except Exception:
+        log.debug("Could not bring the browser forward", exc_info=True)
+        return False
 
 
 AUTO_REFRESH_KEY = "AutoRefresh/enabled"
@@ -1294,7 +1575,7 @@ class ScannerPanel(QWidget):
             self.result_status.setText(f"Results: {len(self.results)}")
         except Exception:
             self.scanner_error_popup("Scanner result display error", traceback.format_exc())
-            self.status.setText("Scanner stopped safely after a result display error.")
+            flag_problem(self.status, "Scanner stopped safely after a result display error.")
 
     def on_scan_worker_finished(self):
         # BUG-005E: safe scanner thread cleanup after the worker is fully stopped.
@@ -1411,7 +1692,7 @@ class ScannerPanel(QWidget):
         if self.on_show_heatmap:
             self.on_show_heatmap(syms)
         else:
-            self.status.setText("Heatmap is not available.")
+            flag_problem(self.status, "Heatmap is not available.")
 
     def export_results(self):
         if self.results.empty:
@@ -2669,7 +2950,7 @@ class EtfScreenerPanel(QWidget):
                 for fund in funds:
                     writer.writerow([fund.get(key, "") for key in keys])
         except OSError as exc:
-            self.status.setText(f"Could not write {path}: {exc}")
+            flag_problem(self.status, f"Could not write {path}: {exc}")
             return
         # Fractions, not display percents: a spreadsheet should get the number,
         # not the formatting.
@@ -2698,13 +2979,13 @@ class EtfScreenerPanel(QWidget):
 
     def _on_chart_loaded(self, symbol, df, err):
         if err or df is None or getattr(df, "empty", False):
-            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            flag_problem(self.status, f"Could not chart {symbol}: {err or 'no data'}")
             return
         try:
             self.chart.plot(symbol, df, self.cfg)
             self.status.setText(f"Charted {symbol}.")
         except Exception as exc:
-            self.status.setText(f"Could not chart {symbol}: {exc}")
+            flag_problem(self.status, f"Could not chart {symbol}: {exc}")
 
     # -- analyses on the whole allocation ----------------------------------
     def current_weight_key(self) -> str:
@@ -2892,7 +3173,7 @@ class EtfScreenerPanel(QWidget):
         useless."""
         from tradelab.core.etf_metrics import pass_through_symbols
         if error:
-            self.status.setText(f"Could not open the funds up: {error}")
+            flag_problem(self.status, f"Could not open the funds up: {error}")
             return
         self._lt_comps = dict(compositions or {})
         from tradelab.core.etf_metrics import alternate_listing
@@ -3296,13 +3577,13 @@ class PortfolioPanel(QWidget):
 
     def _on_chart_loaded(self, symbol, df, err):
         if err or df is None or getattr(df, "empty", False):
-            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            flag_problem(self.status, f"Could not chart {symbol}: {err or 'no data'}")
             return
         try:
             self.chart.plot(symbol, df, self.cfg)
             self.status.setText(f"Charted {symbol}.")
         except Exception as exc:
-            self.status.setText(f"Could not chart {symbol}: {exc}")
+            flag_problem(self.status, f"Could not chart {symbol}: {exc}")
 
     # -- IBKR position import (read-only) --
     def import_ibkr_file(self):
@@ -3315,7 +3596,7 @@ class PortfolioPanel(QWidget):
         try:
             text = Path(path).read_text(encoding="utf-8", errors="ignore")
         except Exception as exc:
-            self.status.setText(f"Could not read file: {exc}")
+            flag_problem(self.status, f"Could not read file: {exc}")
             return
         parsed, cash = parse_ibkr_positions(text), parse_ibkr_cash(text)
         if not parsed:
@@ -3325,7 +3606,7 @@ class PortfolioPanel(QWidget):
         self.status.setText("Resolving symbols…")
         self._ibkr_worker = _ResolveSymbolsWorker(parsed)
         self._ibkr_worker.done.connect(lambda pos, err: (
-            self.status.setText(f"IBKR file resolve failed: {err}") if err
+            flag_problem(self.status, f"IBKR file resolve failed: {err}") if err
             else self._apply_ibkr(pos, "file", cash)))
         self._ibkr_worker.start()
 
@@ -3349,7 +3630,7 @@ class PortfolioPanel(QWidget):
 
     def _on_ibkr_fetched(self, holdings, error):
         if error or holdings is None:
-            self.status.setText(f"IBKR fetch failed: {error or 'no data'}")
+            flag_problem(self.status, f"IBKR fetch failed: {error or 'no data'}")
             return
         positions, cash = holdings
         self._apply_ibkr(positions, "Flex report", cash)
@@ -3872,7 +4153,7 @@ class MarketPanel(AutoRefresh, QWidget):
         if symbol != self._pending_symbol:
             return                        # superseded by a later click
         if err or df is None or getattr(df, "empty", False):
-            self.status.setText(f"Could not chart {symbol}: {err or 'no data returned'}")
+            flag_problem(self.status, f"Could not chart {symbol}: {err or 'no data returned'}")
             return
         self._history_cache[(symbol, self.cfg.period, self.cfg.interval)] = df
         self._plot(symbol, df)
@@ -3882,7 +4163,7 @@ class MarketPanel(AutoRefresh, QWidget):
             self.chart.plot(symbol, df, self.cfg)
             self.status.setText(f"Charted {symbol}.")
         except Exception as exc:
-            self.status.setText(f"Could not chart {symbol}: {exc}")
+            flag_problem(self.status, f"Could not chart {symbol}: {exc}")
 
     def shutdown(self):
         """Stop in-flight fetches so closing the app doesn't hang."""
@@ -4473,7 +4754,7 @@ class StrategyBuilderPanel(QWidget):
         from tradelab.strategies.custom import load_custom_strategy
         strat = load_custom_strategy(name)
         if strat is None:
-            self.status.setText(f"Could not load strategy: {name}"); return
+            flag_problem(self.status, f"Could not load strategy: {name}"); return
         self.name.setEditText(strat.name)
         self.buy_conditions.set_conditions(strat.buy_conditions)
         self.sell_conditions.set_conditions(strat.sell_conditions)
@@ -6115,7 +6396,7 @@ class HeatmapPanel(QWidget):
                 self.db.add_watch_symbol(symbol)
                 self.status.setText(f"Added {symbol} to watchlist.")
             except Exception as exc:
-                self.status.setText(f"Could not add {symbol}: {exc}")
+                flag_problem(self.status, f"Could not add {symbol}: {exc}")
 
     def _on_period_changed(self, _period):
         self.legend_title.setText(f"{self.period_sel.currentText()} change:")
@@ -6296,7 +6577,7 @@ class HeatmapPanel(QWidget):
             self.chart.plot(symbol, get_history(symbol, self.cfg.period, self.cfg.interval), self.cfg)
             self.status.setText(f"Charted {symbol}.")
         except Exception as exc:
-            self.status.setText(f"Could not chart {symbol}: {exc}")
+            flag_problem(self.status, f"Could not chart {symbol}: {exc}")
 
     def shutdown(self):
         try:
@@ -6914,7 +7195,7 @@ class JournalPanel(QWidget):
             try:
                 self.chart.plot(entry.symbol, get_history(entry.symbol, self.cfg.period, self.cfg.interval), self.cfg)
             except Exception as exc:
-                self.status.setText(f"Could not chart {entry.symbol}: {exc}")
+                flag_problem(self.status, f"Could not chart {entry.symbol}: {exc}")
 
     # --- actions ----------------------------------------------------------
     def add_trade(self):
@@ -6973,7 +7254,7 @@ class JournalPanel(QWidget):
             data = json.loads(path.read_text(encoding="utf-8"))
             added = self.journal.import_fills(data.get("orders", []))
         except Exception as exc:
-            self.status.setText(f"Import failed: {exc}")
+            flag_problem(self.status, f"Import failed: {exc}")
             return
         self.status.setText(f"Imported {added} new trade(s) from Paper Trading."
                             if added else "No new trades to import.")
@@ -6987,7 +7268,7 @@ class JournalPanel(QWidget):
         try:
             added = self.journal.import_ibkr_csv(path)
         except Exception as exc:
-            self.status.setText(f"IBKR import failed: {exc}")
+            flag_problem(self.status, f"IBKR import failed: {exc}")
             return
         if added:
             self.status.setText(f"Imported {added} new trade(s) from IBKR.")
@@ -7069,7 +7350,7 @@ class JournalPanel(QWidget):
 
     def _on_flex_done(self, fills, error):
         if error and not fills:
-            self.status.setText(f"IBKR Flex import failed: {error}")
+            flag_problem(self.status, f"IBKR Flex import failed: {error}")
             return
         added = self.journal.import_fills(fills)
         self.status.setText(f"Imported {added} new trade(s) from IBKR Flex."
@@ -7222,7 +7503,9 @@ class ManualBrowser(QTextBrowser):
             return
         target = url if url.scheme() else QUrl.fromLocalFile(
             str((self._base_dir / url.path()).resolve()))
-        QDesktopServices.openUrl(target)
+        reason = open_external(target)
+        if reason is not None:
+            show_problem(f"Could not open {target.toDisplayString()}: {reason}", self.window())
 
     def heading_blocks(self):
         """Every heading in the rendered document, with the slug its own table
@@ -7487,11 +7770,14 @@ class NewsPanel(QWidget):
     def _open_row(self, row, _col):
         if 0 <= row < len(self._items):
             url = self._items[row].url
-            if url:
-                QDesktopServices.openUrl(QUrl(url))
+            if not url:
+                flag_problem(self.status, "No link available for that headline.")
+                return
+            reason = open_external(url)
+            if reason is None:
                 self.status.setText("Opened article in your browser.")
             else:
-                self.status.setText("No link available for that headline.")
+                flag_problem(self.status, f"Could not open the article: {reason}", url)
 
     def shutdown(self):
         if self._worker is not None and self._worker.isRunning():
@@ -7600,22 +7886,29 @@ class LinksPanel(QWidget):
                 ids.append(item.data(Qt.UserRole))
         return ids
 
-    def _open(self, url):
-        if url:
-            QDesktopServices.openUrl(QUrl(url))
+    def _open_link(self, link):
+        """Open one saved link in the browser, brought to the front; True when
+        it went. A refusal is a pop-up, with the address left on the clipboard
+        to paste into the browser by hand."""
+        reason = open_external(link.url)
+        if reason is None:
+            return True
+        QApplication.clipboard().setText(link.url)
+        flag_problem(self.status, f"Could not open {link.name}: {reason}",
+                     f"Its address is on the clipboard - paste it into your browser:\n{link.url}")
+        return False
 
     def _open_row(self, row, _col):
         item = self.table.item(row, 0)
         link = self.store.get(item.data(Qt.UserRole)) if item else None
-        if link:
-            self._open(link.url)
-            self.status.setText(f"Opened {link.name}.")
+        if link and self._open_link(link):
+            self.status.setText(f"Opened {link.name} in your browser.")
 
     # --- actions ----------------------------------------------------------
     def save(self):
         name, url = self.f_name.text().strip(), self.f_url.text().strip()
         if not name or not url:
-            self.status.setText("Enter a name and a URL.")
+            flag_problem(self.status, "Enter a name and a URL.")
             return
         if self._editing_id and self.store.get(self._editing_id):
             self.store.update(self._editing_id, name=name, url=url, group=self.f_group.text())
@@ -7643,10 +7936,13 @@ class LinksPanel(QWidget):
             self.save_btn.setText("Save changes")
 
     def open_selected(self):
-        for i in self._selected_ids():
-            link = self.store.get(i)
-            if link:
-                self._open(link.url)
+        links = [link for link in map(self.store.get, self._selected_ids()) if link]
+        if not links:
+            flag_problem(self.status, "Select a link in the list first, then click Open selected.")
+            return
+        opened = [link.name for link in links if self._open_link(link)]
+        if opened:
+            self.status.setText(f"Opened {', '.join(opened)} in your browser.")
 
     def remove_selected(self):
         for i in self._selected_ids():
@@ -7670,7 +7966,7 @@ class LinksPanel(QWidget):
         try:
             df = pd.read_csv(path)
         except Exception as exc:
-            self.status.setText(f"Import failed: {exc}")
+            flag_problem(self.status, f"Import failed: {exc}")
             return
         added = 0
         for _, row in df.iterrows():
@@ -7900,7 +8196,7 @@ class SeasonalityPanel(QWidget):
     def _on_loaded(self, symbol, df, err):
         from tradelab.core import seasonality as sz
         if err or df is None or getattr(df, "empty", True):
-            self.status.setText(f"Could not load {symbol}: {err or 'no data'}")
+            flag_problem(self.status, f"Could not load {symbol}: {err or 'no data'}")
             return
         self.status.setText("")
         data = sz.summarize(df)
@@ -8364,7 +8660,7 @@ class PortfolioAnalyticsPanel(AutoRefresh, QWidget):
 
     def _on_compositions(self, comps, stock_sectors, err):
         if err or comps is None:
-            self.lt_line.setText(f"Could not read fund holdings: {err or 'no data'}")
+            flag_problem(self.lt_line, f"Could not read fund holdings: {err or 'no data'}")
             return
         self._lt_comps = comps
         self._lt_sectors = stock_sectors or {}
@@ -8428,13 +8724,13 @@ class PortfolioAnalyticsPanel(AutoRefresh, QWidget):
 
     def _on_chart_loaded(self, symbol, df, err):
         if err or df is None or getattr(df, "empty", False):
-            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            flag_problem(self.status, f"Could not chart {symbol}: {err or 'no data'}")
             return
         try:
             self.chart.plot(symbol, df, self.cfg)
             self.status.setText(f"Charted {symbol}.")
         except Exception as exc:
-            self.status.setText(f"Could not chart {symbol}: {exc}")
+            flag_problem(self.status, f"Could not chart {symbol}: {exc}")
 
     def _render_correlation(self, corr):
         syms = corr["symbols"]
@@ -8638,7 +8934,7 @@ class DividendsPanel(AutoRefresh, QWidget):
         from tradelab.core import dividends as dv, portfolio_analytics as pa
         from tradelab.data.market_data import is_synthetic
         if err or history is None:
-            self.status.setText(f"Could not load dividends: {err or 'no data'}")
+            flag_problem(self.status, f"Could not load dividends: {err or 'no data'}")
             return
         self.mark_refreshed()
         self.status.setText("")
@@ -8750,13 +9046,13 @@ class DividendsPanel(AutoRefresh, QWidget):
 
     def _on_chart_loaded(self, symbol, df, err):
         if err or df is None or getattr(df, "empty", False):
-            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            flag_problem(self.status, f"Could not chart {symbol}: {err or 'no data'}")
             return
         try:
             self.chart.plot(symbol, df, self.cfg)
             self.status.setText(f"Charted {symbol}.")
         except Exception as exc:
-            self.status.setText(f"Could not chart {symbol}: {exc}")
+            flag_problem(self.status, f"Could not chart {symbol}: {exc}")
 
     def shutdown(self):
         for attr in ("_worker", "_chart_worker"):
@@ -9373,7 +9669,7 @@ class RetirementPanel(AutoRefresh, QWidget):
 
     def _on_benchmarks(self, histories, err):
         if err or histories is None:
-            self.status.setText(f"Could not load index histories: {err or 'no data'}")
+            flag_problem(self.status, f"Could not load index histories: {err or 'no data'}")
             return
         from tradelab.data.market_data import is_synthetic
         # Never judge a real fund against fabricated prices — the same rule the
@@ -9774,7 +10070,7 @@ class HomePanel(AutoRefresh, QWidget):
         from tradelab.data.market_data import is_synthetic
         self._loaded_once = True
         if err or history is None:
-            self.status.setText(f"Could not refresh: {err or 'no data'}")
+            flag_problem(self.status, f"Could not refresh: {err or 'no data'}")
             return
         # Real money: never show fabricated prices (same rule as Analytics).
         history = {s: df for s, df in history.items()
@@ -10008,13 +10304,13 @@ class HomePanel(AutoRefresh, QWidget):
 
     def _on_chart_loaded(self, symbol, df, err):
         if err or df is None or getattr(df, "empty", False):
-            self.status.setText(f"Could not chart {symbol}: {err or 'no data'}")
+            flag_problem(self.status, f"Could not chart {symbol}: {err or 'no data'}")
             return
         try:
             self.chart.plot(symbol, df, self.cfg)
             self.status.setText(f"Charted {symbol}.")
         except Exception as exc:
-            self.status.setText(f"Could not chart {symbol}: {exc}")
+            flag_problem(self.status, f"Could not chart {symbol}: {exc}")
 
     def shutdown(self):
         for attr in ("_worker", "_chart_worker"):
@@ -10883,7 +11179,9 @@ class MainWindow(QMainWindow):
             doc.setPageSize(QSizeF(page.width(), page.height()))
             doc.print_(printer)
 
-            QDesktopServices.openUrl(QUrl.fromLocalFile(out))
+            reason = open_external(QUrl.fromLocalFile(out))
+            if reason is not None:
+                show_problem(f"The manual was saved as {out}, but could not be opened: {reason}", self)
         except Exception as e:
             QMessageBox.warning(self, "PDF export failed", str(e))
 
@@ -11175,6 +11473,7 @@ def run_app():
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    install_problem_popups()
 
     # Window and taskbar icon. ROOT_DIR resolves to the bundle when packaged, so
     # this works from source and from the .exe alike (the spec ships it).
@@ -11185,13 +11484,16 @@ def run_app():
     def show_exception(exc_type, exc_value, exc_traceback):
         import traceback
         msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-        log.error("Uncaught exception:\n%s", msg)
+        # Its own pop-up below, with the log's path - not a second one from
+        # the error handler.
+        log.error("Uncaught exception:\n%s", msg, extra={"popup": False})
         log_dir = LOG_DIR
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "last_error.log"
         log_path.write_text(msg, encoding="utf-8")
-        parent = QApplication.activeWindow()
-        QMessageBox.critical(parent, "TradeLab Pro Error", f"An error occurred.\n\n{str(exc_value)}\n\nFull log:\n{log_path}")
+        # report_problem rather than a QMessageBox made here: this hook also
+        # runs on worker threads, where no widget may be made.
+        report_problem(f"An error occurred.\n\n{exc_value}\n\nFull log:\n{log_path}")
 
     sys.excepthook = show_exception
     win = MainWindow()

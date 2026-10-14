@@ -46,6 +46,11 @@ os.environ.setdefault(
     str(Path(tempfile.mkdtemp(prefix="tradelab_test_settings_")) / "settings.ini"),
 )
 
+# And no problem pop-ups. Every failure the app reports now opens one (modal), so
+# the many tests that walk a failure path would each leave a window over the
+# rest of the run. The pop-up tests turn them back on for themselves.
+os.environ.setdefault("TRADELAB_NO_POPUPS", "1")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
