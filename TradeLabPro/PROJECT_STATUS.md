@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.52.0
+Current version: 2.53.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.53.0 (Waiting for a pension, counted)
+- **Fixed: a later RRQ/PSV start never raised the pension** (`deferred_amount`/`DEFERRAL` were unused). `Income.amount_at` now applies `deferral_increase` to incomes named RRQ (QPP names; CPP excluded) or PSV/OAS starting after 65 (`apply_deferral=False` opts out); an RRQ before 65 is used as typed. `retirement_plan.deferrals(plan)` names them for the Retirement Sim status line and the MCP tool (`assumptions.deferred_benefits`).
+- **Fixed: Links tab links opened behind the window.** `ui.app.open_external` grants `AllowSetForegroundWindow`, checks `QDesktopServices.openUrl`'s result (second try via `os.startfile`, never on the offscreen test platform), then raises the default browser's window (`_default_browser_exe` from the https UserChoice, `_bring_forward`) while TradeLab is still in front. Used by Links, News, the manual viewer and the PDF export.
+- **Added: problems pop up.** `show_problem` (one modal, non-blocking QMessageBox; problems arriving while it is open are listed in it), `flag_problem(label, text)` for the 32 failure messages panels wrote on their status line, `report_problem` + `_ProblemBridge` from any thread, and `ProblemPopupHandler` for ERROR records of the `tradelab` loggers (`extra={"popup": False}` opts out). `install_problem_popups()` in `run_app`; `TRADELAB_NO_POPUPS` keeps the test suite free of them.
 
 ## Completed in 2.52.0 (The OAS clawback, counted)
 - **Fixed: the OAS pension was never clawed back.** `tax_quebec.oas_recovery` (15% of net income above `oas_recovery_threshold`, capped at the OAS received) applied inside `household_tax_fn` after pension splitting, via a fifth argument `oas_by_owner`; `retirement_plan._tax_caller` passes it when the tax model accepts it. `Income.is_oas` recognises PSV/SV/OAS by name. Rows `oas_recovery`; "OAS clawback" column; MCP `oas_clawback`.

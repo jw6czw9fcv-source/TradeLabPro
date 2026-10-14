@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.53.0 - Waiting for a pension, counted - starting the RRQ or the PSV after 65 now adds the increase the law gives for waiting, so a later start can be tried in one cell; links open with the browser in front, and every problem shows a pop-up
+
 2.52.0 - The OAS clawback, counted - the retirement projection takes back the OAS pension above the income threshold, after pension splitting, and shows how much
 
 2.51.0 - Retirement, with its taxes paid - a registered withdrawal now pays its own tax, the money a plan saves goes into the TFSA first, and the growth of what is saved outside it is taxed

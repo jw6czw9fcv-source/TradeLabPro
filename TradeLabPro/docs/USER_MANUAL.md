@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.52.0**
+**Version 2.53.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
 **Home** dashboard showing your book, a chart of its year so far, the market
@@ -100,6 +100,16 @@ The window is split into two halves:
 Drag the divider between the two halves to rebalance the space. Each tab scrolls
 internally if it needs more room than the window height, so the bottom of a tab
 is always reachable on any screen size.
+
+**When something goes wrong, a pop-up says so.** A chart that finds no data, an
+import that fails, a refresh that cannot reach the market or a link that will
+not open each shows a Windows pop-up, as well as the line under its tab -
+nothing fails silently. Problems that arrive together share one pop-up.
+
+**Links** (the Links tab) open in your default browser, which is brought to the
+front: double-click a row, or select rows and click **Open selected**. If
+Windows cannot open one, the pop-up says why and the address is copied, ready
+to paste into the browser.
 
 ---
 

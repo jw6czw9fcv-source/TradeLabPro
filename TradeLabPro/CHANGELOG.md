@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.53.0 - Waiting for a pension, counted
+
+### Fixed
+- **Starting the RRQ or the PSV later never raised it.** The deferral rules were in the code and never used, so a pension moved to 70 in the Incomes table kept its amount at 65 - waiting could only look like a loss. An income named **RRQ** or **PSV** now takes the amount typed as the one at 65 and adds what the law gives for waiting: the RRQ **+0.7% a month** up to 72 (+58.8%), the PSV **+0.6% a month** up to 70 (+36%), nothing more after that, on top of indexation. Trying a PSV at 70 is now one cell.
+- **A link in the Links tab seemed to do nothing.** The browser, already open, took it in a tab behind TradeLab's maximised window. The browser is now brought to the front. A link Windows refuses gets a second try, and one that still will not open says why, with its address copied to paste by hand. **Open selected** with nothing selected says so instead of doing nothing.
+
+### Added
+- The status line names each pension started late and the increase it got; Claude's retirement tool returns the same list (`deferred_benefits`).
+- **Problems pop up.** A chart with no data, a failed import or refresh, a link that will not open, an error logged in the background or an unexpected one: each now shows a Windows pop-up, not just a line under its tab. Problems arriving together share one pop-up.
+
+### Notes
+- An RRQ started **before** 65 is used as typed: its reduction (0.5% to 0.6% a month) depends on the pension's size, which only the Retraite Québec statement knows. The federal CPP is left alone - its deferral stops at 70.
+
+### Verified
+- Rates re-read on canada.ca and retraitequebec.gouv.qc.ca on 2026-10-12. Full pytest suite passes (1507, 8 skipped), including 23 new tests: 36% at 70 and nothing more after, the RRQ month by month up to 72, everything else as typed, the increase on top of indexation, and the late starts named on screen and to Claude; a real double-click (press, release, double-click) opening a link, the browser brought forward, the second try and its reason, the pop-up and how problems share it, logged errors and worker-thread problems reaching it, and the test platform never launching a browser.
+- Diagnosed on the live window before fixing: the double-click reached the panel and Windows took the link - the browser simply stayed behind.
+
 ## 2.52.0 - The OAS clawback, counted
 
 ### Fixed
