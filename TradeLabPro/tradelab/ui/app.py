@@ -3496,10 +3496,17 @@ class _IbkrPositionsWorker(QThread):
 
     def run(self):
         try:
-            from tradelab.core.portfolio_import import fetch_ibkr_holdings, resolve_positions
-            positions, cash = fetch_ibkr_holdings(self.token, self.query_id)
+            from tradelab.core.journal import fetch_ibkr_flex
+            from tradelab.core.logging_config import log_dir
+            from tradelab.core.portfolio_import import (
+                has_cash_section, keep_raw_report, parse_ibkr_cash, parse_ibkr_positions,
+                resolve_positions)
+            text = fetch_ibkr_flex(self.token, self.query_id)
+            # Kept on this PC, so a section the import cannot read can be looked at.
+            keep_raw_report(text, log_dir())
+            positions, cash = parse_ibkr_positions(text), parse_ibkr_cash(text)
             positions = resolve_positions(positions)   # correct symbols to Yahoo listings
-            self.done.emit((positions, cash), "")
+            self.done.emit((positions, cash, has_cash_section(text)), "")
         except Exception as exc:
             self.done.emit(None, str(exc))
 
@@ -3639,16 +3646,18 @@ class PortfolioPanel(QWidget):
         except Exception as exc:
             flag_problem(self.status, f"Could not read file: {exc}")
             return
+        from tradelab.core.portfolio_import import has_cash_section
         parsed, cash = parse_ibkr_positions(text), parse_ibkr_cash(text)
+        section = has_cash_section(text)
         if not parsed:
-            self._apply_ibkr(parsed, "file", cash)
+            self._apply_ibkr(parsed, "file", cash, cash_section=section)
             return
         # Resolve symbols to the right Yahoo listings off-thread before applying.
         self.status.setText("Resolving symbols…")
         self._ibkr_worker = _ResolveSymbolsWorker(parsed)
         self._ibkr_worker.done.connect(lambda pos, err: (
             flag_problem(self.status, f"IBKR file resolve failed: {err}") if err
-            else self._apply_ibkr(pos, "file", cash)))
+            else self._apply_ibkr(pos, "file", cash, cash_section=section)))
         self._ibkr_worker.start()
 
     def fetch_ibkr_positions(self):
@@ -3673,14 +3682,15 @@ class PortfolioPanel(QWidget):
         if error or holdings is None:
             flag_problem(self.status, f"IBKR fetch failed: {error or 'no data'}")
             return
-        positions, cash = holdings
-        self._apply_ibkr(positions, "Flex report", cash)
+        positions, cash, *rest = holdings
+        self._apply_ibkr(positions, "Flex report", cash, cash_section=bool(rest and rest[0]))
 
-    def _apply_ibkr(self, positions, source, cash=None):
+    def _apply_ibkr(self, positions, source, cash=None, cash_section=False):
         """Replace one portfolio with what an IBKR report holds: its positions,
         and its cash when the report carries a Cash Report section. Without
         that section the recorded cash is left alone - a missing section is not
-        an empty account."""
+        an empty account. A section that is there but could not be read is a
+        problem, and says so."""
         if not positions:
             self.status.setText(
                 f"No open positions found in the IBKR {source}. Make sure it includes the "
@@ -3692,9 +3702,16 @@ class PortfolioPanel(QWidget):
             cash_note = ("Its cash replaces what the portfolio has recorded: "
                          + ", ".join(f"{amount:,.2f} {ccy}" for ccy, amount in sorted(cash.items()))
                          + ".")
+        elif cash_section:
+            cash_note = ("The report has a Cash Report section, but TradeLab could not read "
+                         "its ending cash, so the portfolio's recorded cash stays as it is. "
+                         "The raw report is saved in the logs folder as "
+                         "ibkr_positions_last.xml.")
+            log.warning("IBKR report has a Cash Report section but no readable ending cash")
         else:
             cash_note = ("The report has no Cash Report section, so the portfolio's recorded "
-                         "cash stays as it is.")
+                         "cash stays as it is. To bring the cash in, add the Cash Report "
+                         "section (Currency, Ending Cash) to the Flex Query in IBKR.")
         ret = QMessageBox.question(
             self, "Import IBKR positions",
             f"Import {len(positions)} position(s) into the '{portfolio}' portfolio?\n"

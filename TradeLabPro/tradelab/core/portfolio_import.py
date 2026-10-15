@@ -19,6 +19,9 @@ they're unit-testable offline.
 """
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Optional
+
 
 # IBKR reports bare local tickers; Yahoo (the app's price source) needs an
 # exchange suffix for non-US listings and a dash for class shares. Map the
@@ -277,6 +280,31 @@ def parse_ibkr_cash_csv(text: str) -> dict:
 def parse_ibkr_cash(text: str) -> dict:
     """Cash per currency from a report, trying XML first then CSV."""
     return parse_ibkr_cash_xml(text) or parse_ibkr_cash_csv(text)
+
+
+def has_cash_section(text: str) -> bool:
+    """Whether a report carries a Cash Report section at all - so an import
+    that read no cash can tell "the query has no such section" (a setting in
+    IBKR) from "the section is there and TradeLab could not read it" (a bug)."""
+    import re
+    text = text or ""
+    return "<CashReport" in text or bool(re.search(r'^"?Cash Report"?,', text, re.MULTILINE))
+
+
+RAW_POSITIONS_REPORT = "ibkr_positions_last.xml"
+
+
+def keep_raw_report(text: str, folder) -> Optional[Path]:
+    """Save the last Flex report as IBKR sent it, in the logs folder (on this PC
+    only), so a section the import could not read can be looked at. Returns
+    the path, or None if it could not be written."""
+    try:
+        out = Path(folder) / RAW_POSITIONS_REPORT
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text or "", encoding="utf-8")
+        return out
+    except OSError:
+        return None
 
 
 # --- symbol resolution by cost-basis proximity ------------------------------

@@ -226,3 +226,18 @@ def test_db_set_portfolio_positions_replaces(tmp_path):
     # Re-importing replaces, not appends.
     db.set_portfolio_positions("IBKR", pi.parse_ibkr_positions_xml(_XML))
     assert len([p for p in db.positions() if p["portfolio"] == "IBKR"]) == 3
+
+
+def test_a_cash_section_is_recognised_in_either_format():
+    from tradelab.core.portfolio_import import has_cash_section
+    assert has_cash_section('<FlexStatement><CashReport><CashReportCurrency currency="CAD"/></CashReport></FlexStatement>')
+    assert has_cash_section('Statement,Header,Field Name\n"Cash Report",Header,Currency Summary,Currency,Total\n')
+    assert not has_cash_section("<FlexStatement><OpenPositions/></FlexStatement>")
+    assert not has_cash_section("")
+
+
+def test_the_raw_report_is_kept_in_the_given_folder(tmp_path):
+    from tradelab.core.portfolio_import import keep_raw_report
+    path = keep_raw_report("<FlexQueryResponse/>", tmp_path / "logs")
+    assert path == tmp_path / "logs" / "ibkr_positions_last.xml"
+    assert path.read_text(encoding="utf-8") == "<FlexQueryResponse/>"

@@ -93,6 +93,41 @@ def test_a_report_without_cash_leaves_the_recorded_cash_alone(qapp, db, monkeypa
     assert "stays as it is" in asked[0]
 
 
+def test_a_cash_section_that_cannot_be_read_says_so(qapp, db, monkeypatch):
+    import tradelab.ui.app as app
+    asked = []
+    _answer_yes(monkeypatch, asked)
+    db.set_cash("RRSP", "CAD", 500.0)
+    panel = app.PortfolioPanel(db)
+    panel.import_portfolio.setCurrentText("RRSP")
+    panel._apply_ibkr([{"symbol": "VTI", "shares": 10, "entry_price": 250.0}], "file", {},
+                      cash_section=True)
+    assert [(c["currency"], c["amount"]) for c in db.cash()] == [("CAD", 500.0)]
+    assert "could not read" in asked[0] and "ibkr_positions_last.xml" in asked[0]
+
+
+def test_a_flex_fetch_keeps_the_raw_report_and_notes_the_cash_section(qapp, monkeypatch, tmp_path):
+    import tradelab.core.journal as journal
+    import tradelab.core.portfolio_import as pi
+    import tradelab.ui.app as app
+    report = ('<FlexQueryResponse><FlexStatements><FlexStatement>'
+              '<OpenPositions><OpenPosition symbol="VTI" position="10" costBasisPrice="250" '
+              'currency="USD" listingExchange="ARCA"/></OpenPositions>'
+              '<CashReport><CashReportCurrency currency="CAD" endingCash="1200.25"/></CashReport>'
+              '</FlexStatement></FlexStatements></FlexQueryResponse>')
+    monkeypatch.setattr(journal, "fetch_ibkr_flex", lambda token, query, transport=None: report)
+    monkeypatch.setattr(pi, "resolve_positions", lambda positions, probe=None: positions)
+    monkeypatch.setenv("TRADELAB_LOG_DIR", str(tmp_path))
+    out = []
+    worker = app._IbkrPositionsWorker("token", "query")
+    worker.done.connect(lambda holdings, err: out.append((holdings, err)))
+    worker.run()                                         # in this thread, on purpose
+    (positions, cash, section), err = out[0]
+    assert err == "" and section is True
+    assert cash == {"CAD": 1200.25} and positions[0]["symbol"] == "VTI"
+    assert (tmp_path / "ibkr_positions_last.xml").read_text(encoding="utf-8") == report
+
+
 def test_an_import_goes_to_the_ibkr_portfolio_unless_told_otherwise(qapp, tmp_path):
     import tradelab.ui.app as app
     empty = Database(path=tmp_path / "empty.db")
