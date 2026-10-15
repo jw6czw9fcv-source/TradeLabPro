@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.54.0
+Current version: 2.54.1
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.54.1 (Where the cash went)
+- **IBKR positions fetch keeps the raw report** (`portfolio_import.keep_raw_report` -> `logs/ibkr_positions_last.xml`) and `has_cash_section` lets the import confirmation tell "no Cash Report section" from "a section TradeLab could not read". Found on the first real import: the Flex query had no Cash Report section.
 
 ## Completed in 2.54.0 (Kept current, kept safe)
 - **Updates:** `core/updates.py` (`newer_installer(folder, current)` from `TradeLabPro-Setup-X.Y.Z.exe` names, `latest_published()` from GitHub's tags API); Settings → Updates (QSettings `Updates/installerFolder`, `checkAtStartup`, `toldAbout`), `_UpdateCheckWorker`; checked at startup only when `config.FROZEN`.

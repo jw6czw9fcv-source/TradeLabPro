@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.54.0**
+**Version 2.54.1**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
 **Home** dashboard showing your book, a chart of its year so far, the market
@@ -596,7 +596,11 @@ Activity Statement has one by default. The ending cash per currency then
 replaces what that portfolio has recorded, so a currency the account no longer
 holds does not linger. A report without the section leaves the recorded cash as
 it is: a missing section is not an empty account. The confirmation dialog says
-which case applies before anything is written.
+which case applies before anything is written — no Cash Report section (add it
+to the Flex Query in IBKR, or set the cash by hand in the **Cash** section), or
+a section TradeLab could not read. Each Flex fetch keeps IBKR's report as it was
+sent in the logs folder (`ibkr_positions_last.xml`, on your PC only), so a
+section that could not be read can be looked at.
 
 > **Read-only.** This reads what you hold — it never logs in to trade, routes
 > orders, or moves funds.

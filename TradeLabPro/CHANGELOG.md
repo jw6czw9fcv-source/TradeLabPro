@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.54.1 - Where the cash went
+
+### Fixed
+- **An IBKR import that brought no cash did not say why.** The first real Flex import brought the positions but no cash, and nothing showed whether the query lacked a Cash Report section or had one TradeLab could not read. The confirmation now tells the two apart: no section (add it to the Flex Query in IBKR, or set the cash by hand) or a section that could not be read.
+
+### Added
+- Each Flex positions fetch keeps IBKR's report as sent, in the logs folder (`ibkr_positions_last.xml`, on this PC only), so a section that could not be read can be looked at.
+
+### Verified
+- On the real report: positions and trades, no Cash Report section - a setting of the query, not a parsing fault. Full pytest suite passes (1538), including 4 new tests: the section recognised in Flex XML and Activity CSV, the raw report kept, a fetch passing the report's cash and section on, and an unreadable section named in the confirmation.
+
 ## 2.54.0 - Kept current, kept safe
 
 ### Added
