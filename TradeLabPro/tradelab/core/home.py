@@ -377,6 +377,65 @@ def book_value(analytics: dict):
     return a.get("account_value", a["total_value"]) if a.get("cash") else a["total_value"]
 
 
+def snapshot_of(analytics: dict) -> dict | None:
+    """The account value worth recording for today's history, or None when it
+    would mislead: nothing priced, a holding with no price, a currency left
+    unconverted, or no single currency to state it in. Dated by its prices -
+    a Saturday refresh records Friday's close under Friday."""
+    a = analytics or {}
+    value = book_value(a)
+    day = str(a.get("prices_as_of") or "")[:10]
+    if not value or not day or a.get("no_data") or a.get("fx_missing") or not a.get("currency"):
+        return None
+    return {"day": day, "currency": a["currency"], "value": float(value),
+            "positions": float(a.get("total_value") or 0.0),
+            "cash": float(a.get("cash_value") or 0.0)}
+
+
+def recorded_curve(rows: list, currency: str) -> dict | None:
+    """The account's recorded values in one currency, shaped for the Home chart
+    (the same keys as ytd_curve). Unlike that curve this is what the account
+    was really worth each day it was recorded - so a deposit or a withdrawal
+    shows up as a move, and the text says so. None below two recorded days."""
+    points = sorted((r["day"], float(r["value"])) for r in rows or []
+                    if r.get("currency") == currency and r.get("value"))
+    if len(points) < 2:
+        return None
+    series = pd.Series([v for _, v in points], index=pd.to_datetime([d for d, _ in points]))
+    start, last = float(series.iloc[0]), float(series.iloc[-1])
+    change = last - start
+    ccy = f" {currency}" if currency else ""
+    pct = (change / start * 100.0) if start else None
+    text = (f"Recorded since {series.index[0]:%d %b %Y}: "
+            f"{'up' if change >= 0 else 'down'} ${abs(change):,.0f}{ccy}"
+            + (f" ({pct:+.1f}%)" if pct is not None else "")
+            + f" over {len(points)} recorded days")
+    return {"series": series, "start_value": start, "last_value": last,
+            "change": change, "change_pct": pct, "start_date": series.index[0],
+            "as_of": series.index[-1], "from_last_year": False, "currency": currency,
+            "recorded": True, "text": text}
+
+
+def net_worth(book: float | None, currency: str | None, accounts: list) -> dict:
+    """Everything TradeLab knows you own, in one figure: the portfolios (book
+    value, cash included) plus the plans followed in the Retirement tab, each
+    at its latest statement. A plan in another currency is listed apart rather
+    than added unconverted. `accounts` are core.retirement Account objects."""
+    parts, apart = [], []
+    if book:
+        parts.append({"name": "Portfolios", "value": float(book), "as_of": None})
+    for account in accounts or []:
+        value = account.value
+        if not value:
+            continue
+        dates = account.statement_dates
+        entry = {"name": account.name, "value": float(value),
+                 "as_of": dates[-1] if dates else None, "currency": account.currency}
+        (parts if currency and account.currency == currency else apart).append(entry)
+    total = sum(p["value"] for p in parts) if parts else None
+    return {"total": total, "parts": parts, "apart": apart, "currency": currency}
+
+
 def _headline(r: dict) -> str:
     a = r["analytics"] or {}
     ccy = f" {r['currency']}" if r.get("currency") else ""

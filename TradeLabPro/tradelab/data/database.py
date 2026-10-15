@@ -191,8 +191,31 @@ SCHEMA_V9 = """
 ALTER TABLE retirement_people ADD COLUMN tfsa_room REAL;
 """
 
+# v10: the account's value as it really was, one row per day and currency,
+# recorded whenever Home prices the book - a history that, unlike the curve
+# reconstructed from today's share counts, includes deposits, trades and
+# dividends as they happened.
+SCHEMA_V10 = """
+CREATE TABLE IF NOT EXISTS value_history (
+    day TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    value REAL NOT NULL,
+    positions REAL,
+    cash REAL,
+    recorded_at TEXT,
+    PRIMARY KEY (day, currency)
+);
+"""
+
+# v11: each person's birth month, as typed ("1962-08"), which dates the
+# retirement reminders (core.retirement_dates). Blank is allowed.
+SCHEMA_V11 = """
+ALTER TABLE retirement_people ADD COLUMN born TEXT;
+"""
+
 MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
-                         SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9]
+                         SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10,
+                         SCHEMA_V11]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
 SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
@@ -340,6 +363,28 @@ class Database:
                 "INSERT INTO portfolio_cash(portfolio, currency, amount, updated_at) "
                 "VALUES (?,?,?,?)", rows)
 
+    def record_value(self, snapshot: dict) -> None:
+        """Keep the day's account value (core.home.snapshot_of); a later
+        refresh the same day replaces it, so the row holds the day's last."""
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO value_history(day, currency, value, positions, cash, recorded_at) "
+                "VALUES (?,?,?,?,?,?) ON CONFLICT(day, currency) DO UPDATE SET "
+                "value = excluded.value, positions = excluded.positions, "
+                "cash = excluded.cash, recorded_at = excluded.recorded_at",
+                (str(snapshot["day"])[:10], str(snapshot["currency"]).upper(),
+                 float(snapshot["value"]), snapshot.get("positions"), snapshot.get("cash"),
+                 _now_iso()))
+
+    def value_history(self, currency: str | None = None) -> list:
+        """Recorded account values, oldest first, optionally in one currency."""
+        sql = "SELECT day, currency, value, positions, cash, recorded_at FROM value_history"
+        args = ()
+        if currency:
+            sql += " WHERE currency=?"
+            args = (str(currency).upper(),)
+        return [dict(r) for r in self.conn.execute(sql + " ORDER BY day", args).fetchall()]
+
     def set_portfolio_positions(self, portfolio: str, positions: list) -> int:
         """Replace all rows in a named portfolio with `positions` (dicts with
         symbol / shares / entry_price). Used to sync an imported book (e.g. from
@@ -470,7 +515,7 @@ class Database:
         self.conn.commit()
 
     # -- Retirement simulator inputs -----------------------------------------
-    RETIREMENT_TABLES = {"people": ("retirement_people", ("name", "age", "tfsa_room")),
+    RETIREMENT_TABLES = {"people": ("retirement_people", ("name", "age", "tfsa_room", "born")),
                          "accounts": ("retirement_accounts",
                                       ("name", "kind", "balance", "owner")),
                          "incomes": ("retirement_incomes",
@@ -486,7 +531,7 @@ class Database:
     # and blow up on a row someone simply typed sparsely.
     RETIREMENT_DEFAULTS = {"kind": "registered", "owner": "", "balance": 0.0,
                            "annual": 0.0, "starts_at_age": 65, "ends_at_age": None,
-                           "age": 65, "indexed": 1, "tfsa_room": None}
+                           "age": 65, "indexed": 1, "tfsa_room": None, "born": None}
 
     def set_retirement_rows(self, what: str, rows: list[dict]) -> int:
         """Replace the whole set. These are edited as a table, and a partial

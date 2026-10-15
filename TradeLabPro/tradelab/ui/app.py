@@ -369,6 +369,40 @@ UPDATE_AT_START_KEY = "Updates/checkAtStartup"
 UPDATE_TOLD_KEY = "Updates/toldAbout"   # GitHub version already announced
 
 
+def restart_app():
+    """Start a fresh TradeLab and close this one - the installed .exe, or the
+    same script when run from source."""
+    from PySide6.QtCore import QProcess
+    from tradelab.core import config as _config
+    args = sys.argv[1:] if _config.FROZEN else sys.argv
+    if not QProcess.startDetached(sys.executable, list(args)):
+        show_problem("TradeLab could not restart itself - close it and open it again "
+                     "to finish.")
+        return
+    for widget in QApplication.topLevelWidgets():
+        if isinstance(widget, QMainWindow):
+            QTimer.singleShot(200, widget.close)
+            return
+    QTimer.singleShot(200, QApplication.quit)
+
+
+def apply_restore_at_startup():
+    """Before anything opens the database: put a staged backup in place."""
+    if not backup.restore_pending(DATA_DIR):
+        return
+    try:
+        names = backup.apply_pending_restore(DATA_DIR)
+        log.info("Restored a backup: %s", ", ".join(names))
+        QTimer.singleShot(1500, lambda: QMessageBox.information(
+            QApplication.activeWindow(), "Backup restored",
+            "Your backup is restored. What it replaced was backed up first, in the "
+            "backups folder."))
+    except Exception as exc:
+        report_problem(f"Could not restore the backup yet: {exc}. A file is probably in "
+                       "use by another program (Claude's TradeLab connection, for one); "
+                       "it will be tried again the next time TradeLab starts.")
+
+
 class _UpdateCheckWorker(QThread):
     """Asks GitHub for the newest published version, off the UI thread."""
     done = Signal(object)   # version tuple, or None if GitHub could not be read
@@ -8142,8 +8176,10 @@ class SettingsPanel(QWidget):
             f"its files back into the data folder."))
         brow = QHBoxLayout()
         now_btn = QPushButton("Back up now"); now_btn.clicked.connect(lambda: self.backup_now())
+        restore_btn = QPushButton("Restore…"); restore_btn.clicked.connect(lambda: self.restore())
         open_btn = QPushButton("Open backup folder"); open_btn.clicked.connect(self._open_backups)
-        brow.addWidget(now_btn); brow.addWidget(open_btn); brow.addStretch()
+        brow.addWidget(now_btn); brow.addWidget(restore_btn); brow.addWidget(open_btn)
+        brow.addStretch()
         bv.addLayout(brow)
         self.backup_status = StatusLabel()
         bv.addWidget(self.backup_status)
@@ -8243,6 +8279,32 @@ class SettingsPanel(QWidget):
         self._show_backup_state()
         if not quiet:
             self.backup_status.setText(f"Backed up to {path}.")
+
+    def restore(self, path=None):
+        """Put a backup back: pick it, confirm, then TradeLab restarts and swaps
+        it in before opening anything - after backing up what it replaces."""
+        folder = backup.backup_dir(self.data_dir)
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, "Restore a backup", str(folder),
+                                                  "TradeLab backups (*.zip)")
+        if not path:
+            return
+        answer = QMessageBox.question(
+            self.window(), "Restore a backup",
+            f"Restore {Path(path).name}?\n\nEverything entered since that backup is "
+            "replaced by what it holds. Your current data is backed up first, so this "
+            "can be undone. TradeLab restarts to do it.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            names = backup.stage_restore(path, self.data_dir)
+        except Exception as exc:
+            flag_problem(self.backup_status, f"Could not restore {Path(path).name}: {exc}")
+            return
+        log.info("Restore of %s staged (%s); restarting", path, ", ".join(names))
+        self.backup_status.setText(f"Restoring {Path(path).name} - TradeLab is restarting…")
+        restart_app()
 
     def _open_backups(self):
         folder = backup.backup_dir(self.data_dir)
@@ -10116,7 +10178,9 @@ class HomePanel(AutoRefresh, QWidget):
     REFRESH_POLICY = freshness.INTRADAY
 
     _TILES = [("value", "Book value"), ("today", "Today"),
-              ("unreal", "Unrealized P&L"), ("income", "Annual income")]
+              ("unreal", "Unrealized P&L"), ("income", "Annual income"),
+              ("worth", "Net worth")]
+    CHART_MODES = ["This year (estimated)", "Recorded history"]
 
     def __init__(self, db: Database, chart=None, cfg=None, market_source=None):
         super().__init__()
@@ -10132,6 +10196,8 @@ class HomePanel(AutoRefresh, QWidget):
         self._chart_worker = None
         self._loaded_once = False
         self._cash = []
+        self._ytd = None
+        self.retirement_path = None      # retirement.json; None = the data folder's
         layout = QVBoxLayout(self)
 
         top = QHBoxLayout()
@@ -10140,7 +10206,14 @@ class HomePanel(AutoRefresh, QWidget):
         top.addWidget(title)
         top.addStretch()
         self.currency = QComboBox(); self.currency.addItems(["CAD", "USD", "Native (mixed)"])
+        self.chart_mode = QComboBox(); self.chart_mode.addItems(self.CHART_MODES)
+        self.chart_mode.setToolTip(
+            "Estimated: today's share counts valued back through the year. Recorded: what "
+            "the account was really worth each day TradeLab priced it - deposits, trades "
+            "and dividends included as they happened.")
+        self.chart_mode.currentIndexChanged.connect(lambda _i: self._draw_chart())
         refresh = QPushButton("Refresh"); refresh.clicked.connect(self.refresh)
+        top.addWidget(QLabel("Chart")); top.addWidget(self.chart_mode)
         top.addWidget(QLabel("Currency")); top.addWidget(self.currency); top.addWidget(refresh)
         layout.addLayout(top)
 
@@ -10344,7 +10417,10 @@ class HomePanel(AutoRefresh, QWidget):
         self._set_tile("income", f"${income:,.0f}{suf}" if income else "—",
                        theme.UP if income else None)
 
-        self._render_ytd(d.get("ytd"))
+        self._record_value(a)
+        self._render_net_worth(value, cur)
+        self._ytd = d.get("ytd")
+        self._draw_chart()
 
         self.attention.clear()
         items = d.get("attention") or []
@@ -10384,6 +10460,73 @@ class HomePanel(AutoRefresh, QWidget):
 
         self._render_upcoming(d.get("events"))
         self.refresh_market_line()
+
+    def _record_value(self, analytics):
+        """Keep today's account value for the recorded history - only when every
+        holding was priced and converted (core.home.snapshot_of)."""
+        from tradelab.core.home import snapshot_of
+        snap = snapshot_of(analytics)
+        if snap is None:
+            return
+        try:
+            self.db.record_value(snap)
+        except Exception:
+            log.exception("Could not record today's account value")
+
+    def _render_net_worth(self, book, currency):
+        """Portfolios plus the plans followed in the Retirement tab."""
+        from tradelab.core.home import net_worth
+        from tradelab.core.retirement import RetirementBook
+        try:
+            accounts = RetirementBook(self.retirement_path).accounts
+        except Exception:
+            log.exception("Could not read the Retirement tab's accounts")
+            accounts = []
+        worth = net_worth(book, currency, accounts)
+        self.net_worth = worth
+        suf = f" {currency}" if currency else ""
+        if worth["total"] is None:
+            self._set_tile("worth", "—")
+            self.metrics["worth"].setToolTip("")
+            return
+        self._set_tile("worth", f"${worth['total']:,.0f}{suf}")
+        lines = [f"{p['name']}: ${p['value']:,.0f}{suf}"
+                 + (f" (statement {p['as_of']})" if p.get("as_of") else "")
+                 for p in worth["parts"]]
+        lines += [f"{p['name']}: {p['value']:,.0f} {p['currency']} - not added, another currency"
+                  for p in worth["apart"]]
+        if len(worth["parts"]) == 1 and not worth["apart"]:
+            lines.append("Add the plans you can't import (a group RRSP, a pension) in the "
+                         "Retirement tab and they count here too.")
+        self.metrics["worth"].setToolTip("\n".join(lines))
+
+    def _draw_chart(self):
+        """The year as estimated, or the history as recorded - whichever the
+        Chart box asks for."""
+        if self.chart_mode.currentIndex() == 1:
+            self._render_recorded()
+        else:
+            self._render_ytd(self._ytd)
+
+    def _render_recorded(self):
+        from tradelab.core.home import recorded_curve
+        currency = getattr(self, "_target", None)
+        if not currency:
+            self.ytd_chart.clear_curve("Pick CAD or USD: the history is recorded in one currency.")
+            return
+        rows = self.db.value_history(currency)
+        curve = recorded_curve(rows, currency)
+        if curve is None:
+            first = f" since {rows[0]['day']}" if rows else ""
+            self.ytd_chart.clear_curve(
+                f"Recording your account's value each day{first} - the chart starts once "
+                "two days are recorded.")
+            return
+        self.ytd_chart.show_curve(
+            curve, title=f"Recorded value ({currency})",
+            footnote="What the account was worth each day TradeLab priced it, cash "
+                     "included. Deposits and withdrawals show as moves - this is the "
+                     "account, not its performance.")
 
     def _render_ytd(self, ytd):
         """The account curve for the year, plus the caveat that belongs with it.
@@ -10558,7 +10701,7 @@ class RetirementSimPanel(QWidget):
 
     SETTING = "RetirementSim"
     SPECS = {
-        "people": (["Name", "Age", "TFSA room"], ["name", "age", "tfsa_room"]),
+        "people": (["Name", "Age", "TFSA room", "Born"], ["name", "age", "tfsa_room", "born"]),
         "accounts": (["Account", "Kind", "Balance", "Owner"],
                      ["name", "kind", "balance", "owner"]),
         "incomes": (["Income", "Owner", "Per year", "Starts", "Ends", "Indexed"],
@@ -10646,6 +10789,10 @@ class RetirementSimPanel(QWidget):
         ages.setToolTip("Run the plan with each RRQ and PSV started at every age from 65 "
                         "to 72 (RRQ) or 70 (PSV) and show what each leaves at the end.")
         ages.clicked.connect(self.compare_ages)
+        dates = QPushButton("Key dates")
+        dates.setToolTip("When to apply for the RRQ and the PSV, the RRSP deadline at 71 "
+                         "and the TFSA's new room - dated from each person's Born month.")
+        dates.clicked.connect(self.show_key_dates)
         save = QPushButton("Save inputs"); save.clicked.connect(self.save)
         save_sim = QPushButton("Save sim")
         save_sim.setToolTip("Keep the current run on the chart as the line to compare "
@@ -10659,7 +10806,7 @@ class RetirementSimPanel(QWidget):
                        self.volatility, QLabel("  Project"),
                        self.until_age, QLabel("  Pension"), self.splitting,
                        self.todays_dollars,
-                       self.paths, run, trajectories, ages, save, save_sim, clear_sim):
+                       self.paths, run, trajectories, ages, dates, save, save_sim, clear_sim):
             controls.addWidget(widget)
         layout.addWidget(bar)
 
@@ -10690,12 +10837,25 @@ class RetirementSimPanel(QWidget):
             header = self.tables["incomes"].horizontalHeaderItem(column)
             if header is not None:
                 header.setToolTip(deferral_tip)
+        born_header = self.tables["people"].horizontalHeaderItem(3)
+        if born_header is not None:
+            born_header.setToolTip("Birth month, e.g. 1962-08 - dates the reminders under "
+                                   "Key dates. Optional.")
         room_header = self.tables["people"].horizontalHeaderItem(2)
         if room_header is not None:
             room_header.setToolTip(
                 "The TFSA contribution room this person has today - CRA's My Account "
                 "shows it. Money the plan saves fills it before going where its growth "
                 "is taxed. Blank counts as none.")
+
+        # What the accounts TradeLab follows hold today, beside the plan's own
+        # starting balances - shown, never copied in: the plan's lines can cover
+        # accounts TradeLab cannot see.
+        self.retirement_path = None
+        self.tracked_line = QLabel("")
+        self.tracked_line.setWordWrap(True)
+        self.tracked_line.setStyleSheet("color: " + theme.MUTED + ";")
+        layout.addWidget(self.tracked_line)
 
         self.status = StatusLabel("Fill in the tables, then Run projection.")
         self.status.setWordWrap(True)
@@ -10770,6 +10930,36 @@ class RetirementSimPanel(QWidget):
         self.paths.setValue(int(settings.value("paths", 500)))
         settings.endGroup()
         self._update_real_hint()
+        self.show_tracked()
+
+    def show_tracked(self):
+        """One line: the portfolios' last recorded value and the plans in the
+        Retirement tab, against the balances the plan starts from."""
+        from tradelab.core.retirement import RetirementBook
+        parts, total = [], 0.0
+        try:
+            rows = self.db.value_history("CAD")
+        except Exception:
+            rows = []
+        if rows:
+            parts.append(f"portfolios ${rows[-1]['value']:,.0f} ({rows[-1]['day']})")
+            total += rows[-1]["value"]
+        try:
+            accounts = RetirementBook(self.retirement_path).accounts
+        except Exception:
+            accounts = []
+        for account in accounts:
+            if account.value and account.currency == "CAD":
+                parts.append(f"{account.name} ${account.value:,.0f}")
+                total += account.value
+        if not parts:
+            self.tracked_line.setText("")
+            return
+        plan = sum(r.get("balance") or 0.0 for r in self._read("accounts"))
+        self.tracked_line.setText(
+            "What TradeLab tracks today: " + " + ".join(parts) + f" = ${total:,.0f}. "
+            f"The plan's accounts start at ${plan:,.0f} - update them here if they no "
+            "longer match; the plan can include accounts TradeLab cannot see.")
 
     def save(self):
         written = 0
@@ -11011,6 +11201,46 @@ class RetirementSimPanel(QWidget):
             self.chart.show_projection(series["years"], series["balances"],
                                        series.get("label", "Current"),
                                        band=band)
+
+    def show_key_dates(self):
+        """The dated reminders around retirement for everyone in the plan."""
+        from tradelab.core.retirement_dates import checklist
+        people = [p for p in self._read("people") if str(p.get("name") or "").strip()]
+        if not people:
+            flag_problem(self.status, "Add the people in the plan first (People table).")
+            return
+        items = checklist(people, self._read("incomes"))
+        self.key_dates = items
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Retirement - key dates")
+        dialog.resize(900, 460)
+        v = QVBoxLayout(dialog)
+        v.addWidget(_hint(
+            "Worked out from each person's Born month and when the plan starts each pension. "
+            "The rules were read on Retraite Québec's and canada.ca's own pages on "
+            "2026-10-14 (hover a row for its source) - check them there before acting, they "
+            "can change. Past dates are greyed."))
+        table = QTableWidget(len(items), 3)
+        table.setHorizontalHeaderLabels(["When", "Who", "What"])
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        table.setWordWrap(True)
+        for r, item in enumerate(items):
+            when = item["date"].strftime("%Y-%m-%d") if item["date"] else "—"
+            for c, text in enumerate((when, item["person"], item["what"])):
+                cell = QTableWidgetItem(text)
+                cell.setToolTip(item["source"])
+                if item["past"]:
+                    cell.setForeground(QColor(theme.MUTED))
+                table.setItem(r, c, cell)
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        table.resizeRowsToContents()
+        v.addWidget(table, 1)
+        close = QPushButton("Close"); close.clicked.connect(dialog.accept)
+        v.addWidget(close, 0, Qt.AlignRight)
+        self.dates_dialog = dialog
+        dialog.show()
 
     AGE_HEADERS = ["Pension", "Person", "Starts at", "Increase", "Left at the end (today's $)",
                    "Money runs out", ""]
@@ -11777,6 +12007,7 @@ def run_app():
         report_problem(f"An error occurred.\n\n{exc_value}\n\nFull log:\n{log_path}")
 
     sys.excepthook = show_exception
+    apply_restore_at_startup()
     win = MainWindow()
     win.showMaximized()
     win.raise_()

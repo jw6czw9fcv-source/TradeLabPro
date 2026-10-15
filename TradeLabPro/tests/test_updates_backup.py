@@ -191,3 +191,76 @@ def test_startup_backs_up_when_due_and_checks_updates_only_when_installed(qapp, 
     monkeypatch.setattr(config, "FROZEN", True)
     panel.startup_checks()
     assert calls == [("backup", True), ("update", True)]
+
+
+# --- restoring -------------------------------------------------------------------
+
+def test_a_restore_is_staged_then_applied_after_backing_up_the_current_data(tmp_path):
+    _data(tmp_path)
+    old = backup.make_backup(tmp_path, now=dt.datetime(2026, 10, 1, 8, 0))
+    # Things change after that backup...
+    db = sqlite3.connect(tmp_path / "tradelab.db")
+    db.execute("update t set x = 7")
+    db.commit()
+    db.close()
+    (tmp_path / "notes.txt").write_text("changed")
+    assert backup.stage_restore(old, tmp_path) == ["links.json", "notes.txt", "tradelab.db"]
+    assert backup.restore_pending(tmp_path)
+    restored = backup.apply_pending_restore(tmp_path, now=dt.datetime(2026, 10, 14, 9, 0))
+    assert restored == ["links.json", "notes.txt", "tradelab.db"]
+    assert not backup.restore_pending(tmp_path)
+    assert (tmp_path / "notes.txt").read_text() == "hello"
+    db = sqlite3.connect(tmp_path / "tradelab.db")
+    assert db.execute("select x from t").fetchone() == (42,)
+    db.close()
+    # ...and what was replaced was kept, so the restore can be undone.
+    safety = backup.backups(backup.backup_dir(tmp_path))[0][1]
+    with zipfile.ZipFile(safety) as zf:
+        assert zf.read("notes.txt") == b"changed"
+
+
+def test_nothing_staged_means_nothing_restored(tmp_path):
+    assert backup.apply_pending_restore(tmp_path) == []
+
+
+def test_a_zip_without_a_database_is_refused(tmp_path):
+    bad = tmp_path / "other.zip"
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("readme.txt", "hi")
+    with pytest.raises(ValueError):
+        backup.stage_restore(bad, tmp_path)
+    assert not backup.restore_pending(tmp_path)
+
+
+def test_a_zip_cannot_write_outside_the_data_folder(tmp_path):
+    evil = tmp_path / "evil.zip"
+    with zipfile.ZipFile(evil, "w") as zf:
+        zf.writestr("tradelab.db", "x")
+        zf.writestr("../outside.txt", "nope")
+    (tmp_path / "data").mkdir()
+    assert backup.stage_restore(evil, tmp_path / "data") == ["tradelab.db"]
+    assert not (tmp_path / "outside.txt").exists()
+
+
+def test_restore_from_settings_stages_and_restarts(qapp, tmp_path, monkeypatch):
+    from tradelab.ui import app as appmod
+    _data(tmp_path)
+    zip_path = backup.make_backup(tmp_path, now=dt.datetime(2026, 10, 1, 8, 0))
+    restarted = []
+    monkeypatch.setattr(appmod.QMessageBox, "question",
+                        staticmethod(lambda *a, **k: appmod.QMessageBox.Yes))
+    monkeypatch.setattr(appmod, "restart_app", lambda: restarted.append(True))
+    panel = _panel(qapp, tmp_path)
+    panel.restore(str(zip_path))
+    assert restarted == [True] and backup.restore_pending(tmp_path)
+
+
+def test_a_declined_restore_changes_nothing(qapp, tmp_path, monkeypatch):
+    from tradelab.ui import app as appmod
+    _data(tmp_path)
+    zip_path = backup.make_backup(tmp_path, now=dt.datetime(2026, 10, 1, 8, 0))
+    monkeypatch.setattr(appmod.QMessageBox, "question",
+                        staticmethod(lambda *a, **k: appmod.QMessageBox.No))
+    monkeypatch.setattr(appmod, "restart_app", lambda: pytest.fail("restarted"))
+    _panel(qapp, tmp_path).restore(str(zip_path))
+    assert not backup.restore_pending(tmp_path)

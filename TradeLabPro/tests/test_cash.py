@@ -58,6 +58,8 @@ def test_a_database_from_before_cash_gains_the_table(tmp_path):
     old.set_portfolio_positions("IBKR", [{"symbol": "VTI", "shares": 1, "entry_price": 300}])
     old.conn.execute("DROP TABLE portfolio_cash")
     old.conn.execute("ALTER TABLE retirement_people DROP COLUMN tfsa_room")   # v9
+    old.conn.execute("DROP TABLE value_history")                             # v10
+    old.conn.execute("ALTER TABLE retirement_people DROP COLUMN born")       # v11
     old.conn.execute("DELETE FROM schema_version WHERE version >= 8")
     old.conn.commit()
     old.conn.close()

@@ -92,3 +92,55 @@ def make_backup(data_dir, dest=None, now=None, keep: int = KEEP) -> Path:
         except OSError:
             pass
     return target
+
+
+# --- restoring ------------------------------------------------------------------
+#
+# The database is open while TradeLab runs, so a restore cannot swap it in
+# place. It is done in two steps: the backup is unpacked beside the data
+# ("restore-pending"), and the next start moves it in before anything opens
+# the database - after backing up what is being replaced, so a restore can
+# itself be undone.
+
+PENDING_DIR_NAME = "restore-pending"
+
+
+def stage_restore(zip_path, data_dir) -> list:
+    """Unpack a backup to be put in place at the next start. Returns the file
+    names it holds. Raises ValueError for a zip that is not a TradeLab backup."""
+    data_dir = Path(data_dir)
+    pending = data_dir / PENDING_DIR_NAME
+    with zipfile.ZipFile(zip_path) as zf:
+        # Flat names only: a member called "../x" must not land outside.
+        names = [n for n in zf.namelist() if n == Path(n).name and not n.endswith("/")]
+        if not any(n.lower().endswith(".db") for n in names):
+            raise ValueError("This zip holds no TradeLab database - not a TradeLab backup.")
+        if pending.exists():
+            for old in pending.iterdir():
+                old.unlink()
+        pending.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            (pending / name).write_bytes(zf.read(name))
+    return sorted(names)
+
+
+def restore_pending(data_dir) -> bool:
+    return (Path(data_dir) / PENDING_DIR_NAME).is_dir()
+
+
+def apply_pending_restore(data_dir, now=None) -> list:
+    """At startup, before the database is opened: back up the current data,
+    then move a staged restore into place. Returns the names restored ([] when
+    nothing was staged). Raises OSError if a file is still in use - the staged
+    copy is kept and tried again at the next start."""
+    data_dir = Path(data_dir)
+    pending = data_dir / PENDING_DIR_NAME
+    if not pending.is_dir():
+        return []
+    files = sorted(p for p in pending.iterdir() if p.is_file())
+    if any(data_dir.glob("*.db")):
+        make_backup(data_dir, now=now)
+    for staged in files:
+        staged.replace(data_dir / staged.name)
+    pending.rmdir()
+    return [p.name for p in files]

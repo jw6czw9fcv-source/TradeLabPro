@@ -160,6 +160,21 @@ like the account value your broker shows; hover over it for the split between
 positions and cash. The line under the title says when Home last refreshed and
 which trading day its **prices are as of**.
 
+**Net worth** adds the plans you follow in the **Retirement** tab (a group RRSP,
+say) to the book, each at its latest statement; hover over it for the parts. A
+plan in another currency is listed apart, not added unconverted.
+
+### Recorded history
+
+Each time Home prices the whole book, TradeLab **records the account's value for
+that day** (cash included; one value per day, the day's last). Pick **Recorded
+history** in the **Chart** box to see it: unlike the estimated year below, it is
+what the account was really worth — so a deposit or a withdrawal shows up as a
+move. Nothing is recorded when a holding has no price or a currency could not
+be converted, so the history never holds a misleading day. The **Retirement
+Sim** tab shows the latest recorded value beside the balances its plan starts
+from.
+
 ### This year
 
 A chart of what the book has been worth since the year began, in your display
@@ -933,6 +948,17 @@ of orderings and reports **Worst 10% / Median / Best 10%** per year, plus the
 share of paths **still solvent**, with the 10–90 band shaded behind the median
 on the chart. The draw is seeded, so the same inputs give the same answer twice.
 
+**Key dates.** Type each person's birth month in the People table's **Born**
+column (e.g. 1962-08) and **Key dates** lists the reminders that follow from it
+and from when the plan starts each pension: when the RRQ application opens (12
+months before) and when Retraite Québec suggests applying (about 3 months
+before) — nothing starts by itself; the PSV enrolment letter around the 64th
+birthday, and contacting Service Canada if none has come a month later; the
+end of the year you turn 71, the RRSPs' deadline; and January 1, when the TFSA's
+new limit and last year's withdrawals come back as room. The rules were read on
+Retraite Québec's and canada.ca's pages on 2026-10-14 — check them there before
+acting.
+
 **Compare start ages.** Runs the plan with each **RRQ** (65 to 72) and **PSV**
 (65 to 70) started at every age, one pension at a time with the rest of the plan
 unchanged, and lists in a window what each start leaves at the end (in today's
@@ -1437,9 +1463,11 @@ in the folder yet. **Check now** does the same on demand.
 **Backups.** Once a week, a few seconds after starting, TradeLab copies your
 data — portfolios, cash, journal, retirement plan, alerts, links, notes — into a
 zip in the **backups** folder inside the data folder; the last 8 are kept.
-**Back up now** makes one on demand and **Open backup folder** shows them. To
-restore: close TradeLab, unzip a backup and copy its files back into the data
-folder.
+**Back up now** makes one on demand and **Open backup folder** shows them.
+**Restore…** puts one back: pick the backup, confirm, and TradeLab restarts and
+swaps it in before opening anything — after backing up the data it replaces, so
+a restore can itself be undone. If a file is in use by another program (Claude's
+TradeLab connection, for one), the restore waits for the next start and says so.
 
 **Data source.** A dropdown selects where prices and fundamentals come from:
 - **Yahoo Finance** *(default)* — live data via `yfinance`, with the synthetic
