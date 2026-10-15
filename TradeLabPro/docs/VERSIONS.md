@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.54.1** | *unreleased* | Where the cash went |
+| **2.54.1** | 2026-10-14 | Where the cash went |
 | **2.54.0** | 2026-10-13 | Kept current, kept safe |
 | **2.53.0** | 2026-10-13 | Waiting for a pension, counted |
 | **2.52.0** | 2026-10-11 | The OAS clawback, counted |
