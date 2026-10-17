@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.55.0 - What you own, day by day
+
+### Added
+- **Recorded history.** Each time Home prices the whole book, the account's value for that day is kept (cash included, the day's last). **Chart → Recorded history** on Home draws it: unlike the estimated year, which values today's share counts backwards, it is what the account was really worth - deposits and withdrawals show as moves. A day with an unpriced holding or an unconverted currency is not recorded.
+- **Net worth** tile on Home: the portfolios plus the plans followed in the Retirement tab, each at its latest statement (a plan in another currency is listed apart, not added unconverted). Retirement Sim shows what TradeLab tracks today beside the balances its plan starts from - shown, never copied in.
+- **Restore…** in Settings → Backups: pick a backup, confirm, and TradeLab restarts and puts it in place before opening anything - after backing up the data it replaces, so a restore can be undone. A file in use (Claude's TradeLab connection, say) defers it to the next start, with a pop-up.
+- **Key dates** in Retirement Sim, from a new **Born** column: when the RRQ application opens and when Retraite Québec suggests applying, the PSV letter around 64 and what to do without one, the RRSPs' deadline in the year you turn 71, and the TFSA's January 1. Rules read on Retraite Québec's and canada.ca's own pages on 2026-10-14; each row names its source.
+
+### Changed
+- The app's main file (12,000+ lines) is split: shared helpers in `ui/common.py`, the Settings, Links, Home and Retirement Sim tabs in `ui/panels/`. Nothing changes on screen. A dead duplicate of the Coach tab's class is gone.
+
+### Verified
+- Full pytest suite passes (1561), including 23 new tests: snapshots only of a fully priced book, one value per day and currency, the recorded curve and its text, net worth with another currency apart, the Home tile and chart, the Retirement Sim line; a restore staged, applied after a safety backup and undoable, a zip without a database refused, a member named "../" kept out, Restore declined or confirmed; birth months read, the RRQ/PSV/RRSP/TFSA dates for a 1962-08 birth, the missing-birth-month row, and the Key dates window with Born surviving a save. A scan of every module found no name used but undefined.
+
 ## 2.54.1 - Where the cash went
 
 ### Fixed

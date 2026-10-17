@@ -1,7 +1,14 @@
 # TradeLab Pro Project Status
 
-Current version: 2.54.1
+Current version: 2.55.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.55.0 (What you own, day by day)
+- **Recorded value history:** schema **v10** `value_history(day, currency)`; `home.snapshot_of` (only a fully priced, converted book, dated by its prices) recorded by HomePanel; `home.recorded_curve`; Home's Chart box: estimated year / recorded history.
+- **Net worth:** `home.net_worth(book, currency, accounts)` = portfolios + Retirement-tab plans at their latest statement (other currencies listed apart); Home tile; Retirement Sim `show_tracked()` line beside the plan's balances (never copied in).
+- **Restore:** `backup.stage_restore` (flat names only, must hold a .db) -> `restore-pending/`; `apply_restore_at_startup()` in `run_app` backs up the current data then swaps it in before the DB opens; `restart_app()`.
+- **Key dates:** schema **v11** `retirement_people.born`; `core/retirement_dates.py` (RRQ application window, PSV letter at 64, RRSP at 71, TFSA Jan 1; sources read 2026-10-14); Retirement Sim "Key dates".
+- **Split of ui/app.py** (12,029 -> ~9,700 lines): `ui/common.py` (status line, pop-ups, link opener, AutoRefresh, table helpers, `_HistoryWorker`, FlowLayout) and `ui/panels/{settings,links,home,retirement_sim}.py`, all re-imported by app.py. Tests patch helpers where they are used (`tradelab.ui.common.show_problem`, `...panels.links.open_external`, both `app` and `common` `get_history`). Dead first `CoachPanel` removed.
 
 ## Completed in 2.54.1 (Where the cash went)
 - **IBKR positions fetch keeps the raw report** (`portfolio_import.keep_raw_report` -> `logs/ibkr_positions_last.xml`) and `has_cash_section` lets the import confirmation tell "no Cash Report section" from "a section TradeLab could not read". Found on the first real import: the Flex query had no Cash Report section.

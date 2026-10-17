@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.55.0 - What you own, day by day - the account's real value recorded daily, net worth across portfolios and retirement plans, one-click restore from a backup, retirement key dates, and the app's main file split into modules
+
 2.54.1 - Where the cash went - an IBKR import that brings no cash says whether the report lacks the section or TradeLab could not read it, and keeps the report to look at
 
 2.54.0 - Kept current, kept safe - a newer installer offered and run in one click, weekly backups of your data, and the RRQ/PSV start ages compared side by side
