@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.56.0** | *unreleased* | How much is safe to spend |
+| **2.56.0** | 2026-10-17 | How much is safe to spend |
 | **2.55.0** | 2026-10-17 | What you own, day by day |
 | **2.54.1** | 2026-10-14 | Where the cash went |
 | **2.54.0** | 2026-10-13 | Kept current, kept safe |
