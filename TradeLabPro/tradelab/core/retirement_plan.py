@@ -703,6 +703,48 @@ def compare_start_ages(plan: Plan) -> list[dict]:
     return out
 
 
+def highest_spending(holds, start: float = 50_000.0, step: float = 500.0,
+                     cap: float = 2_000_000.0) -> float:
+    """The highest yearly spending (to the `step`) for which `holds(spending)`
+    is true - found by doubling to bracket it, then halving. 0 when even a
+    spending of one step fails."""
+    # Searched in whole steps: `good` steps hold, `bad` ones do not.
+    good, bad = 0, max(int(start // step), 1)
+    while holds(bad * step):
+        good, bad = bad, bad * 2
+        if bad * step > cap:
+            return float(cap)
+    while bad - good > 1:
+        mid = (good + bad) // 2
+        good, bad = (mid, bad) if holds(mid * step) else (good, mid)
+    return float(good * step)
+
+
+def safe_budget(make_plan, mean: float, sd: float, share: float = 0.90,
+                paths: int = 300, seed: int = 1, start: float = 50_000.0) -> dict:
+    """How much a plan can spend a year, in today's dollars, to its last age.
+
+    `make_plan(spending)` builds the plan at a given spending. Two answers:
+    `average` - the most it can spend if every year earns exactly the average
+    return; `safe` - the most for which `share` of `paths` simulated return
+    orderings (mean, sd) never run short. The second is the one to plan on:
+    above it, the bad orderings - not the average - decide.
+
+    A calculation on the plan's own assumptions, not a probability that a
+    retirement works, and not advice.
+    """
+    def lasts(spending):
+        return depletion_year(project(make_plan(spending))) is None
+
+    def mostly_lasts(spending):
+        return simulate(make_plan(spending), paths=paths, mean=mean, sd=sd,
+                        seed=seed)["success_rate"] >= share
+
+    return {"average": highest_spending(lasts, start),
+            "safe": highest_spending(mostly_lasts, start),
+            "share": share, "paths": paths, "mean": mean, "sd": sd}
+
+
 def depletion_year(rows: list[dict]) -> int | None:
     """The first year the plan could not fund the spending. None means it
     never failed over the horizon projected — which is not the same as "it

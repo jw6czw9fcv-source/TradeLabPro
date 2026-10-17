@@ -54,6 +54,28 @@ from tradelab.ui.common import (FlowLayout, StatusLabel, _hint, flag_problem, ta
 log = get_logger(__name__)
 
 
+class _BudgetWorker(QThread):
+    """Finds the safe budget (retirement_plan.safe_budget) off the UI thread."""
+    done = Signal(object, str)   # result dict | None, error
+
+    def __init__(self, make_plan, mean, sd, share, paths, start):
+        super().__init__()
+        self.args = (make_plan, mean, sd, share, paths, start)
+
+    def run(self):
+        from tradelab.core.retirement_plan import safe_budget
+        make_plan, mean, sd, share, paths, start = self.args
+        try:
+            result, err = safe_budget(make_plan, mean, sd, share=share, paths=paths,
+                                      start=max(start, 1_000.0)), ""
+        except Exception as exc:
+            result, err = None, str(exc) or type(exc).__name__
+        try:
+            self.done.emit(result, err)
+        except RuntimeError:
+            pass
+
+
 class RetirementSimPanel(QWidget):
     """How long the money lasts, given what you hold and what you assume.
 
@@ -162,6 +184,11 @@ class RetirementSimPanel(QWidget):
         dates.setToolTip("When to apply for the RRQ and the PSV, the RRSP deadline at 71 "
                          "and the TFSA's new room - dated from each person's Born month.")
         dates.clicked.connect(self.show_key_dates)
+        budget = QPushButton("Safe budget")
+        budget.setToolTip("The most this plan can spend a year to its last age: if every "
+                          "year is average, and in 90% of simulated return orderings "
+                          "(using the Return and % vol set here).")
+        budget.clicked.connect(self.check_budget)
         save = QPushButton("Save inputs"); save.clicked.connect(self.save)
         save_sim = QPushButton("Save sim")
         save_sim.setToolTip("Keep the current run on the chart as the line to compare "
@@ -175,7 +202,8 @@ class RetirementSimPanel(QWidget):
                        self.volatility, QLabel("  Project"),
                        self.until_age, QLabel("  Pension"), self.splitting,
                        self.todays_dollars,
-                       self.paths, run, trajectories, ages, dates, save, save_sim, clear_sim):
+                       self.paths, run, trajectories, ages, dates, budget, save, save_sim,
+                       clear_sim):
             controls.addWidget(widget)
         layout.addWidget(bar)
 
@@ -225,6 +253,13 @@ class RetirementSimPanel(QWidget):
         self.tracked_line.setWordWrap(True)
         self.tracked_line.setStyleSheet("color: " + theme.MUTED + ";")
         layout.addWidget(self.tracked_line)
+
+        # The safe-budget check: the most the plan can spend, against what it does.
+        self.budget = None
+        self._budget_worker = None
+        self.budget_line = QLabel("")
+        self.budget_line.setWordWrap(True)
+        layout.addWidget(self.budget_line)
 
         self.status = StatusLabel("Fill in the tables, then Run projection.")
         self.status.setWordWrap(True)
@@ -613,6 +648,73 @@ class RetirementSimPanel(QWidget):
 
     AGE_HEADERS = ["Pension", "Person", "Starts at", "Increase", "Left at the end (today's $)",
                    "Money runs out", ""]
+
+    # -- the safe budget --------------------------------------------------------
+    BUDGET_SHARE = 0.90
+    BUDGET_PATHS = 300
+    BUDGET_CLOSE = 0.90     # spending above 90% of the safe budget is "close"
+
+    def check_budget(self):
+        """Work out the safe budget off the UI thread - a few thousand
+        projections - then compare it with the spending set here."""
+        from tradelab.core.retirement_plan import plan_from_rows
+        if self._budget_worker is not None and self._budget_worker.isRunning():
+            return
+        people, accounts, incomes = (self._read(k) for k in ("people", "accounts", "incomes"))
+        kwargs = dict(nominal_return=self.nominal_return.value() / 100.0,
+                      inflation=self.inflation.value() / 100.0,
+                      until_age=self.until_age.value(), tax_fn=self.tax_fn())
+        if plan_from_rows(people, accounts, incomes, spending=self.spending.value(),
+                          **kwargs) is None:
+            flag_problem(self.status, "Add at least one person and one account first.")
+            return
+
+        def make_plan(spending):
+            return plan_from_rows(people, accounts, incomes, spending=spending, **kwargs)
+
+        self.budget_line.setText("Working out the safe budget…")
+        self._budget_worker = _BudgetWorker(make_plan, kwargs["nominal_return"],
+                                            self.volatility.value() / 100.0,
+                                            self.BUDGET_SHARE, self.BUDGET_PATHS,
+                                            self.spending.value())
+        self._budget_worker.done.connect(self._on_budget)
+        self._budget_worker.start()
+
+    def _on_budget(self, result, error):
+        if error or not result:
+            flag_problem(self.status, f"Could not work out the safe budget: {error or 'no result'}")
+            self.budget_line.setText("")
+            return
+        self.budget = result
+        spending = self.spending.value()
+        safe, average = result["safe"], result["average"]
+        head = (f"<b>Safe budget: ${safe:,.0f} a year</b> (holds in "
+                f"{result['share']:.0%} of {result['paths']} simulated return orderings at "
+                f"{result['mean']:.1%} with {result['sd']:.0%} vol, in today's dollars, to age "
+                f"{self.until_age.value()}); ${average:,.0f} if every year is average. ")
+        if spending > safe:
+            colour = theme.DOWN
+            verdict = (f"Your spending of ${spending:,.0f} is ${spending - safe:,.0f} above it: "
+                       "the bad orderings run the plan short.")
+        elif spending > safe * self.BUDGET_CLOSE:
+            colour = theme.WARN
+            verdict = (f"Your spending of ${spending:,.0f} is close to it - "
+                       f"${safe - spending:,.0f} of margin.")
+        else:
+            colour = theme.UP
+            verdict = (f"Your spending of ${spending:,.0f} leaves ${safe - spending:,.0f} a "
+                       "year of margin.")
+        self.budget_line.setText(head + f"<span style='color:{colour}'>{verdict}</span>"
+                                 " Crashes deeper than the % vol implies would lower it - "
+                                 "keep a margin. A calculation, not advice.")
+        if spending > safe:
+            flag_problem(self.status, f"Spending ${spending:,.0f} is above the safe budget of "
+                                      f"${safe:,.0f} a year.")
+
+    def shutdown(self):
+        worker = self._budget_worker
+        if worker is not None and worker.isRunning():
+            worker.wait(30000)
 
     def compare_ages(self):
         """Every start age of each RRQ and PSV, one at a time, in a window -

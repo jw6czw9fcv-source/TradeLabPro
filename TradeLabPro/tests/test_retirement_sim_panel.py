@@ -578,3 +578,25 @@ def test_comparing_start_ages_without_a_pension_pops_up(panel, monkeypatch):
     _fill(panel, [["Anne", 64]], [["CELI", "tfsa", 200_000, "Anne"]])
     panel.compare_ages()
     assert shown and "no RRQ or PSV" in shown[0]
+
+
+def test_the_safe_budget_is_worked_out_and_compared_with_the_spending(panel, qapp, monkeypatch):
+    shown = []
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
+    _fill(panel, [["Anne", 65]], [["CELI", "tfsa", 300_000, "Anne"]])
+    panel.nominal_return.setValue(4.0)
+    panel.inflation.setValue(2.0)
+    panel.volatility.setValue(8)
+    panel.until_age.setValue(90)
+    panel.spending.setValue(5_000)
+    panel.check_budget()
+    panel._budget_worker.wait(120000)
+    qapp.processEvents()
+    assert panel.budget["safe"] > 5_000
+    assert panel.budget["safe"] <= panel.budget["average"]
+    assert "Safe budget" in panel.budget_line.text() and "of margin" in panel.budget_line.text()
+    assert shown == []
+    # Spending above it is a problem, popped up.
+    panel.spending.setValue(panel.budget["safe"] + 5_000)
+    panel._on_budget(panel.budget, "")
+    assert shown and "above the safe budget" in shown[0]

@@ -871,3 +871,35 @@ def test_an_rrq_typed_for_a_start_before_65_is_not_compared():
     plan = _plan(incomes=[Income("RRQ", "me", 7_000, starts_at_age=62),
                           Income("Pension", "me", 5_000, starts_at_age=65)])
     assert compare_start_ages(plan) == []
+
+
+# -- the safe budget ------------------------------------------------------------------
+
+def test_the_highest_spending_is_found_to_the_step():
+    from tradelab.core.retirement_plan import highest_spending
+    assert highest_spending(lambda x: x <= 61_234, start=10_000) == 61_000
+    assert highest_spending(lambda x: x <= 120, start=50_000) == 0
+    assert highest_spending(lambda x: True, start=50_000, cap=400_000) == 400_000
+
+
+def test_the_safe_budget_of_a_plan_that_earns_nothing():
+    # 100,000 over 10 years at no return, no tax, no inflation: 10,000 a year
+    # either way, since with no volatility every ordering is the average.
+    from tradelab.core.retirement_plan import safe_budget
+
+    def make(spending):
+        return _plan(years=10, spending=spending)
+
+    out = safe_budget(make, mean=0.0, sd=0.0, paths=20)
+    assert out["average"] == 10_000 and out["safe"] == 10_000
+    assert out["share"] == 0.90 and out["paths"] == 20
+
+
+def test_volatility_lowers_the_safe_budget_below_the_average_one():
+    from tradelab.core.retirement_plan import safe_budget
+
+    def make(spending):
+        return _plan(years=25, spending=spending, nominal_return=0.05)
+
+    out = safe_budget(make, mean=0.05, sd=0.15, paths=200)
+    assert out["safe"] < out["average"]

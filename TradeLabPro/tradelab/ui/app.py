@@ -9581,6 +9581,10 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         try:
+            self.retirement_sim_panel.shutdown()  # a safe-budget search in progress
+        except Exception:
+            pass
+        try:
             self.market_panel.shutdown()  # stop any in-flight chart fetch
         except Exception:
             pass

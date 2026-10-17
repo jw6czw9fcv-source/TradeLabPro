@@ -948,6 +948,15 @@ of orderings and reports **Worst 10% / Median / Best 10%** per year, plus the
 share of paths **still solvent**, with the 10–90 band shaded behind the median
 on the chart. The draw is seeded, so the same inputs give the same answer twice.
 
+**Safe budget.** Works out the most the plan can spend a year (in today's dollars,
+rising with inflation) to its last age, two ways: if every year earned exactly
+the **Return** set above, and — the one to plan on — so that **90% of 300
+simulated return orderings** (with the **% vol** set above) never run short.
+The line under the tables compares it with your **Spending**: green with the
+margin left, amber when spending is within 10% of it, red (and a pop-up) when
+spending is above it. Real crashes can be deeper than the % vol implies, so
+keep a margin. A calculation on your assumptions, not advice.
+
 **Key dates.** Type each person's birth month in the People table's **Born**
 column (e.g. 1962-08) and **Key dates** lists the reminders that follow from it
 and from when the plan starts each pension: when the RRQ application opens (12
