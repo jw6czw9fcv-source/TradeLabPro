@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.55.0
+Current version: 2.56.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.56.0 (How much is safe to spend)
+- **Safe budget** in Retirement Sim: `retirement_plan.safe_budget(make_plan, mean, sd, share=0.9, paths=300)` -> `average` (every year average) and `safe` (90% of orderings never short), searched in $500 steps by `highest_spending`; `_BudgetWorker` off the UI thread; `budget_line` green / amber (within 10%) / red + pop-up; `RetirementSimPanel.shutdown()` now called on close. First item of the investing checklist discussed 2026-10-17 (mixes run on FP Canada / IQPF 2026 guidelines: safe budget ~60-61k whatever the mix).
 
 ## Completed in 2.55.0 (What you own, day by day)
 - **Recorded value history:** schema **v10** `value_history(day, currency)`; `home.snapshot_of` (only a fully priced, converted book, dated by its prices) recorded by HomePanel; `home.recorded_curve`; Home's Chart box: estimated year / recorded history.

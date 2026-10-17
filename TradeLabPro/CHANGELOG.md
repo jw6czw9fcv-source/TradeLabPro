@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.56.0 - How much is safe to spend
+
+### Added
+- **Safe budget** in Retirement Sim: the most the plan can spend a year (today's dollars, rising with inflation) to its last age - if every year earns the average return, and so that 90% of 300 simulated return orderings never run short, the figure to plan on. The line under the tables compares it with the Spending: green with the margin, amber within 10%, red with a pop-up above it. Worked out off the window's thread, in $500 steps. Comparing mixes on the FP Canada / Institute of Financial Planning 2026 assumptions showed why it matters: past about 60/40, more stocks raise the average case but not the safe one.
+
+### Verified
+- Full pytest suite passes (1565), including 4 new tests: the search found to the step and capped, a zero-return plan's budget exact both ways, volatility lowering the safe budget below the average one, and the panel's line and pop-up.
+
 ## 2.55.0 - What you own, day by day
 
 ### Added
