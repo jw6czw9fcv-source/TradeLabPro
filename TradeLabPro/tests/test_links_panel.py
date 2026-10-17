@@ -84,7 +84,7 @@ def test_a_real_double_click_opens_the_link(qapp, tmp_path, monkeypatch):
     from PySide6.QtTest import QTest
     from tradelab.ui import app as appmod
     opened = []
-    monkeypatch.setattr(appmod, "open_external", lambda url: opened.append(url))
+    monkeypatch.setattr("tradelab.ui.panels.links.open_external", lambda url: opened.append(url))
     panel = _with_finviz(qapp, tmp_path)
     panel.resize(900, 500)
     panel.show()
@@ -101,7 +101,7 @@ def test_a_real_double_click_opens_the_link(qapp, tmp_path, monkeypatch):
 def test_open_selected_opens_and_says_so(qapp, tmp_path, monkeypatch):
     from tradelab.ui import app as appmod
     opened = []
-    monkeypatch.setattr(appmod, "open_external", lambda url: opened.append(url))
+    monkeypatch.setattr("tradelab.ui.panels.links.open_external", lambda url: opened.append(url))
     panel = _with_finviz(qapp, tmp_path)
     panel.table.selectRow(0)
     panel.open_selected()
@@ -112,8 +112,8 @@ def test_open_selected_opens_and_says_so(qapp, tmp_path, monkeypatch):
 def test_open_selected_with_nothing_selected_pops_up(qapp, tmp_path, monkeypatch):
     from tradelab.ui import app as appmod
     shown = []
-    monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
-    monkeypatch.setattr(appmod, "open_external", lambda url: pytest.fail("nothing to open"))
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr("tradelab.ui.panels.links.open_external", lambda url: pytest.fail("nothing to open"))
     panel = _with_finviz(qapp, tmp_path)
     panel.open_selected()
     assert shown == ["Select a link in the list first, then click Open selected."]
@@ -122,8 +122,8 @@ def test_open_selected_with_nothing_selected_pops_up(qapp, tmp_path, monkeypatch
 def test_a_link_that_will_not_open_pops_up_with_its_address(qapp, tmp_path, monkeypatch):
     from tradelab.ui import app as appmod
     shown = []
-    monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
-    monkeypatch.setattr(appmod, "open_external", lambda url: "Access is denied.")
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr("tradelab.ui.panels.links.open_external", lambda url: "Access is denied.")
     panel = _with_finviz(qapp, tmp_path)
     panel._open_row(0, 0)
     assert len(shown) == 1

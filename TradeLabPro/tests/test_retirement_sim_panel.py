@@ -574,7 +574,7 @@ def test_start_ages_are_compared_in_a_window(panel):
 def test_comparing_start_ages_without_a_pension_pops_up(panel, monkeypatch):
     from tradelab.ui import app as appmod
     shown = []
-    monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
     _fill(panel, [["Anne", 64]], [["CELI", "tfsa", 200_000, "Anne"]])
     panel.compare_ages()
     assert shown and "no RRQ or PSV" in shown[0]

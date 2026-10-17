@@ -71,6 +71,7 @@ def test_refresh_market_populates_read_and_breadth(qapp, monkeypatch):
         return _rising()
 
     monkeypatch.setattr(app, "get_history", fake_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
 
@@ -103,6 +104,7 @@ def test_the_whole_tab_follows_the_country_selector(qapp, monkeypatch):
     from tradelab.core.market import regime_rows, sector_instruments
 
     monkeypatch.setattr(app, "get_history", _fake_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
 
     assert panel.current_region() == "US"
@@ -222,6 +224,7 @@ def test_clicking_a_row_charts_that_symbol(qapp, monkeypatch):
     import tradelab.ui.app as app
 
     monkeypatch.setattr(app, "get_history", lambda s, p, i: _rising())
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     chart = _FakeChart()
     panel = app.MarketPanel(chart, _FakeCfg())
 
@@ -257,6 +260,7 @@ def test_refresh_never_fetches_on_the_ui_thread(qapp, monkeypatch):
         return _rising()
 
     monkeypatch.setattr(app, "get_history", slow_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
 
     panel.refresh_market()                     # must return immediately
@@ -301,6 +305,7 @@ def test_refresh_survives_a_dead_symbol_without_a_worker_crash(qapp, monkeypatch
         return _rising()
 
     monkeypatch.setattr(app, "get_history", flaky)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
 
@@ -326,6 +331,7 @@ def test_clicking_never_fetches_on_the_ui_thread(qapp, monkeypatch):
         return _rising()
 
     monkeypatch.setattr(app, "get_history", slow_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel(_FakeChart(), _FakeCfg())
 
     panel._chart_row(panel.global_table, 0, 1)   # returns immediately
@@ -349,6 +355,7 @@ def test_refresh_populates_the_cache_so_clicks_need_no_fetch(qapp, monkeypatch):
         return _rising()
 
     monkeypatch.setattr(app, "get_history", counted)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     chart = _FakeChart()
     panel = app.MarketPanel(chart, _FakeCfg())
     _refresh(panel, qapp)
@@ -365,6 +372,7 @@ def test_a_newer_click_supersedes_an_older_one(qapp, monkeypatch):
     import tradelab.ui.app as app
 
     monkeypatch.setattr(app, "get_history", lambda s, p, i: _rising())
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     chart = _FakeChart()
     panel = app.MarketPanel(chart, _FakeCfg())
 
@@ -378,6 +386,7 @@ def test_clicking_a_canadian_sector_charts_the_tsx_etf(qapp, monkeypatch):
     from tradelab.core.market import CANADA_SECTOR_ETFS
 
     monkeypatch.setattr(app, "get_history", lambda s, p, i: _rising())
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     chart = _FakeChart()
     panel = app.MarketPanel(chart, _FakeCfg())
     panel.country_combo.setCurrentText("Canada")
@@ -395,6 +404,7 @@ def test_chart_click_reports_failure_without_raising(qapp, monkeypatch):
         raise RuntimeError("no data")
 
     monkeypatch.setattr(app, "get_history", boom)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel(_FakeChart(), _FakeCfg())
     panel._chart_row(panel.global_table, 0, 1)  # must not raise
     _settle(panel, qapp)
@@ -406,6 +416,7 @@ def test_chart_click_is_inert_without_a_chart(qapp, monkeypatch):
     import tradelab.ui.app as app
 
     monkeypatch.setattr(app, "get_history", lambda s, p, i: _rising())
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     panel._chart_row(panel.global_table, 0, 1)  # must not raise
 
@@ -419,6 +430,7 @@ def test_refresh_market_survives_a_failing_symbol(qapp, monkeypatch):
         return _rising()
 
     monkeypatch.setattr(app, "get_history", flaky_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)  # must not raise
 
@@ -440,6 +452,7 @@ def test_clicking_a_basket_sector_charts_a_real_symbol(qapp, monkeypatch):
     from tradelab.core.market import sector_instruments
 
     monkeypatch.setattr(app, "get_history", _fake_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     chart = _FakeChart()
     panel = app.MarketPanel(chart, _FakeCfg())
     panel.country_combo.setCurrentText("Canada")
@@ -461,6 +474,7 @@ def test_refresh_caches_both_markets(qapp, monkeypatch):
     import tradelab.ui.app as app
 
     monkeypatch.setattr(app, "get_history", _fake_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
     assert set(panel._region_data) == {"US", "Canada"}
@@ -478,6 +492,7 @@ def test_switching_country_after_a_refresh_fetches_nothing(qapp, monkeypatch):
         return _fake_history(symbol, period, interval)
 
     monkeypatch.setattr(app, "get_history", counted)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
 
@@ -500,6 +515,7 @@ def test_switching_country_shows_that_markets_regime_values(qapp, monkeypatch):
     from tradelab.core.market import regime_rows
 
     monkeypatch.setattr(app, "get_history", _fake_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
 
@@ -518,6 +534,7 @@ def test_global_indices_survive_a_country_switch(qapp, monkeypatch):
     from tradelab.core.market import GLOBAL_INDICES
 
     monkeypatch.setattr(app, "get_history", _fake_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
 
@@ -555,6 +572,7 @@ def test_breadth_follows_the_country_selector(qapp, monkeypatch):
     import tradelab.ui.app as app
 
     monkeypatch.setattr(app, "get_history", _fake_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     _refresh(panel, qapp)
 
@@ -571,6 +589,7 @@ def test_refresh_includes_breadth_constituents(qapp, monkeypatch):
     from tradelab.core.market import breadth_universe
 
     monkeypatch.setattr(app, "get_history", _fake_history)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.MarketPanel()
     symbols = set(panel.required_symbols())
     for name in breadth_universe("US")[:5]:

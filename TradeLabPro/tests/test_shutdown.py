@@ -93,8 +93,11 @@ def _panels_that_start_threads():
     import tradelab.ui.app as app
     from PySide6.QtWidgets import QWidget
     found = []
+    # Panels live in ui/app.py and, since the split, in ui/panels/*; app.py
+    # imports every one of them, so its namespace still lists them all.
     for name, cls in vars(app).items():
-        if not (inspect.isclass(cls) and issubclass(cls, QWidget)) or cls.__module__ != app.__name__:
+        if not (inspect.isclass(cls) and issubclass(cls, QWidget)) or not (
+                cls.__module__ == app.__name__ or cls.__module__.startswith("tradelab.ui.panels.")):
             continue
         source = inspect.getsource(cls)
         if "Worker(" in source and ".start()" in source:

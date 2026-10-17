@@ -22,6 +22,7 @@ def panel(qapp, ohlcv_df, monkeypatch):
     import tradelab.ui.app as app
     import tradelab.core.backtest as bt
     monkeypatch.setattr(app, "get_history", lambda s, p, i: ohlcv_df)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     monkeypatch.setattr("tradelab.data.market_data.get_history", lambda s, p, i: ohlcv_df)
     from tradelab.ui.chart_widget import ChartWidget
     from tradelab.core.config import ScannerConfig

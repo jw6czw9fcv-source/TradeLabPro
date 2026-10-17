@@ -19,7 +19,7 @@ def qapp():
 @pytest.fixture
 def popups(monkeypatch):
     """Real pop-ups for this test (the suite turns them off), closed after."""
-    from tradelab.ui import app as appmod
+    from tradelab.ui import common as appmod
     monkeypatch.delenv(appmod.NO_POPUPS_ENV, raising=False)
     yield appmod
     if appmod._problem_box is not None:
@@ -57,7 +57,7 @@ def test_a_closed_popup_makes_way_for_the_next(qapp, popups):
 
 
 def test_flag_problem_says_it_on_the_status_line_too(qapp, monkeypatch):
-    from tradelab.ui import app as appmod
+    from tradelab.ui import common as appmod
     shown = []
     monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
     label = appmod.StatusLabel("")
@@ -69,7 +69,7 @@ def test_flag_problem_says_it_on_the_status_line_too(qapp, monkeypatch):
 def test_failure_messages_on_status_lines_pop_up(qapp, tmp_path, monkeypatch):
     # One of the converted call sites, end to end: an unreadable links CSV.
     from tradelab.core.links import LinkStore
-    from tradelab.ui import app as appmod
+    from tradelab.ui import common as appmod
     shown = []
     monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
 
@@ -79,13 +79,14 @@ def test_failure_messages_on_status_lines_pop_up(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(appmod.QFileDialog, "getOpenFileName",
                         staticmethod(lambda *a, **k: (str(tmp_path / "bad.csv"), "")))
     monkeypatch.setattr(appmod.pd, "read_csv", unreadable)
-    panel = appmod.LinksPanel(store=LinkStore(tmp_path / "links.json"))
+    from tradelab.ui.app import LinksPanel
+    panel = LinksPanel(store=LinkStore(tmp_path / "links.json"))
     panel.import_csv()
     assert shown == ["Import failed: not a CSV"]
 
 
 def test_logged_errors_become_popups(qapp, monkeypatch):
-    from tradelab.ui import app as appmod
+    from tradelab.ui import common as appmod
     reported = []
     monkeypatch.setattr(appmod, "report_problem", reported.append)
     logger = logging.getLogger("tradelab.test_problem_popups")
@@ -104,7 +105,7 @@ def test_logged_errors_become_popups(qapp, monkeypatch):
 
 
 def test_a_problem_from_a_worker_thread_is_shown_on_the_gui_thread(qapp, monkeypatch):
-    from tradelab.ui import app as appmod
+    from tradelab.ui import common as appmod
     shown = []
     monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(
         (text, QThread.currentThread() == qapp.thread())))
@@ -119,7 +120,7 @@ def test_a_problem_from_a_worker_thread_is_shown_on_the_gui_thread(qapp, monkeyp
 # --- opening links ------------------------------------------------------------
 
 def _opener(monkeypatch, qt_result, shell_result=None):
-    from tradelab.ui import app as appmod
+    from tradelab.ui import common as appmod
     calls = []
     monkeypatch.setattr(appmod.QDesktopServices, "openUrl",
                         staticmethod(lambda url: calls.append(("qt", url.toString())) or qt_result))
@@ -158,7 +159,7 @@ def test_a_file_opens_without_moving_any_browser(qapp, monkeypatch, tmp_path):
 
 
 def test_the_headless_test_platform_never_launches_anything(qapp, monkeypatch):
-    from tradelab.ui import app as appmod
+    from tradelab.ui import common as appmod
     monkeypatch.setattr(appmod.os, "startfile", lambda *a: pytest.fail("launched"), raising=False)
     assert appmod._shell_open("https://example.com") == "there is no desktop to open it on"
 

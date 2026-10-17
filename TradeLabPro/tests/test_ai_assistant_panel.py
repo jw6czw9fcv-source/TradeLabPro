@@ -57,6 +57,7 @@ def test_send_without_key_uses_offline_coach(qapp, monkeypatch):
     from tradelab.core import ai_assistant
     monkeypatch.setattr(ai_assistant, "api_key_from_env", lambda: None)
     monkeypatch.setattr(appmod, "get_history", lambda *a, **k: _df())
+    monkeypatch.setattr("tradelab.ui.common.get_history", appmod.get_history)
     panel = appmod.AIAssistantPanel()
     panel.key_edit.setText("")
     panel.symbol.setText("AAPL")

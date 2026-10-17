@@ -35,6 +35,7 @@ def test_coach_panel_grades_and_reports(qapp, tmp_path, monkeypatch):
     import tradelab.ui.app as app
     # Ensure no API key so the panel stays in offline mode.
     monkeypatch.setattr(app, "get_history", lambda *a, **k: None)
+    monkeypatch.setattr("tradelab.ui.common.get_history", app.get_history)
     panel = app.CoachPanel(journal=_journal(tmp_path))
 
     # Both closed trades appear, graded.

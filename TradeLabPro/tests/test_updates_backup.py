@@ -124,7 +124,7 @@ def test_a_newer_installer_is_offered_and_run(qapp, tmp_path, monkeypatch):
     asked, opened = [], []
     monkeypatch.setattr(appmod.QMessageBox, "question",
                         staticmethod(lambda *a, **k: asked.append(a[2]) or appmod.QMessageBox.Yes))
-    monkeypatch.setattr(appmod, "open_external", lambda url: opened.append(url.toLocalFile()))
+    monkeypatch.setattr("tradelab.ui.panels.settings.open_external", lambda url: opened.append(url.toLocalFile()))
     panel = _panel(qapp, tmp_path)
     panel.update_folder.setText(str(folder))
     panel.check_updates()
@@ -149,7 +149,7 @@ def test_github_news_is_told_once_at_startup(qapp, tmp_path, monkeypatch):
 def test_an_unreachable_github_pops_up_only_when_asked(qapp, tmp_path, monkeypatch):
     from tradelab.ui import app as appmod
     shown = []
-    monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
     panel = _panel(qapp, tmp_path)
     panel._on_published(None, quiet=True)
     assert shown == []
@@ -171,7 +171,7 @@ def test_backup_now_from_settings(qapp, tmp_path):
 def test_a_failed_backup_pops_up(qapp, tmp_path, monkeypatch):
     from tradelab.ui import app as appmod
     shown = []
-    monkeypatch.setattr(appmod, "show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
     panel = _panel(qapp, tmp_path)
     panel._on_backup_done("", "disk full", quiet=True)
     assert shown == ["Backup failed: disk full"]
@@ -249,7 +249,7 @@ def test_restore_from_settings_stages_and_restarts(qapp, tmp_path, monkeypatch):
     restarted = []
     monkeypatch.setattr(appmod.QMessageBox, "question",
                         staticmethod(lambda *a, **k: appmod.QMessageBox.Yes))
-    monkeypatch.setattr(appmod, "restart_app", lambda: restarted.append(True))
+    monkeypatch.setattr("tradelab.ui.panels.settings.restart_app", lambda: restarted.append(True))
     panel = _panel(qapp, tmp_path)
     panel.restore(str(zip_path))
     assert restarted == [True] and backup.restore_pending(tmp_path)
@@ -261,6 +261,6 @@ def test_a_declined_restore_changes_nothing(qapp, tmp_path, monkeypatch):
     zip_path = backup.make_backup(tmp_path, now=dt.datetime(2026, 10, 1, 8, 0))
     monkeypatch.setattr(appmod.QMessageBox, "question",
                         staticmethod(lambda *a, **k: appmod.QMessageBox.No))
-    monkeypatch.setattr(appmod, "restart_app", lambda: pytest.fail("restarted"))
+    monkeypatch.setattr("tradelab.ui.panels.settings.restart_app", lambda: pytest.fail("restarted"))
     _panel(qapp, tmp_path).restore(str(zip_path))
     assert not backup.restore_pending(tmp_path)
