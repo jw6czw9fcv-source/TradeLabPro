@@ -994,14 +994,44 @@ wouldn't be one. **Clear saved** removes it.
 > strategy, recommends a withdrawal rate, or says whether a plan is good. Not
 > financial advice.
 
-> **What it deliberately does not model.** A **non-registered** account is
-> treated as tax-free on withdrawal — the app doesn't track an adjusted cost
-> base, and inventing a capital gain would be a guess, so that column is
-> optimistic if you hold much outside registered plans. The **OAS/PSV recovery
-> tax** (clawback) is not applied. Deferring a pension is **not** grossed up for
-> you: type the amount that applies at the age you start it. And the tax table is
-> **2026** — it is meant to be edited each year, and if indexation ever stops,
-> the whole projection is optimistic.
+> **What it deliberately does not model.** A **non-registered** account you
+> type in is treated as tax-free on withdrawal — the app doesn't track its
+> adjusted cost base, and inventing a capital gain would be a guess (the surplus
+> the plan saves outside the TFSA *is* taxed on its growth each year). An RRQ
+> started **before** 65 is used as typed, since its reduction depends on the
+> pension's size. And the tax table is **2026** — it is meant to be edited each
+> year, and if indexation ever stops, the whole projection is optimistic.
+
+---
+
+### The Plan tab — your plan, checked
+
+The **Plan** tab (after Retirement Sim) is a checklist you run every few months.
+Every decision in it is yours; TradeLab only measures against them.
+
+- **Target mix per portfolio.** Type the stocks / bonds / cash shares each
+  portfolio should hold (they must add up to 100%) and click **Save targets**.
+  A portfolio left blank has no target and is only listed.
+- **What each holds.** **Refresh** prices every holding in CAD and classes it:
+  a fund in the ETF Screener is split by its published composition (a 60/40
+  fund counts 60% stocks, 40% bonds); anything else is classed from what it
+  is (a single stock is stocks, a bond fund bonds, a money-market fund cash,
+  gold or commodities "other"). Set a class by hand in the table when the
+  automatic one is wrong. Recorded cash counts as cash.
+- **Against the target.** For each portfolio, what it holds by class, its share
+  against the target, and what getting back would take in dollars (**buy** /
+  **sell**). More than 5 points off counts as drift. These are the moves it
+  would take, not moves to make.
+- **Trading portfolio and its cap.** Pick the portfolio you trade from and the
+  most it may be of everything (10% unless you change it); the checklist says
+  whether it is inside.
+- **Safe budget** — the last result of Retirement Sim's **Safe budget**, against
+  the spending it was checked with.
+- **Review.** About every quarter the checklist says a review is due; go
+  through it, then click **Mark reviewed today**.
+
+A holding that cannot be priced is left out, and a pop-up says which. Not
+financial advice.
 
 ---
 

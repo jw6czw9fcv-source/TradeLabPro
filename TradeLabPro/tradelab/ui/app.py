@@ -114,6 +114,7 @@ from tradelab.ui.panels.home import (  # noqa: E402,F401
     HomePanel)
 from tradelab.ui.panels.retirement_sim import (  # noqa: E402,F401
     RetirementSimPanel)
+from tradelab.ui.panels.plan import PlanPanel  # noqa: E402,F401
 
 
 class ScanWorker(QThread):
@@ -9116,6 +9117,7 @@ class MainWindow(QMainWindow):
         self.watch_panel = WatchlistPanel(self.db, self.chart, self.cfg)
         self.etf_screener_panel = EtfScreenerPanel(self.db, self.chart, self.cfg)
         self.retirement_sim_panel = RetirementSimPanel(self.db)
+        self.plan_panel = PlanPanel(self.db)
         self.portfolio_panel = PortfolioPanel(self.db, self.chart, self.cfg)
         self.analytics_panel = PortfolioAnalyticsPanel(self.db, self.chart, self.cfg)
         self.dividends_panel = DividendsPanel(self.db, self.chart, self.cfg)
@@ -9176,6 +9178,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(_scroll_tab(self.dividends_panel), "Dividends")   # income the book pays
         tabs.addTab(_scroll_tab(self.retirement_panel), "Retirement")  # the plan you can't import
         tabs.addTab(_scroll_tab(self.retirement_sim_panel), "Retirement Sim")  # how long it lasts
+        tabs.addTab(_scroll_tab(self.plan_panel), "Plan")             # my plan, checked
         tabs.addTab(_scroll_tab(self.journal_panel), "Journal")       # review results
         tabs.addTab(_scroll_tab(self.coach_panel), "Coach")           # grade my process
         tabs.addTab(_scroll_tab(self.backtest_panel), "Backtest")     # research: test ideas
@@ -9582,6 +9585,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.retirement_sim_panel.shutdown()  # a safe-budget search in progress
+        except Exception:
+            pass
+        try:
+            self.plan_panel.shutdown()
         except Exception:
             pass
         try:

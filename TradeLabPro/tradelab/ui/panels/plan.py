@@ -1,0 +1,383 @@
+"""The Plan tab: your investing plan, checked - the mixes, the trading cap and
+the review rhythm you set, measured against what the accounts hold now."""
+import datetime as dt
+import json
+import time
+
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QGroupBox,
+                               QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
+                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+
+from tradelab.core import allocation_plan as ap
+from tradelab.core.logging_config import get_logger
+from tradelab.data.database import Database
+from tradelab.settings import app_settings
+from tradelab.ui import theme
+from tradelab.ui.common import StatusLabel, _hint, flag_problem
+
+log = get_logger(__name__)
+
+TRADING_KEY = "Plan/tradingPortfolio"
+CAP_KEY = "Plan/tradingCapPct"
+REVIEW_KEY = "Plan/lastReview"
+BUDGET_KEY = "RetirementSim/last_budget"
+CLASS_CHOICES = ["auto", "stocks", "bonds", "cash", "other"]
+
+
+class _PlanWorker(QThread):
+    """Prices, FX and what each holding is, off the UI thread."""
+    done = Signal(object, object, str)   # histories, metas, error
+
+    def __init__(self, symbols, fx_symbols):
+        super().__init__()
+        self.symbols, self.fx_symbols = list(symbols), list(fx_symbols)
+
+    def run(self):
+        try:
+            from tradelab.data.market_data import get_histories, get_quote_meta, with_latest_prices
+            hist = get_histories(sorted(set(self.symbols) | set(self.fx_symbols)), "1mo", "1d")
+            hist = with_latest_prices(hist, self.symbols)
+            metas = {s: get_quote_meta(s) for s in self.symbols}
+            self.done.emit(hist, metas, "")
+        except Exception as exc:
+            self.done.emit(None, None, str(exc) or type(exc).__name__)
+
+
+class PlanPanel(QWidget):
+    """The checklist: each account against the mix you chose, the trading side
+    against its cap, the spending against the safe budget, the next review.
+    It measures and shows; every choice in it is yours."""
+
+    def __init__(self, db: Database, settings=None):
+        super().__init__()
+        self.db = db
+        self._settings = settings or app_settings()
+        self._worker = None
+        self._loaded_once = False
+        self.holdings = []        # [{portfolio, symbol, value, split, auto}]
+        self.cash_by_portfolio = {}
+        self._metas = {}
+        layout = QVBoxLayout(self)
+        layout.addWidget(_hint(
+            "Your plan, checked. You set the mix each portfolio should hold, which portfolio "
+            "is for trading and how big it may get; TradeLab shows how far each one is from "
+            "it and what moving back would take in dollars. It never chooses a mix or a "
+            "security - the moves shown are what it would take, not what to do."))
+
+        top = QHBoxLayout()
+        self.refresh_btn = QPushButton("Refresh"); self.refresh_btn.clicked.connect(self.refresh)
+        top.addWidget(self.refresh_btn); top.addStretch()
+        layout.addLayout(top)
+
+        self.checklist = QListWidget(); self.checklist.setMaximumHeight(150)
+        box = QGroupBox("Checklist"); v = QVBoxLayout(box); v.addWidget(self.checklist)
+        layout.addWidget(box)
+
+        targets = QGroupBox("Target mix per portfolio (your choice, %)")
+        tv = QVBoxLayout(targets)
+        self.targets = QTableWidget(0, 4)
+        self.targets.setHorizontalHeaderLabels(["Portfolio", "Stocks %", "Bonds %", "Cash %"])
+        self.targets.verticalHeader().setVisible(False)
+        self.targets.setMaximumHeight(140)
+        tv.addWidget(self.targets)
+        row = QHBoxLayout()
+        save = QPushButton("Save targets"); save.clicked.connect(self.save_targets)
+        row.addWidget(save); row.addStretch()
+        row.addWidget(QLabel("Trading portfolio"))
+        self.trading = QComboBox()
+        row.addWidget(self.trading)
+        row.addWidget(QLabel("may be at most"))
+        self.cap = QDoubleSpinBox(); self.cap.setRange(0, 100); self.cap.setDecimals(0)
+        self.cap.setSuffix(" % of everything")
+        self.cap.setValue(float(self._settings.value(CAP_KEY, 10)))
+        row.addWidget(self.cap)
+        self.trading.currentIndexChanged.connect(lambda _i: self._save_trading())
+        self.cap.valueChanged.connect(lambda _v: self._save_trading())
+        tv.addLayout(row)
+        layout.addWidget(targets)
+
+        rev = QHBoxLayout()
+        self.review_line = QLabel("")
+        reviewed = QPushButton("Mark reviewed today"); reviewed.clicked.connect(self.mark_reviewed)
+        rev.addWidget(self.review_line, 1); rev.addWidget(reviewed)
+        layout.addLayout(rev)
+
+        layout.addWidget(QLabel("What each portfolio holds, by class (set a class by hand if "
+                                "the automatic one is wrong)"))
+        self.hold_table = QTableWidget(0, 4)
+        self.hold_table.setHorizontalHeaderLabels(["Portfolio", "Symbol", "Value (CAD)", "Class"])
+        self.hold_table.verticalHeader().setVisible(False)
+        self.hold_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.hold_table.setMaximumHeight(170)
+        layout.addWidget(self.hold_table)
+
+        layout.addWidget(QLabel("Against the target"))
+        self.result_table = QTableWidget(0, 6)
+        self.result_table.setHorizontalHeaderLabels(
+            ["Portfolio", "Class", "Held (CAD)", "Held %", "Target %", "To get back"])
+        self.result_table.verticalHeader().setVisible(False)
+        self.result_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        layout.addWidget(self.result_table, 1)
+
+        self.status = StatusLabel("Click Refresh to price your portfolios.")
+        layout.addWidget(self.status)
+        layout.addWidget(_hint(theme.NOT_ADVICE))
+        self._load_targets()
+        self._show_review()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._loaded_once and self.db.positions():
+            self.refresh()
+
+    # --- inputs --------------------------------------------------------------
+    def portfolios(self) -> list:
+        names = {str(p.get("portfolio") or "") for p in self.db.positions()}
+        names |= {str(c.get("portfolio") or "") for c in self.db.cash()}
+        names |= set(self.db.plan_targets())
+        return sorted(n for n in names if n)
+
+    def _load_targets(self):
+        saved = self.db.plan_targets()
+        names = self.portfolios()
+        self.targets.setRowCount(len(names))
+        for r, name in enumerate(names):
+            item = QTableWidgetItem(name); item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            self.targets.setItem(r, 0, item)
+            t = saved.get(name) or {}
+            for c, cls in enumerate(ap.TARGET_CLASSES, start=1):
+                value = t.get(cls)
+                self.targets.setItem(r, c, QTableWidgetItem("" if value is None else f"{value:g}"))
+        self.targets.resizeColumnsToContents()
+        current = str(self._settings.value(TRADING_KEY, "") or "")
+        self.trading.blockSignals(True)
+        self.trading.clear(); self.trading.addItems(["(none)"] + names)
+        self.trading.setCurrentText(current if current in names else "(none)")
+        self.trading.blockSignals(False)
+
+    def save_targets(self):
+        problems = []
+        for r in range(self.targets.rowCount()):
+            name = self.targets.item(r, 0).text()
+            texts = [(self.targets.item(r, c).text().strip() if self.targets.item(r, c) else "")
+                     for c in (1, 2, 3)]
+            if not any(texts):
+                self.db.delete_plan_target(name)
+                continue
+            try:
+                values = [float(t.replace("%", "").replace(",", ".") or 0) for t in texts]
+            except ValueError:
+                problems.append(f"{name}: not a number")
+                continue
+            target = dict(zip(ap.TARGET_CLASSES, values))
+            why = ap.check_target(target)
+            if why:
+                problems.append(f"{name}: {why}")
+                continue
+            self.db.set_plan_target(name, *values)
+        if problems:
+            flag_problem(self.status, "Some targets were not saved: " + "; ".join(problems))
+        else:
+            self.status.setText("Targets saved.")
+        self.recompute()
+
+    def _save_trading(self):
+        name = self.trading.currentText()
+        self._settings.setValue(TRADING_KEY, "" if name == "(none)" else name)
+        self._settings.setValue(CAP_KEY, self.cap.value())
+        self._settings.sync()
+        self.recompute()
+
+    def mark_reviewed(self):
+        self._settings.setValue(REVIEW_KEY, dt.date.today().isoformat())
+        self._settings.sync()
+        self._show_review()
+        self.recompute()
+
+    def _last_review(self):
+        try:
+            return dt.date.fromisoformat(str(self._settings.value(REVIEW_KEY, "") or ""))
+        except ValueError:
+            return None
+
+    def _show_review(self):
+        due = ap.review_due(self._last_review())
+        if due["last"] is None:
+            self.review_line.setText("No review recorded yet.")
+        else:
+            self.review_line.setText(f"Last review {due['last']:%Y-%m-%d}; next around "
+                                     f"{due['next']:%Y-%m-%d} (about every quarter).")
+
+    # --- prices --------------------------------------------------------------
+    def refresh(self):
+        from tradelab.core.portfolio_analytics import currency_of, fx_pair_symbol
+        if self._worker is not None and self._worker.isRunning():
+            return
+        self._loaded_once = True
+        self._load_targets()
+        positions = self.db.positions()
+        symbols = sorted({str(p["symbol"]).upper() for p in positions})
+        ccys = {currency_of(s) for s in symbols} | {str(c["currency"]).upper() for c in self.db.cash()}
+        self._fx_pairs = {c: fx_pair_symbol(c, "CAD") for c in ccys if c != "CAD"}
+        if not symbols and not self.db.cash():
+            self.status.setText("No portfolios yet - add positions in the Portfolio tab.")
+            self.recompute()
+            return
+        self.status.setText("Pricing your portfolios…")
+        self._worker = _PlanWorker(symbols, self._fx_pairs.values())
+        self._worker.done.connect(self._on_priced)
+        self._worker.start()
+
+    def _on_priced(self, histories, metas, err):
+        from tradelab.core import portfolio_analytics as pa
+        from tradelab.data.market_data import is_synthetic
+        if err or histories is None:
+            flag_problem(self.status, f"Could not price the portfolios: {err or 'no data'}")
+            return
+        self._metas = metas or {}
+        histories = {s: df for s, df in histories.items() if df is not None and not is_synthetic(df)}
+        fx = {c: histories.get(sym) for c, sym in self._fx_pairs.items()}
+        etfs = self.db.etf_list()
+        overrides = self.db.asset_class_overrides()
+        self.holdings, missing = [], []
+        by_portfolio = {}
+        for p in self.db.positions():
+            by_portfolio.setdefault(str(p.get("portfolio") or ""), []).append(p)
+        for name, positions in by_portfolio.items():
+            rows, _total = pa.holdings(positions, histories, "CAD", fx)
+            for h in rows:
+                if h.get("market_value") is None or not h.get("converted"):
+                    missing.append(h["symbol"])
+                    continue
+                sym = h["symbol"]
+                self.holdings.append({
+                    "portfolio": name, "symbol": sym, "value": float(h["market_value"]),
+                    "split": ap.split_of(sym, etfs, overrides.get(sym), (metas or {}).get(sym)),
+                    "auto": sym not in overrides})
+        cash_rows, _ = pa.cash_rows(self.db.cash(), "CAD", fx)
+        self.cash_by_portfolio = {}
+        for c in cash_rows:
+            self.cash_by_portfolio[c["portfolio"]] = self.cash_by_portfolio.get(c["portfolio"], 0.0) + c["value"]
+        self.status.setText(f"Priced {time.strftime('%H:%M')}."
+                            + (f" Left out, no price: {', '.join(sorted(set(missing)))}." if missing else ""))
+        if missing:
+            flag_problem(self.status, "These holdings could not be priced and are left out of the "
+                                      "plan check: " + ", ".join(sorted(set(missing))))
+        self._fill_holdings()
+        self.recompute()
+
+    def _fill_holdings(self):
+        self.hold_table.setRowCount(len(self.holdings))
+        for r, h in enumerate(self.holdings):
+            for c, text in enumerate((h["portfolio"], h["symbol"], f"{h['value']:,.0f}")):
+                self.hold_table.setItem(r, c, QTableWidgetItem(text))
+            combo = QComboBox(); combo.addItems(CLASS_CHOICES)
+            split = h["split"]
+            label = (" / ".join(f"{k} {v:.0%}" for k, v in split.items()) if len(split) > 1
+                     else next(iter(split)))
+            combo.setItemText(0, f"auto ({label})" if h["auto"] else "auto")
+            combo.setCurrentIndex(0 if h["auto"] else CLASS_CHOICES.index(next(iter(split))))
+            combo.currentIndexChanged.connect(lambda i, sym=h["symbol"]: self._set_class(sym, i))
+            self.hold_table.setCellWidget(r, 3, combo)
+        self.hold_table.resizeColumnsToContents()
+
+    def _set_class(self, symbol, index):
+        self.db.set_asset_class(symbol, None if index == 0 else CLASS_CHOICES[index])
+        etfs, overrides = self.db.etf_list(), self.db.asset_class_overrides()
+        for h in self.holdings:
+            if h["symbol"] == symbol:
+                if index == 0:
+                    h["split"] = ap.split_of(symbol, etfs, None, self._metas.get(symbol))
+                    h["auto"] = True
+                else:
+                    h["split"] = {CLASS_CHOICES[index]: 1.0}
+                    h["auto"] = False
+        self.recompute()
+
+    # --- the check -----------------------------------------------------------
+    def recompute(self):
+        targets = self.db.plan_targets()
+        names = sorted({h["portfolio"] for h in self.holdings} | set(self.cash_by_portfolio)
+                       | set(targets))
+        items, table_rows = [], []
+        totals = {}
+        for name in names:
+            mix = ap.current_mix([h for h in self.holdings if h["portfolio"] == name],
+                                 self.cash_by_portfolio.get(name, 0.0))
+            totals[name] = sum(mix.values())
+            target = targets.get(name)
+            if not target:
+                if totals[name]:
+                    items.append(("info", f"{name}: no target mix set - type one above."))
+                continue
+            result = ap.rebalance(mix, target)
+            for row in result["rows"]:
+                if row["value"] or row["target_pct"]:
+                    table_rows.append((name, row))
+            if result["drifted"]:
+                moves = [f"{'buy' if r['change'] > 0 else 'sell'} ${abs(r['change']):,.0f} "
+                         f"{r['class']}" for r in result["rows"] if abs(r["change"]) >= 1
+                         and r["class"] in result["drifted"]]
+                items.append(("warn", f"{name}: off its target ("
+                              + ", ".join(f"{r['class']} {r['pct']:.0f}% vs {r['target_pct']:.0f}%"
+                                          for r in result["rows"] if r["class"] in result["drifted"])
+                              + ") - getting back would take: " + "; ".join(moves) + "."))
+            else:
+                worst = max(abs(r["drift_pp"]) for r in result["rows"])
+                items.append(("ok", f"{name}: on target (largest gap {worst:.0f} points)."))
+        trading = str(self._settings.value(TRADING_KEY, "") or "")
+        whole = sum(totals.values())
+        if trading and whole:
+            t = ap.trading_check(totals.get(trading, 0.0), whole, self.cap.value())
+            if t["over"]:
+                items.append(("warn", f"Trading ({trading}) is {t['share_pct']:.1f}% of everything, "
+                              f"above its {t['cap_pct']:.0f}% cap by ${-t['room']:,.0f}."))
+            else:
+                items.append(("ok", f"Trading ({trading}) is {t['share_pct']:.1f}% of everything, "
+                              f"inside its {t['cap_pct']:.0f}% cap (${t['room']:,.0f} of room)."))
+        elif whole:
+            items.append(("info", "No trading portfolio chosen - pick one to keep it capped."))
+        items.append(self._budget_item())
+        due = ap.review_due(self._last_review())
+        items.append(("warn", "Review due: go through this list, then Mark reviewed today.")
+                     if due["due"] else
+                     ("ok", f"Next review around {due['next']:%Y-%m-%d} ({due['days_left']} days)."))
+        self._show(items, table_rows)
+
+    def _budget_item(self):
+        try:
+            b = json.loads(self._settings.value(BUDGET_KEY, "") or "null")
+        except (TypeError, ValueError):
+            b = None
+        if not b:
+            return ("info", "Safe budget not checked yet - Retirement Sim → Safe budget.")
+        if b["spending"] > b["safe"]:
+            return ("warn", f"Spending ${b['spending']:,.0f} is above the safe budget of "
+                            f"${b['safe']:,.0f} a year (checked {b['checked']}).")
+        return ("ok", f"Spending ${b['spending']:,.0f} is under the safe budget of "
+                      f"${b['safe']:,.0f} a year (checked {b['checked']}).")
+
+    def _show(self, items, table_rows):
+        self.check_items = items
+        self.checklist.clear()
+        marks = {"ok": ("✓", theme.UP), "warn": ("⚠", theme.WARN), "info": ("•", theme.MUTED)}
+        for kind, text in items:
+            mark, colour = marks[kind]
+            entry = QListWidgetItem(f"{mark}  {text}")
+            entry.setForeground(QColor(colour))
+            self.checklist.addItem(entry)
+        self.result_table.setRowCount(len(table_rows))
+        for r, (name, row) in enumerate(table_rows):
+            change = row["change"]
+            cells = [name, row["class"], f"{row['value']:,.0f}", f"{row['pct']:.1f}%",
+                     f"{row['target_pct']:.0f}%",
+                     "-" if abs(change) < 1 else f"{'buy' if change > 0 else 'sell'} ${abs(change):,.0f}"]
+            for c, text in enumerate(cells):
+                self.result_table.setItem(r, c, QTableWidgetItem(text))
+        self.result_table.resizeColumnsToContents()
+
+    def shutdown(self):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.wait(5000)

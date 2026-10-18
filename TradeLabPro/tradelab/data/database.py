@@ -213,9 +213,25 @@ SCHEMA_V11 = """
 ALTER TABLE retirement_people ADD COLUMN born TEXT;
 """
 
+# v12: the investing plan - the mix each portfolio should hold (your choice,
+# in %), and an asset class set by hand for a holding the guess gets wrong.
+SCHEMA_V12 = """
+CREATE TABLE IF NOT EXISTS plan_targets (
+    portfolio TEXT PRIMARY KEY,
+    stocks REAL NOT NULL DEFAULT 0,
+    bonds REAL NOT NULL DEFAULT 0,
+    cash REAL NOT NULL DEFAULT 0,
+    updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS asset_classes (
+    symbol TEXT PRIMARY KEY,
+    class TEXT NOT NULL
+);
+"""
+
 MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
                          SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10,
-                         SCHEMA_V11]
+                         SCHEMA_V11, SCHEMA_V12]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
 SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
@@ -362,6 +378,38 @@ class Database:
             self.conn.executemany(
                 "INSERT INTO portfolio_cash(portfolio, currency, amount, updated_at) "
                 "VALUES (?,?,?,?)", rows)
+
+    def plan_targets(self) -> dict:
+        """{portfolio: {stocks, bonds, cash}} - the mixes you set, in %."""
+        return {r["portfolio"]: {"stocks": r["stocks"], "bonds": r["bonds"], "cash": r["cash"]}
+                for r in self.conn.execute("SELECT * FROM plan_targets").fetchall()}
+
+    def set_plan_target(self, portfolio: str, stocks: float, bonds: float, cash: float) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO plan_targets(portfolio, stocks, bonds, cash, updated_at) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(portfolio) DO UPDATE SET stocks=excluded.stocks, "
+                "bonds=excluded.bonds, cash=excluded.cash, updated_at=excluded.updated_at",
+                (str(portfolio).strip(), float(stocks), float(bonds), float(cash), _now_iso()))
+
+    def delete_plan_target(self, portfolio: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM plan_targets WHERE portfolio=?", (str(portfolio).strip(),))
+
+    def asset_class_overrides(self) -> dict:
+        return {r["symbol"]: r["class"]
+                for r in self.conn.execute("SELECT symbol, class FROM asset_classes").fetchall()}
+
+    def set_asset_class(self, symbol: str, cls: str | None) -> None:
+        """Set a holding's class by hand; None goes back to the automatic one."""
+        symbol = str(symbol).strip().upper()
+        with self.conn:
+            if cls:
+                self.conn.execute("INSERT INTO asset_classes(symbol, class) VALUES (?,?) "
+                                  "ON CONFLICT(symbol) DO UPDATE SET class=excluded.class",
+                                  (symbol, str(cls)))
+            else:
+                self.conn.execute("DELETE FROM asset_classes WHERE symbol=?", (symbol,))
 
     def record_value(self, snapshot: dict) -> None:
         """Keep the day's account value (core.home.snapshot_of); a later

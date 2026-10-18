@@ -687,6 +687,15 @@ class RetirementSimPanel(QWidget):
             return
         self.budget = result
         spending = self.spending.value()
+        # Kept for the Plan tab's checklist, with the spending it was compared to.
+        try:
+            settings = app_settings()
+            settings.setValue(f"{self.SETTING}/last_budget", json.dumps(
+                {"safe": result["safe"], "average": result["average"], "spending": spending,
+                 "checked": time.strftime("%Y-%m-%d")}))
+            settings.sync()
+        except Exception:
+            log.exception("Could not keep the safe budget for the Plan tab")
         safe, average = result["safe"], result["average"]
         head = (f"<b>Safe budget: ${safe:,.0f} a year</b> (holds in "
                 f"{result['share']:.0%} of {result['paths']} simulated return orderings at "
