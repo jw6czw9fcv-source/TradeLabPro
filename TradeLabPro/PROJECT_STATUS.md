@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.56.0
+Current version: 2.57.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.57.0 (Your plan, checked)
+- **Plan tab** (`ui/panels/plan.py`, after Retirement Sim): target mix per portfolio (schema **v12** `plan_targets`), trading portfolio + cap (QSettings `Plan/*`), per-holding class (`asset_classes` overrides; `allocation_plan.split_of`: hand class > ETF Screener composition > `guess_class`), checklist: drift > 5 pts with buy/sell amounts (`rebalance`), `trading_check`, the last safe budget (`RetirementSim/last_budget`), `review_due` (91 days). `core/allocation_plan.py` holds the arithmetic. Manual's Retirement Sim limits fixed (clawback and deferral are modelled).
 
 ## Completed in 2.56.0 (How much is safe to spend)
 - **Safe budget** in Retirement Sim: `retirement_plan.safe_budget(make_plan, mean, sd, share=0.9, paths=300)` -> `average` (every year average) and `safe` (90% of orderings never short), searched in $500 steps by `highest_spending`; `_BudgetWorker` off the UI thread; `budget_line` green / amber (within 10%) / red + pop-up; `RetirementSimPanel.shutdown()` now called on close. First item of the investing checklist discussed 2026-10-17 (mixes run on FP Canada / IQPF 2026 guidelines: safe budget ~60-61k whatever the mix).

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.57.0 - Your plan, checked
+
+### Added
+- **Plan tab**, after Retirement Sim - a checklist to run every few months. You set the stocks / bonds / cash mix each portfolio should hold, which portfolio is for trading and the most it may be of everything; it prices every holding in CAD, classes it (a fund in the ETF Screener split by its published composition, anything else from what it is, or by hand), and shows each portfolio against its target with what getting back would take in dollars (more than 5 points off counts as drift), the trading side against its cap, the last Retirement Sim safe budget, and when a review is due. It never chooses a mix or a security.
+
+### Fixed
+- The manual's Retirement Sim limits still said the OAS clawback was not applied and a deferred pension not raised; both have been modelled since 2.52.0 and 2.53.0.
+
+### Verified
+- Full pytest suite passes (1574), including 9 new tests: classes guessed from the quote type and category, a Screener fund split by composition and a hand class winning, the mix with cash, targets adding to 100, drift and the dollars back, the trading cap, the review rhythm, the tab's checklist on a priced book, and a bad target refused with a pop-up.
+
 ## 2.56.0 - How much is safe to spend
 
 ### Added

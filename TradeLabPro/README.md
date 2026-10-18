@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.57.0 - Your plan, checked - a Plan tab measures each portfolio against the mix you set, shows what rebalancing would take, keeps the trading side under its cap and reminds you to review
+
 2.56.0 - How much is safe to spend - Retirement Sim works out the most a plan can spend a year to its last age, and says how close the spending is
 
 2.55.0 - What you own, day by day - the account's real value recorded daily, net worth across portfolios and retirement plans, one-click restore from a backup, retirement key dates, and the app's main file split into modules
