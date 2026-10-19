@@ -3087,14 +3087,15 @@ class _IbkrPositionsWorker(QThread):
             from tradelab.core.journal import fetch_ibkr_flex
             from tradelab.core.logging_config import log_dir
             from tradelab.core.portfolio_import import (
-                has_cash_section, keep_raw_report, parse_ibkr_cash, parse_ibkr_positions,
-                resolve_positions)
+                has_cash_section, has_positions_section, keep_raw_report, parse_ibkr_cash,
+                parse_ibkr_positions, resolve_positions)
             text = fetch_ibkr_flex(self.token, self.query_id)
             # Kept on this PC, so a section the import cannot read can be looked at.
             keep_raw_report(text, log_dir())
             positions, cash = parse_ibkr_positions(text), parse_ibkr_cash(text)
             positions = resolve_positions(positions)   # correct symbols to Yahoo listings
-            self.done.emit((positions, cash, has_cash_section(text)), "")
+            self.done.emit((positions, cash, has_cash_section(text),
+                            has_positions_section(text)), "")
         except Exception as exc:
             self.done.emit(None, str(exc))
 
@@ -3234,11 +3235,12 @@ class PortfolioPanel(QWidget):
         except Exception as exc:
             flag_problem(self.status, f"Could not read file: {exc}")
             return
-        from tradelab.core.portfolio_import import has_cash_section
+        from tradelab.core.portfolio_import import has_cash_section, has_positions_section
         parsed, cash = parse_ibkr_positions(text), parse_ibkr_cash(text)
         section = has_cash_section(text)
         if not parsed:
-            self._apply_ibkr(parsed, "file", cash, cash_section=section)
+            self._apply_ibkr(parsed, "file", cash, cash_section=section,
+                             positions_section=has_positions_section(text))
             return
         # Resolve symbols to the right Yahoo listings off-thread before applying.
         self.status.setText("Resolving symbols…")
@@ -3271,18 +3273,21 @@ class PortfolioPanel(QWidget):
             flag_problem(self.status, f"IBKR fetch failed: {error or 'no data'}")
             return
         positions, cash, *rest = holdings
-        self._apply_ibkr(positions, "Flex report", cash, cash_section=bool(rest and rest[0]))
+        self._apply_ibkr(positions, "Flex report", cash, cash_section=bool(rest and rest[0]),
+                         positions_section=bool(len(rest) > 1 and rest[1]))
 
-    def _apply_ibkr(self, positions, source, cash=None, cash_section=False):
+    def _apply_ibkr(self, positions, source, cash=None, cash_section=False,
+                    positions_section=False):
         """Replace one portfolio with what an IBKR report holds: its positions,
         and its cash when the report carries a Cash Report section. Without
         that section the recorded cash is left alone - a missing section is not
         an empty account. A section that is there but could not be read is a
-        problem, and says so."""
-        if not positions:
-            self.status.setText(
-                f"No open positions found in the IBKR {source}. Make sure it includes the "
-                "Open Positions section.")
+        problem, and says so. An Open Positions section that is there but
+        empty means everything was sold: the portfolio can be emptied."""
+        if not positions and not positions_section:
+            flag_problem(self.status,
+                         f"No open positions found in the IBKR {source}, and it has no Open "
+                         "Positions section - add that section to the Flex Query in IBKR.")
             return
         portfolio = self.import_portfolio.currentText().strip() or "IBKR"
         cash = cash or {}
@@ -3300,12 +3305,16 @@ class PortfolioPanel(QWidget):
             cash_note = ("The report has no Cash Report section, so the portfolio's recorded "
                          "cash stays as it is. To bring the cash in, add the Cash Report "
                          "section (Currency, Ending Cash) to the Flex Query in IBKR.")
-        ret = QMessageBox.question(
-            self, "Import IBKR positions",
-            f"Import {len(positions)} position(s) into the '{portfolio}' portfolio?\n"
-            "This replaces what that portfolio held (your other portfolios are untouched).\n"
-            + cash_note,
-            QMessageBox.Yes | QMessageBox.No)
+        if positions:
+            ask = (f"Import {len(positions)} position(s) into the '{portfolio}' portfolio?\n"
+                   "This replaces what that portfolio held (your other portfolios are untouched).\n")
+        else:
+            held = sum(1 for p in self.db.positions() if p.get("portfolio") == portfolio)
+            ask = (f"The IBKR {source} shows no open positions - everything has been sold.\n"
+                   f"Empty the '{portfolio}' portfolio ({held} position(s) removed)? Your other "
+                   "portfolios are untouched.\n")
+        ret = QMessageBox.question(self, "Import IBKR positions", ask + cash_note,
+                                   QMessageBox.Yes | QMessageBox.No)
         if ret != QMessageBox.Yes:
             self.status.setText("Import cancelled.")
             return
@@ -3313,10 +3322,15 @@ class PortfolioPanel(QWidget):
         if cash:
             self.db.replace_cash(portfolio, cash)
         self.refresh()
-        self.status.setText(f"Imported {written} IBKR position(s)"
-                            + (" and the cash" if cash else "")
-                            + f" into the '{portfolio}' portfolio. "
-                            "Open the Analytics tab to review the book.")
+        if positions:
+            self.status.setText(f"Imported {written} IBKR position(s)"
+                                + (" and the cash" if cash else "")
+                                + f" into the '{portfolio}' portfolio. "
+                                "Open the Analytics tab to review the book.")
+        else:
+            self.status.setText(f"Emptied the '{portfolio}' portfolio: the IBKR {source} holds "
+                                "no positions" + (", and its cash was brought in." if cash else
+                                ". Set its cash in the Cash section if it changed."))
 
     def shutdown(self):
         for attr in ("_ibkr_worker", "_chart_worker"):

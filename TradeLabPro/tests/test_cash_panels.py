@@ -122,8 +122,8 @@ def test_a_flex_fetch_keeps_the_raw_report_and_notes_the_cash_section(qapp, monk
     worker = app._IbkrPositionsWorker("token", "query")
     worker.done.connect(lambda holdings, err: out.append((holdings, err)))
     worker.run()                                         # in this thread, on purpose
-    (positions, cash, section), err = out[0]
-    assert err == "" and section is True
+    (positions, cash, section, pos_section), err = out[0]
+    assert err == "" and section is True and pos_section is True
     assert cash == {"CAD": 1200.25} and positions[0]["symbol"] == "VTI"
     assert (tmp_path / "ibkr_positions_last.xml").read_text(encoding="utf-8") == report
 
@@ -164,3 +164,30 @@ def test_home_counts_the_cash_and_dates_its_prices(qapp, db):
     assert "of it in cash" in panel.headline.text()
     assert panel.metrics["value"].toolTip().startswith("Positions $")
     assert "prices as of Fri 09 Oct" in panel.status.text()
+
+
+def test_a_report_with_an_empty_positions_section_empties_the_portfolio(qapp, db, monkeypatch):
+    # Everything sold: IBKR sends the Open Positions section with nothing in it.
+    import tradelab.ui.app as app
+    asked = []
+    _answer_yes(monkeypatch, asked)
+    db.set_cash("RRSP", "CAD", 500.0)
+    panel = app.PortfolioPanel(db)
+    panel.import_portfolio.setCurrentText("RRSP")
+    panel._apply_ibkr([], "Flex report", {}, positions_section=True)
+    assert [p for p in db.positions() if p["portfolio"] == "RRSP"] == []
+    assert "everything has been sold" in asked[0] and "1 position(s) removed" in asked[0]
+    assert [(c["currency"], c["amount"]) for c in db.cash()] == [("CAD", 500.0)]
+    assert "Emptied the 'RRSP' portfolio" in panel.status.text()
+
+
+def test_a_report_without_a_positions_section_changes_nothing_and_says_so(qapp, db, monkeypatch):
+    import tradelab.ui.app as app
+    shown = []
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr(app.QMessageBox, "question", staticmethod(lambda *a, **k: pytest.fail("asked")))
+    panel = app.PortfolioPanel(db)
+    panel.import_portfolio.setCurrentText("RRSP")
+    panel._apply_ibkr([], "Flex report", {})
+    assert len([p for p in db.positions() if p["portfolio"] == "RRSP"]) == 1
+    assert shown and "no Open Positions section" in shown[0]

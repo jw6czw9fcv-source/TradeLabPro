@@ -241,3 +241,10 @@ def test_the_raw_report_is_kept_in_the_given_folder(tmp_path):
     path = keep_raw_report("<FlexQueryResponse/>", tmp_path / "logs")
     assert path == tmp_path / "logs" / "ibkr_positions_last.xml"
     assert path.read_text(encoding="utf-8") == "<FlexQueryResponse/>"
+
+
+def test_a_positions_section_is_recognised_even_when_empty():
+    from tradelab.core.portfolio_import import has_positions_section
+    assert has_positions_section("<FlexStatement><OpenPositions /></FlexStatement>")
+    assert has_positions_section('"Open Positions",Header,DataDiscriminator,Asset Category\n')
+    assert not has_positions_section("<FlexStatement><Trades/></FlexStatement>")

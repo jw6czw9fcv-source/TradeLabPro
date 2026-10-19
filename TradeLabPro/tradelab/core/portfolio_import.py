@@ -291,6 +291,15 @@ def has_cash_section(text: str) -> bool:
     return "<CashReport" in text or bool(re.search(r'^"?Cash Report"?,', text, re.MULTILINE))
 
 
+def has_positions_section(text: str) -> bool:
+    """Whether a report carries an Open Positions section at all - so a report
+    whose section is there but empty (everything sold) can empty the
+    portfolio, while a report without the section leaves it alone."""
+    import re
+    text = text or ""
+    return "<OpenPositions" in text or bool(re.search(r'^"?Open Positions"?,', text, re.MULTILINE))
+
+
 RAW_POSITIONS_REPORT = "ibkr_positions_last.xml"
 
 
