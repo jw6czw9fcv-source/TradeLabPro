@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.57.2** | *unreleased* | In sync with IBKR |
+| **2.57.2** | 2026-10-18 | In sync with IBKR |
 | **2.57.1** | 2026-10-18 | One download at a time |
 | **2.57.0** | 2026-10-18 | Your plan, checked |
 | **2.56.0** | 2026-10-17 | How much is safe to spend |
