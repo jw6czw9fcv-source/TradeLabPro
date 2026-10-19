@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.57.1
+Current version: 2.57.2
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.57.2 (In sync with IBKR)
+- **IBKR sync at startup:** Portfolio tab "Sync when TradeLab starts" (QSettings `ibkr/sync_at_startup`, `ibkr/sync_portfolio` = the "into" box when ticked); `PortfolioPanel.startup_sync()` from `MainWindow.refresh_on_startup`, applied without confirmation via `_write_ibkr`, then `synced` -> Home and Plan refresh. Failures and a report without Open Positions change nothing and pop up.
+- **Fixed: an account with nothing left could not be synced** - `portfolio_import.has_positions_section`: an empty Open Positions section offers to empty the portfolio; no section changes nothing (pop-up).
 
 ## Completed in 2.57.1 (One download at a time)
 - **Fixed: concurrent Yahoo downloads swapped or lost frames** (yfinance keeps download results in module-level state). `market_data.YF_LOCK` (RLock) now wraps every `yf.download` - market_data, etf_metrics, heatmap, the IBKR symbol probe. Found when the Plan tab, Home and the market warm-up fetched together at startup.

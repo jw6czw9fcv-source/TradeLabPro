@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.57.2 - In sync with IBKR
+
+### Added
+- **Sync when TradeLab starts**, beside the IBKR import: choose the portfolio in the "into" box and tick it, and each launch fetches the Flex report in the background and replaces that portfolio with what it holds - no question asked - then Home and the Plan tab re-value the book. A failed fetch, or a report without an Open Positions section, changes nothing and says why in a pop-up. Flex reports come from IBKR's end-of-day data.
+
+### Fixed
+- **Selling everything in an account left the portfolio full.** The import said "No open positions found" and changed nothing. A report whose Open Positions section is empty now offers to empty the portfolio; a report without the section still changes nothing, and says so.
+
+### Verified
+- Full pytest suite passes (1581), including 6 new tests: an empty positions section recognised in Flex XML and Activity CSV, the portfolio emptied after confirming, nothing changed without the section, the startup sync replacing the portfolio without asking and signalling the refresh, a failed sync leaving it unchanged with a pop-up, and the sync off unless switched on.
+
 ## 2.57.1 - One download at a time
 
 ### Fixed
