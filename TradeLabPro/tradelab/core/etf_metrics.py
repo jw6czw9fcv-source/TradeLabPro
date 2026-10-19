@@ -180,8 +180,10 @@ def get_prices(symbol: str, period: str = "11y") -> pd.Series | None:
     if yf is None or not symbol:
         return None
     try:
-        df = yf.download(symbol, period=period, interval="1d",
-                         auto_adjust=True, progress=False, threads=False)
+        from tradelab.data.market_data import YF_LOCK
+        with YF_LOCK:     # one Yahoo download at a time - see market_data
+            df = yf.download(symbol, period=period, interval="1d",
+                             auto_adjust=True, progress=False, threads=False)
     except Exception:
         return None
     if df is None or df.empty:

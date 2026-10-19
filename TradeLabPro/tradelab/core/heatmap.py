@@ -337,8 +337,10 @@ def _batch_prices(symbols: list[str], spec: dict) -> dict:
     except Exception:
         return {}
     try:
-        data = yf.download(symbols, period=spec["yf_period"], interval="1d", progress=False,
-                           group_by="ticker", threads=True, auto_adjust=False)
+        from tradelab.data.market_data import YF_LOCK
+        with YF_LOCK:     # one Yahoo download at a time - see market_data
+            data = yf.download(symbols, period=spec["yf_period"], interval="1d", progress=False,
+                               group_by="ticker", threads=True, auto_adjust=False)
     except Exception:
         return {}
     out: dict = {}

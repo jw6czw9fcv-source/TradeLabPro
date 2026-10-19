@@ -332,8 +332,10 @@ def _probe_close(symbol: str):
     try:
         import pandas as pd
         import yfinance as yf
-        df = yf.download(symbol, period="5d", interval="1d", progress=False,
-                         auto_adjust=False, threads=False)
+        from tradelab.data.market_data import YF_LOCK
+        with YF_LOCK:     # one Yahoo download at a time - see market_data
+            df = yf.download(symbol, period="5d", interval="1d", progress=False,
+                             auto_adjust=False, threads=False)
         if df is not None and not getattr(df, "empty", True) and "Close" in df:
             c = df["Close"]
             if hasattr(c, "columns"):

@@ -1,3 +1,4 @@
+import threading
 from datetime import date, datetime
 
 import numpy as np
@@ -7,6 +8,13 @@ try:
     import yfinance as yf
 except Exception:
     yf = None
+
+# One Yahoo download at a time, app-wide. yfinance's download() gathers its
+# results in module-level state, so two downloads running at once on
+# different threads can hand back each other's frames, or none: at startup
+# the Plan tab, Home and the market warm-up all fetched together and the Plan
+# tab got nothing for NVDA and VGT. Every yf.download in TradeLab holds this.
+YF_LOCK = threading.RLock()
 
 
 def _flatten_yf(df: pd.DataFrame) -> pd.DataFrame:
@@ -57,7 +65,9 @@ def _yahoo_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.
     Yahoo provider's implementation; call get_history() rather than this."""
     if yf is not None:
         try:
-            df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=False, threads=False)
+            with YF_LOCK:
+                df = yf.download(symbol, period=period, interval=interval, progress=False,
+                                 auto_adjust=False, threads=False)
             df = _flatten_yf(df)
             if not df.empty and {"Open", "High", "Low", "Close", "Volume"}.issubset(df.columns):
                 return df.dropna(subset=["Close"])
@@ -120,9 +130,10 @@ def _yahoo_download_chunk(symbols, period: str, interval: str) -> dict:
     if not symbols:
         return result
     try:
-        raw = yf.download(list(symbols), period=period, interval=interval,
-                          progress=False, auto_adjust=False, group_by="ticker",
-                          threads=True)
+        with YF_LOCK:
+            raw = yf.download(list(symbols), period=period, interval=interval,
+                              progress=False, auto_adjust=False, group_by="ticker",
+                              threads=True)
     except Exception:
         return result
     if raw is None or getattr(raw, "empty", True):

@@ -321,3 +321,31 @@ def test_calendar_is_never_synthesized():
     from tradelab.data import providers
     assert providers.SyntheticProvider().get_calendar("RY.TO") == {
         "earnings": None, "ex_dividend": None}
+
+
+def test_yahoo_downloads_run_one_at_a_time(monkeypatch):
+    # yfinance keeps download results in module-level state; two at once can
+    # swap or lose frames. Two threads asking together must be served in turn.
+    import threading
+    import time as _time
+    from tradelab.data import market_data
+    state = {"now": 0, "most": 0}
+    guard = threading.Lock()
+
+    def download(symbols, **_kw):
+        with guard:
+            state["now"] += 1
+            state["most"] = max(state["most"], state["now"])
+        _time.sleep(0.05)
+        with guard:
+            state["now"] -= 1
+        return pd.DataFrame()
+
+    monkeypatch.setattr(market_data, "yf", type("_yf", (), {"download": staticmethod(download)}))
+    threads = [threading.Thread(target=market_data._yahoo_download_chunk, args=(["A", "B"], "5d", "1d"))
+               for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert state["most"] == 1
