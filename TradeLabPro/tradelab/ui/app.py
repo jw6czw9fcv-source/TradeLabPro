@@ -3117,7 +3117,15 @@ class _ResolveSymbolsWorker(QThread):
             self.done.emit(None, str(exc))
 
 
+IBKR_SYNC_KEY = "ibkr/sync_at_startup"
+IBKR_SYNC_PORTFOLIO_KEY = "ibkr/sync_portfolio"
+
+
 class PortfolioPanel(QWidget):
+    # A sync at startup changed a portfolio (its name) - the window refreshes
+    # the tabs that value the book.
+    synced = Signal(str)
+
     def __init__(self, db: Database, chart=None, cfg=None):
         super().__init__(); self.db = db
         self.chart = chart
@@ -3150,6 +3158,15 @@ class PortfolioPanel(QWidget):
         self.import_portfolio.setToolTip("The portfolio this import replaces - use one per "
                                          "IBKR account.")
         imp.addWidget(self.import_portfolio)
+        self.sync_at_start = QCheckBox("Sync when TradeLab starts")
+        self.sync_at_start.setToolTip(
+            "Each time TradeLab starts, fetch the Flex report and replace the portfolio "
+            "named in the box with what it holds - no question asked. Ticking it remembers "
+            "that portfolio.")
+        self.sync_at_start.setChecked(
+            str(app_settings().value(IBKR_SYNC_KEY, "false")).lower() in ("true", "1"))
+        self.sync_at_start.toggled.connect(self._save_sync_setting)
+        imp.addWidget(self.sync_at_start)
         imp.addWidget(_hint("Imports your open positions - and the cash, when the report has its "
                             "Cash Report section - into the portfolio named beside the buttons; "
                             "each import replaces what that portfolio held (read-only). The Flex "
@@ -3276,6 +3293,67 @@ class PortfolioPanel(QWidget):
         self._apply_ibkr(positions, "Flex report", cash, cash_section=bool(rest and rest[0]),
                          positions_section=bool(len(rest) > 1 and rest[1]))
 
+    def _write_ibkr(self, portfolio, positions, cash):
+        """Replace a portfolio with a report's positions (and its cash, when the
+        report had any) - shared by the import and the sync at startup."""
+        written = self.db.set_portfolio_positions(portfolio, positions)
+        if cash:
+            self.db.replace_cash(portfolio, cash)
+        self.refresh()
+        return written
+
+    # --- the sync at startup ---------------------------------------------------
+    def _save_sync_setting(self, on):
+        settings = app_settings()
+        settings.setValue(IBKR_SYNC_KEY, bool(on))
+        if on:
+            portfolio = self.import_portfolio.currentText().strip() or "IBKR"
+            settings.setValue(IBKR_SYNC_PORTFOLIO_KEY, portfolio)
+            self.status.setText(f"IBKR will sync into '{portfolio}' each time TradeLab starts.")
+        settings.sync()
+
+    def startup_sync(self):
+        """At launch, when switched on: pull the Flex report and replace the
+        chosen portfolio with it, without asking. Returns True if started."""
+        settings = app_settings()
+        if str(settings.value(IBKR_SYNC_KEY, "false")).lower() not in ("true", "1"):
+            return False
+        token = str(settings.value("ibkr/flex_token", "") or "").strip()
+        query = str(settings.value("ibkr/flex_query", "") or "").strip()
+        portfolio = str(settings.value(IBKR_SYNC_PORTFOLIO_KEY, "") or "").strip()
+        if not token or not query or not portfolio:
+            flag_problem(self.status, "IBKR sync at startup is on, but the Flex token, query id "
+                                      "or portfolio is missing - set them, or untick the box.")
+            return False
+        if self._ibkr_worker is not None and self._ibkr_worker.isRunning():
+            return False
+        self._sync_portfolio = portfolio
+        self.status.setText(f"Syncing '{portfolio}' from IBKR…")
+        self._ibkr_worker = _IbkrPositionsWorker(token, query)
+        self._ibkr_worker.done.connect(self._on_startup_synced)
+        self._ibkr_worker.start()
+        return True
+
+    def _on_startup_synced(self, holdings, error):
+        portfolio = getattr(self, "_sync_portfolio", "IBKR")
+        if error or holdings is None:
+            flag_problem(self.status, f"IBKR sync at startup failed: {error or 'no data'}. "
+                                      f"'{portfolio}' is unchanged.")
+            return
+        positions, cash, *rest = holdings
+        positions_section = bool(len(rest) > 1 and rest[1])
+        if not positions and not positions_section:
+            flag_problem(self.status, "IBKR sync at startup: the report has no Open Positions "
+                                      f"section, so '{portfolio}' is unchanged.")
+            return
+        written = self._write_ibkr(portfolio, positions, cash)
+        log.info("IBKR synced at startup: %d position(s) into %s%s", written, portfolio,
+                 " with its cash" if cash else "")
+        self.status.setText(
+            f"IBKR synced at {time.strftime('%H:%M')}: {written} position(s) in '{portfolio}'"
+            + (", cash included." if cash else " (cash as you entered it - the report has none)."))
+        self.synced.emit(portfolio)
+
     def _apply_ibkr(self, positions, source, cash=None, cash_section=False,
                     positions_section=False):
         """Replace one portfolio with what an IBKR report holds: its positions,
@@ -3318,10 +3396,7 @@ class PortfolioPanel(QWidget):
         if ret != QMessageBox.Yes:
             self.status.setText("Import cancelled.")
             return
-        written = self.db.set_portfolio_positions(portfolio, positions)
-        if cash:
-            self.db.replace_cash(portfolio, cash)
-        self.refresh()
+        written = self._write_ibkr(portfolio, positions, cash)
         if positions:
             self.status.setText(f"Imported {written} IBKR position(s)"
                                 + (" and the cash" if cash else "")
@@ -9133,6 +9208,7 @@ class MainWindow(QMainWindow):
         self.retirement_sim_panel = RetirementSimPanel(self.db)
         self.plan_panel = PlanPanel(self.db)
         self.portfolio_panel = PortfolioPanel(self.db, self.chart, self.cfg)
+        self.portfolio_panel.synced.connect(self._on_ibkr_synced)
         self.analytics_panel = PortfolioAnalyticsPanel(self.db, self.chart, self.cfg)
         self.dividends_panel = DividendsPanel(self.db, self.chart, self.cfg)
         self.retirement_panel = RetirementPanel(self.chart, self.cfg)
@@ -9558,6 +9634,12 @@ class MainWindow(QMainWindow):
         by design: each panel shows its own status and the app is fully usable
         without either pass.
         """
+        # Bring IBKR in first, when that is switched on; Home refreshes again
+        # when the sync lands (see _on_ibkr_synced).
+        try:
+            self.portfolio_panel.startup_sync()
+        except Exception:
+            log.exception("IBKR sync at startup could not start")
         try:
             if self.db.positions():
                 self.home_panel.refresh()
@@ -9575,6 +9657,15 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(6000, self.settings_panel.startup_checks)
         except Exception:
             log.exception("Could not schedule the backup and update check")
+
+    def _on_ibkr_synced(self, _portfolio):
+        """A sync replaced a portfolio: re-value what shows the book."""
+        for panel in (self.home_panel, self.plan_panel):
+            try:
+                if self.db.positions() or self.db.cash():
+                    panel.refresh()
+            except Exception:
+                log.exception("Refresh after the IBKR sync failed")
 
     def _warm_market(self):
         try:

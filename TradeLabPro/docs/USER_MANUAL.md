@@ -617,6 +617,16 @@ a section TradeLab could not read. Each Flex fetch keeps IBKR's report as it was
 sent in the logs folder (`ibkr_positions_last.xml`, on your PC only), so a
 section that could not be read can be looked at.
 
+**Everything sold?** A report whose Open Positions section is empty offers to
+empty the portfolio. A report without that section changes nothing and says so.
+
+**Sync when TradeLab starts.** Choose the portfolio in the **into** box and tick
+**Sync when TradeLab starts**: from then on, each launch fetches the Flex report
+in the background and replaces that portfolio with what it holds — no question
+asked — then Home and the Plan tab re-value the book. A failed fetch leaves the
+portfolio as it was and says why in a pop-up. Flex reports are built from
+IBKR's end-of-day data, so a trade made today shows up the next day.
+
 > **Read-only.** This reads what you hold — it never logs in to trade, routes
 > orders, or moves funds.
 

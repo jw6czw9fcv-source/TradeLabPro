@@ -191,3 +191,70 @@ def test_a_report_without_a_positions_section_changes_nothing_and_says_so(qapp, 
     panel._apply_ibkr([], "Flex report", {})
     assert len([p for p in db.positions() if p["portfolio"] == "RRSP"]) == 1
     assert shown and "no Open Positions section" in shown[0]
+
+
+class _FakeFlexWorker:
+    """Stands in for the Flex fetch: hands back a prepared report at start()."""
+    result = None
+
+    def __init__(self, token, query):
+        from PySide6.QtCore import QObject, Signal
+
+        class _Sig(QObject):
+            done = Signal(object, str)
+        self._sig = _Sig()
+        self.done = self._sig.done
+
+    def isRunning(self):
+        return False
+
+    def start(self):
+        holdings, err = _FakeFlexWorker.result
+        self.done.emit(holdings, err)
+
+
+@pytest.fixture
+def sync_settings():
+    from tradelab.settings import app_settings
+    s = app_settings()
+    for key, value in (("ibkr/sync_at_startup", True), ("ibkr/sync_portfolio", "RRSP"),
+                       ("ibkr/flex_token", "t"), ("ibkr/flex_query", "q")):
+        s.setValue(key, value)
+    s.sync()
+    yield s
+    for key in ("ibkr/sync_at_startup", "ibkr/sync_portfolio", "ibkr/flex_token", "ibkr/flex_query"):
+        s.remove(key)
+    s.sync()
+
+
+def test_the_startup_sync_replaces_the_portfolio_without_asking(qapp, db, monkeypatch, sync_settings):
+    import tradelab.ui.app as app
+    monkeypatch.setattr(app, "_IbkrPositionsWorker", _FakeFlexWorker)
+    monkeypatch.setattr(app.QMessageBox, "question", staticmethod(lambda *a, **k: pytest.fail("asked")))
+    _FakeFlexWorker.result = (([{"symbol": "VTI", "shares": 5, "entry_price": 250.0}],
+                               {"CAD": 900.0}, True, True), "")
+    panel = app.PortfolioPanel(db)
+    seen = []
+    panel.synced.connect(seen.append)
+    assert panel.startup_sync() is True
+    assert [(p["portfolio"], p["symbol"]) for p in db.positions()] == [("RRSP", "VTI")]
+    assert [(c["currency"], c["amount"]) for c in db.cash()] == [("CAD", 900.0)]
+    assert seen == ["RRSP"] and "IBKR synced" in panel.status.text()
+
+
+def test_a_failed_startup_sync_changes_nothing_and_pops_up(qapp, db, monkeypatch, sync_settings):
+    import tradelab.ui.app as app
+    shown = []
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
+    monkeypatch.setattr(app, "_IbkrPositionsWorker", _FakeFlexWorker)
+    _FakeFlexWorker.result = (None, "network down")
+    panel = app.PortfolioPanel(db)
+    panel.startup_sync()
+    assert [p["symbol"] for p in db.positions()] == ["NVDA"]
+    assert shown and "network down" in shown[0] and "unchanged" in shown[0]
+
+
+def test_the_startup_sync_is_off_unless_switched_on(qapp, db, monkeypatch):
+    import tradelab.ui.app as app
+    monkeypatch.setattr(app, "_IbkrPositionsWorker", lambda *a: pytest.fail("fetched"))
+    assert app.PortfolioPanel(db).startup_sync() is False
