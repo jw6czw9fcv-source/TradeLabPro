@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.57.0
+Current version: 2.57.1
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.57.1 (One download at a time)
+- **Fixed: concurrent Yahoo downloads swapped or lost frames** (yfinance keeps download results in module-level state). `market_data.YF_LOCK` (RLock) now wraps every `yf.download` - market_data, etf_metrics, heatmap, the IBKR symbol probe. Found when the Plan tab, Home and the market warm-up fetched together at startup.
 
 ## Completed in 2.57.0 (Your plan, checked)
 - **Plan tab** (`ui/panels/plan.py`, after Retirement Sim): target mix per portfolio (schema **v12** `plan_targets`), trading portfolio + cap (QSettings `Plan/*`), per-holding class (`asset_classes` overrides; `allocation_plan.split_of`: hand class > ETF Screener composition > `guess_class`), checklist: drift > 5 pts with buy/sell amounts (`rebalance`), `trading_check`, the last safe budget (`RetirementSim/last_budget`), `review_due` (91 days). `core/allocation_plan.py` holds the arithmetic. Manual's Retirement Sim limits fixed (clawback and deferral are modelled).

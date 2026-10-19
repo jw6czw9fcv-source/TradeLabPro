@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.57.1 - One download at a time
+
+### Fixed
+- **Prices fetched by several tabs at once could come back empty.** At startup on the Plan tab, its download ran at the same moment as Home's and the market warm-up's, and NVDA and VGT came back with nothing - a "could not be priced" pop-up. The Yahoo library keeps download results in shared state, so simultaneous downloads can swap or lose them. Every Yahoo download in TradeLab now waits its turn.
+
+### Verified
+- Full pytest suite passes (1575), including a new test: four threads downloading together are served one at a time. A fresh start of the app showed no pricing problems.
+
 ## 2.57.0 - Your plan, checked
 
 ### Added
