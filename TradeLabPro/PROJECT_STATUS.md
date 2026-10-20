@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.57.2
+Current version: 2.58.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.58.0 (The facts before you buy)
+- **Candidate check** in the Plan tab: `core/candidate.py` `assess()` -> (kind, label, text) lines - fees (Screener MER only), CSA band (`etf_metrics.csa_volatility`), `worst_drawdown`, `annualized_return` 1/5/10y, `overlap` vs owned symbols + owned funds' top holdings, plan fit (class vs the portfolio's target drift), `placement` (US-listed + yield -> REER: treaty Art. XXI(2), IRS PLR-142074-07; TFSA 15% withheld). `_CandidateWorker` fetches prices (11y adjusted), meta, dividends, compositions.
 
 ## Completed in 2.57.2 (In sync with IBKR)
 - **IBKR sync at startup:** Portfolio tab "Sync when TradeLab starts" (QSettings `ibkr/sync_at_startup`, `ibkr/sync_portfolio` = the "into" box when ticked); `PortfolioPanel.startup_sync()` from `MainWindow.refresh_on_startup`, applied without confirmation via `_write_ibkr`, then `synced` -> Home and Plan refresh. Failures and a report without Open Positions change nothing and pop up.

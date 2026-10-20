@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.58.0 - The facts before you buy
+
+### Added
+- **Candidate check** in the Plan tab: type a symbol and the portfolio it would go in, and get one line each - fees (the MER from the ETF Screener, per $10,000 a year), risk (the CSA band from ten years of monthly swings), worst fall and when, returns over 1, 5 and 10 years with dividends, overlap with what you already own (directly or inside your funds), the class it adds to against that portfolio's target, and the account that suits it. A US-listed payer keeps its dividends whole in a REER (Canada-US treaty, Article XXI; IRS ruling that an RRSP qualifies), while about 15% is withheld for good in a CELI; a Canadian-listed fund's US tax is withheld inside the fund either way. Facts with their basis, never a verdict.
+
+### Verified
+- Full pytest suite passes (1590), including 9 new tests: US and Canadian listings, the worst fall and its dates, annualized returns needing the history, the placement rule, overlap, a fund and a stock assessed line by line, the Plan tab's check and an empty symbol refused. Checked on real data (a Canadian bond fund and a US stock fund).
+
 ## 2.57.2 - In sync with IBKR
 
 ### Added
