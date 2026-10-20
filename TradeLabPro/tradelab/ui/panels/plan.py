@@ -7,8 +7,8 @@ import time
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QGroupBox,
-                               QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
-                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from tradelab.core import allocation_plan as ap
 from tradelab.core.logging_config import get_logger
@@ -43,6 +43,36 @@ class _PlanWorker(QThread):
             self.done.emit(hist, metas, "")
         except Exception as exc:
             self.done.emit(None, None, str(exc) or type(exc).__name__)
+
+
+class _CandidateWorker(QThread):
+    """Everything the candidate check needs about one symbol, off the UI
+    thread: ten years of prices, what it is, its dividends, what it holds -
+    and what the funds you already own hold, for the overlap."""
+    done = Signal(object, str)   # facts dict | None, error
+
+    def __init__(self, symbol, owned_funds):
+        super().__init__()
+        self.symbol, self.owned_funds = symbol, list(owned_funds)
+
+    def run(self):
+        try:
+            from tradelab.core.etf_metrics import dividend_yield, get_prices
+            from tradelab.data.market_data import (get_dividends, get_fund_composition,
+                                                   get_quote_meta)
+            prices = get_prices(self.symbol, "11y")
+            meta = get_quote_meta(self.symbol)
+            divs = get_dividends(self.symbol)
+            last = float(prices.iloc[-1]) if prices is not None and len(prices) else None
+            comp = get_fund_composition(self.symbol) or {}
+            owned_comps = {s: (get_fund_composition(s) or {}).get("top_holdings") or {}
+                           for s in self.owned_funds}
+            self.done.emit({"prices": prices, "meta": meta,
+                            "yield": dividend_yield(divs, last) if last else None,
+                            "holdings": comp.get("top_holdings") or {},
+                            "owned_comps": owned_comps}, "")
+        except Exception as exc:
+            self.done.emit(None, str(exc) or type(exc).__name__)
 
 
 class PlanPanel(QWidget):
@@ -121,6 +151,27 @@ class PlanPanel(QWidget):
         self.result_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         layout.addWidget(self.result_table, 1)
 
+        cand = QGroupBox("Candidate check - the facts before you buy")
+        cv = QVBoxLayout(cand)
+        crow = QHBoxLayout()
+        self.cand_symbol = QLineEdit(); self.cand_symbol.setPlaceholderText("Symbol, e.g. XBB.TO")
+        self.cand_symbol.setMaximumWidth(160)
+        self.cand_symbol.returnPressed.connect(self.check_candidate)
+        self.cand_account = QComboBox()
+        check = QPushButton("Check"); check.clicked.connect(self.check_candidate)
+        crow.addWidget(QLabel("Symbol")); crow.addWidget(self.cand_symbol)
+        crow.addWidget(QLabel("for")); crow.addWidget(self.cand_account)
+        crow.addWidget(check); crow.addStretch()
+        cv.addLayout(crow)
+        self.cand_list = QListWidget(); self.cand_list.setWordWrap(True)
+        self.cand_list.setMinimumHeight(170)
+        cv.addWidget(self.cand_list)
+        cv.addWidget(_hint("Fees, risk band, worst fall, returns, overlap with what you own, the part "
+                           "of your plan it adds to, and which account suits it - facts with their "
+                           "basis, not a verdict. ⚠ marks something worth a second look."))
+        layout.addWidget(cand)
+        self._cand_worker = None
+
         self.status = StatusLabel("Click Refresh to price your portfolios.")
         layout.addWidget(self.status)
         layout.addWidget(_hint(theme.NOT_ADVICE))
@@ -151,6 +202,11 @@ class PlanPanel(QWidget):
                 value = t.get(cls)
                 self.targets.setItem(r, c, QTableWidgetItem("" if value is None else f"{value:g}"))
         self.targets.resizeColumnsToContents()
+        chosen = self.cand_account.currentText() if hasattr(self, "cand_account") else ""
+        if hasattr(self, "cand_account"):
+            self.cand_account.clear(); self.cand_account.addItems(names or ["(no portfolio)"])
+            if chosen in names:
+                self.cand_account.setCurrentText(chosen)
         current = str(self._settings.value(TRADING_KEY, "") or "")
         self.trading.blockSignals(True)
         self.trading.clear(); self.trading.addItems(["(none)"] + names)
@@ -378,6 +434,77 @@ class PlanPanel(QWidget):
                 self.result_table.setItem(r, c, QTableWidgetItem(text))
         self.result_table.resizeColumnsToContents()
 
+    # --- the candidate check -------------------------------------------------------
+    def check_candidate(self):
+        symbol = self.cand_symbol.text().strip().upper()
+        if not symbol:
+            flag_problem(self.status, "Type a symbol to check (e.g. XBB.TO).")
+            return
+        if self._cand_worker is not None and self._cand_worker.isRunning():
+            return
+        owned_funds = sorted({str(p["symbol"]).upper() for p in self.db.positions()})
+        self.cand_list.clear()
+        self.cand_list.addItem(f"Checking {symbol}…")
+        self._cand_symbol = symbol
+        self._cand_worker = _CandidateWorker(symbol, owned_funds)
+        self._cand_worker.done.connect(self._on_candidate)
+        self._cand_worker.start()
+
+    def owned_map(self, owned_comps: dict) -> dict:
+        """{company symbol: where you own it} - directly, or inside a fund."""
+        owned = {}
+        for p in self.db.positions():
+            sym = str(p["symbol"]).upper()
+            owned.setdefault(sym, f"{p.get('portfolio')}")
+        for fund, top in (owned_comps or {}).items():
+            for sym in top:
+                owned.setdefault(str(sym).upper(), f"inside {fund}")
+        return owned
+
+    def _on_candidate(self, facts, err):
+        from tradelab.core.candidate import assess
+        symbol = getattr(self, "_cand_symbol", "")
+        if err or not facts:
+            self.cand_list.clear()
+            flag_problem(self.status, f"Could not check {symbol}: {err or 'no data'}")
+            return
+        prices = facts.get("prices")
+        if prices is None and not (facts.get("meta") or {}).get("quote_type"):
+            self.cand_list.clear()
+            flag_problem(self.status, f"{symbol}: no data found - check the symbol (a Canadian "
+                                      "listing ends in .TO).")
+            return
+        etfs = self.db.etf_list()
+        screener = next((r for r in etfs if symbol in {str(r.get("ticker") or "").upper(),
+                                                         str(r.get("yahoo") or "").upper()}), None)
+        mer = screener.get("mer") if screener else None
+        meta = facts.get("meta") or {}
+        split = ap.split_of(symbol, etfs, self.db.asset_class_overrides().get(symbol), meta)
+        account = self.cand_account.currentText()
+        if account == "(no portfolio)":
+            account = None
+        account_rows = None
+        target = self.db.plan_targets().get(account) if account else None
+        if account and target:
+            mix = ap.current_mix([h for h in self.holdings if h["portfolio"] == account],
+                                 self.cash_by_portfolio.get(account, 0.0))
+            if sum(mix.values()):
+                account_rows = ap.rebalance(mix, target)["rows"]
+        holdings = facts.get("holdings") or ({symbol: 1.0} if meta.get("quote_type") == "EQUITY" else {})
+        items = assess(symbol, prices, meta, mer=mer, dividend_yield=facts.get("yield"),
+                       holdings=holdings, owned=self.owned_map(facts.get("owned_comps")),
+                       split=split, account=account, account_rows=account_rows)
+        self.candidate_items = items
+        self.cand_list.clear()
+        marks = {"ok": ("✓", theme.UP), "warn": ("⚠", theme.WARN), "info": ("•", theme.TEXT)}
+        for kind, label, text in items:
+            mark, colour = marks[kind]
+            entry = QListWidgetItem(f"{mark}  {label}: {text}")
+            entry.setForeground(QColor(colour))
+            self.cand_list.addItem(entry)
+        self.status.setText(f"Checked {symbol} at {time.strftime('%H:%M')}. Facts, not advice.")
+
     def shutdown(self):
-        if self._worker is not None and self._worker.isRunning():
-            self._worker.wait(5000)
+        for worker in (self._worker, self._cand_worker):
+            if worker is not None and worker.isRunning():
+                worker.wait(5000)

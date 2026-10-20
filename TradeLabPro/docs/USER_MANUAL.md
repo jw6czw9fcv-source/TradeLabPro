@@ -1040,6 +1040,22 @@ Every decision in it is yours; TradeLab only measures against them.
 - **Review.** About every quarter the checklist says a review is due; go
   through it, then click **Mark reviewed today**.
 
+- **Candidate check — the facts before you buy.** Type a symbol (XBB.TO, VTI…),
+  pick the portfolio it would go in, and click **Check**. You get one line
+  each, with its basis: **fees** (the MER from the ETF Screener, in dollars per
+  $10,000 a year), **risk** (the CSA band from ten years of monthly swings),
+  **worst fall** (how deep, and when), **returns** over 1, 5 and 10 years
+  (dividends included), **overlap** (how much of it is in companies you already
+  own, directly or inside your funds), **your plan** (the class it adds to, and
+  whether that class is over or under your target in that portfolio), and the
+  **account** that suits it. ⚠ marks a line worth a second look — never a "no".
+
+  *The account rule:* a US-listed fund or stock that pays dividends keeps them
+  whole in a **REER** — the Canada–US tax treaty (Article XXI) exempts a
+  retirement trust, which the IRS has ruled an RRSP is — while in a **CELI** the
+  US generally withholds 15% for good. A fund listed in Canada has any US tax
+  withheld inside the fund, the same in either account.
+
 A holding that cannot be priced is left out, and a pop-up says which. Not
 financial advice.
 
