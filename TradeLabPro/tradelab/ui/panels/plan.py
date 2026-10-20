@@ -369,6 +369,13 @@ class PlanPanel(QWidget):
                     items.append(("info", f"{name}: no target mix set - type one above."))
                 continue
             result = ap.rebalance(mix, target)
+            deploy = ap.deploy_cash(mix, target)
+            if deploy["investable"] >= max(500.0, totals[name] * 0.01):
+                parts = [f"${v:,.0f} {c}" for c, v in deploy["buys"].items() if v >= 1]
+                items.append(("info", f"{name}: ${deploy['investable']:,.0f} of cash beyond your "
+                              f"target cash share - by your target mix, putting it to work "
+                              f"without selling anything would mean " + ", ".join(parts)
+                              + ". Pick the funds with the candidate check below."))
             for row in result["rows"]:
                 if row["value"] or row["target_pct"]:
                     table_rows.append((name, row))

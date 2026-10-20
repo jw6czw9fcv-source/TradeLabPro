@@ -104,7 +104,8 @@ def test_the_plan_tab_checks_each_portfolio_against_its_target(qapp, tmp_path):
     panel._on_priced(histories, metas, "")
     texts = [t for _k, t in panel.check_items]
     # RRSP: 42,000 of VTI (stocks) + 2,000 cash against 60/40/0.
-    rrsp = next(t for t in texts if t.startswith("RRSP"))
+    rrsp = next(t for t in texts if t.startswith("RRSP") and "off its target" in t)
+    assert any(t.startswith("RRSP") and "$2,000 bonds" in t for t in texts)   # its cash, put to work
     assert "off its target" in rrsp and "sell $15,600 stocks" in rrsp and "buy $17,600 bonds" in rrsp
     swing = next(t for t in texts if t.startswith("Trading"))
     assert "inside its 5% cap" in swing                     # 1,000 of 45,000
@@ -112,7 +113,7 @@ def test_the_plan_tab_checks_each_portfolio_against_its_target(qapp, tmp_path):
     assert any("Safe budget not checked" in t for t in texts)
     # A class set by hand changes the check at once.
     panel._set_class("VTI", 2)                              # bonds
-    rrsp = next(t for _k, t in panel.check_items if t.startswith("RRSP"))
+    rrsp = next(t for _k, t in panel.check_items if t.startswith("RRSP") and "target" in t and "cash beyond" not in t)
     assert "buy" in rrsp and "stocks" in rrsp
     db.conn.close()
 
@@ -133,3 +134,25 @@ def test_a_bad_target_is_refused_with_a_popup(qapp, tmp_path, monkeypatch):
     assert shown and "add up to 90" in shown[0]
     assert db.plan_targets() == {}
     db.conn.close()
+
+
+def test_cash_beyond_the_target_is_spread_by_shortfall_without_selling():
+    # 90k cash, 10k stocks, target 60/40/0: 50k short of stocks, 40k of bonds.
+    out = ap.deploy_cash({"stocks": 10_000, "bonds": 0, "cash": 90_000, "other": 0},
+                         {"stocks": 60, "bonds": 40, "cash": 0})
+    assert out["investable"] == pytest.approx(90_000)
+    assert out["buys"]["stocks"] == pytest.approx(50_000)
+    assert out["buys"]["bonds"] == pytest.approx(40_000)
+    assert out["after_pct"]["stocks"] == pytest.approx(60) and out["after_pct"]["cash"] == pytest.approx(0)
+
+
+def test_cash_short_of_the_gaps_goes_in_proportion_and_the_target_cash_is_kept():
+    # 20k cash, target keeps 5% cash (5k): 15k to spread over 40k/20k of gaps.
+    out = ap.deploy_cash({"stocks": 20_000, "bonds": 60_000, "cash": 20_000, "other": 0},
+                         {"stocks": 60, "bonds": 35, "cash": 5})
+    assert out["investable"] == pytest.approx(15_000)
+    assert out["buys"]["stocks"] == pytest.approx(15_000)        # bonds are over target
+    assert out["buys"]["bonds"] == pytest.approx(0)
+    none = ap.deploy_cash({"stocks": 60_000, "bonds": 40_000, "cash": 0, "other": 0},
+                          {"stocks": 60, "bonds": 40, "cash": 0})
+    assert none["investable"] == 0

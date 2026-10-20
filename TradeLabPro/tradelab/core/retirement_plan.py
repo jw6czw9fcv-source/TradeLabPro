@@ -703,6 +703,55 @@ def compare_start_ages(plan: Plan) -> list[dict]:
     return out
 
 
+KIND_LABELS = {REGISTERED: "REER/FERR", TFSA: "CELI", TAXABLE: "Non-registered"}
+
+
+def compare_withdrawal_orders(plan: Plan) -> list[dict]:
+    """The plan run with every order of account kinds - REER/FERR, CELI,
+    non-registered - that it holds, accounts of a kind kept in their own
+    order. One row per order: what is left at the end (today's dollars), the
+    tax paid over the whole projection and the OAS clawback within it (both in
+    today's dollars), and the year money runs out (None = never). `best` marks
+    the order that leaves the most (less tax breaks a tie); `current` the order
+    the accounts are entered in.
+
+    The forced RRIF minimum is drawn whatever the order - only what is drawn
+    beyond it follows the order. A calculation on the plan's own assumptions:
+    it does not try strategies beyond an order (drawing more than needed in a
+    low-tax year, say), and it is not advice.
+    """
+    from dataclasses import replace
+    from itertools import permutations
+    kinds = []
+    for account in plan.accounts:
+        if account.kind not in kinds:
+            kinds.append(account.kind)
+    current = tuple(kinds)
+    rows = []
+    for order in permutations(kinds):
+        rank = {k: i for i, k in enumerate(order)}
+        names = [a.name for a in sorted(plan.accounts, key=lambda a: rank[a.kind])]
+        result = project(replace(plan, withdrawal_order=names))
+        if not result:
+            continue
+        last = result[-1]
+        failed = depletion_year(result)
+        rows.append({
+            "order": [KIND_LABELS.get(k, k) for k in order],
+            "capital_at_end": last["closing"] / last["closing_deflator"],
+            "tax": sum(r["tax"] / r["deflator"] for r in result),
+            "oas_recovery": sum((r.get("oas_recovery") or 0.0) / r["deflator"] for r in result),
+            "runs_out": result[failed]["calendar_year"] if failed is not None else None,
+            "current": order == current and not plan.withdrawal_order,
+            "best": False,
+        })
+    if rows:
+        best = max(rows, key=lambda r: (r["runs_out"] is None, r["runs_out"] or 0,
+                                        round(r["capital_at_end"], 2), -r["tax"]))
+        best["best"] = True
+    return rows
+
+
 def highest_spending(holds, start: float = 50_000.0, step: float = 500.0,
                      cap: float = 2_000_000.0) -> float:
     """The highest yearly spending (to the `step`) for which `holds(spending)`

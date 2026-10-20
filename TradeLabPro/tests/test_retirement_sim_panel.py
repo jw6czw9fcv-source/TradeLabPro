@@ -600,3 +600,23 @@ def test_the_safe_budget_is_worked_out_and_compared_with_the_spending(panel, qap
     panel.spending.setValue(panel.budget["safe"] + 5_000)
     panel._on_budget(panel.budget, "")
     assert shown and "above the safe budget" in shown[0]
+
+
+def test_withdrawal_orders_are_compared_in_a_window(panel):
+    from PySide6.QtWidgets import QTableWidget
+    _fill(panel, [["Anne", 66]], [["REER", "registered", 300_000, "Anne"],
+                                  ["CELI", "tfsa", 80_000, "Anne"]])
+    panel.spending.setValue(30_000)
+    panel.compare_orders()
+    table = panel.order_dialog.findChild(QTableWidget)
+    assert table.rowCount() == 2
+    assert sum("★" in table.item(r, 5).text() for r in range(2)) == 1
+    panel.order_dialog.close()
+
+
+def test_a_single_kind_of_account_pops_up(panel, monkeypatch):
+    shown = []
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
+    _fill(panel, [["Anne", 66]], [["REER", "registered", 300_000, "Anne"]])
+    panel.compare_orders()
+    assert shown and "only one kind of account" in shown[0]

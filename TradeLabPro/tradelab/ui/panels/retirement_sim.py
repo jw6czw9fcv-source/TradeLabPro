@@ -189,6 +189,11 @@ class RetirementSimPanel(QWidget):
                           "year is average, and in 90% of simulated return orderings "
                           "(using the Return and % vol set here).")
         budget.clicked.connect(self.check_budget)
+        orders = QPushButton("Withdrawal order")
+        orders.setToolTip("Run the plan drawing from REER/FERR, CELI and non-registered accounts "
+                          "in every order, and compare what is left, the tax paid and the OAS "
+                          "clawback.")
+        orders.clicked.connect(self.compare_orders)
         save = QPushButton("Save inputs"); save.clicked.connect(self.save)
         save_sim = QPushButton("Save sim")
         save_sim.setToolTip("Keep the current run on the chart as the line to compare "
@@ -202,7 +207,7 @@ class RetirementSimPanel(QWidget):
                        self.volatility, QLabel("  Project"),
                        self.until_age, QLabel("  Pension"), self.splitting,
                        self.todays_dollars,
-                       self.paths, run, trajectories, ages, dates, budget, save, save_sim,
+                       self.paths, run, trajectories, ages, dates, budget, orders, save, save_sim,
                        clear_sim):
             controls.addWidget(widget)
         layout.addWidget(bar)
@@ -724,6 +729,54 @@ class RetirementSimPanel(QWidget):
         worker = self._budget_worker
         if worker is not None and worker.isRunning():
             worker.wait(30000)
+
+    ORDER_HEADERS = ["Draw from (first → last)", "Left at the end (today's $)",
+                     "Tax paid (today's $)", "of which OAS clawback", "Money runs out", ""]
+
+    def compare_orders(self):
+        """Every order of account kinds, side by side, in a window."""
+        from tradelab.core.retirement_plan import compare_withdrawal_orders
+        plan = self.build_plan()
+        if plan is None:
+            flag_problem(self.status, "Add at least one person and one account first.")
+            return
+        rows = compare_withdrawal_orders(plan)
+        if len(rows) < 2:
+            flag_problem(self.status, "The plan has only one kind of account - there is no order "
+                                      "to compare. Add a CELI or a non-registered account.")
+            return
+        self.order_rows = rows
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Withdrawal order compared")
+        dialog.resize(900, 360)
+        v = QVBoxLayout(dialog)
+        v.addWidget(_hint(
+            f"The same plan, drawing from each kind of account in a different order, projected "
+            f"to age {self.until_age.value()}. The RRIF minimum is drawn whatever the order; only "
+            "what is drawn beyond it follows the order. ★ leaves the most. It compares orders "
+            "only - not strategies such as drawing more in a low-tax year. " + theme.NOT_ADVICE))
+        table = QTableWidget(len(rows), len(self.ORDER_HEADERS))
+        table.setHorizontalHeaderLabels(self.ORDER_HEADERS)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        for r, row in enumerate(rows):
+            marks = " ".join(m for m, on in (("★ most left", row["best"]),
+                                              ("(as entered)", row["current"])) if on)
+            cells = [" → ".join(row["order"]), f"{row['capital_at_end']:,.0f} $",
+                     f"{row['tax']:,.0f} $", f"{row['oas_recovery']:,.0f} $",
+                     str(row["runs_out"]) if row["runs_out"] else "never", marks]
+            for c, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if row["best"]:
+                    font = item.font(); font.setBold(True); item.setFont(font)
+                table.setItem(r, c, item)
+        table.resizeColumnsToContents()
+        v.addWidget(table, 1)
+        close = QPushButton("Close"); close.clicked.connect(dialog.accept)
+        v.addWidget(close, 0, Qt.AlignRight)
+        self.order_dialog = dialog
+        self.status.setText("Withdrawal orders compared - see the window.")
+        dialog.show()
 
     def compare_ages(self):
         """Every start age of each RRQ and PSV, one at a time, in a window -

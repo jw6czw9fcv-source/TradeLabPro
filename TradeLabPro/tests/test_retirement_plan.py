@@ -903,3 +903,29 @@ def test_volatility_lowers_the_safe_budget_below_the_average_one():
 
     out = safe_budget(make, mean=0.05, sd=0.15, paths=200)
     assert out["safe"] < out["average"]
+
+
+# -- withdrawal order ---------------------------------------------------------------
+
+def test_every_order_of_account_kinds_is_compared():
+    from tradelab.core.retirement_plan import compare_withdrawal_orders
+    plan = _plan(people=[Person("me", 66)], years=25, spending=30_000,
+                 accounts=[Account("REER", REGISTERED, 300_000, "me"),
+                           Account("CELI", TFSA, 100_000, "me"),
+                           Account("Cash", TAXABLE, 50_000, "me")],
+                 tax_fn=_flat(0.30))
+    rows = compare_withdrawal_orders(plan)
+    assert len(rows) == 6
+    assert sorted(" → ".join(r["order"]) for r in rows)[0] == "CELI → Non-registered → REER/FERR"
+    assert sum(r["best"] for r in rows) == 1 and sum(r["current"] for r in rows) == 1
+    current = next(r for r in rows if r["current"])
+    assert current["order"] == ["REER/FERR", "CELI", "Non-registered"]
+    # With a flat tax every order pays tax on the same registered money sooner
+    # or later; the comparison still reports the tax for each.
+    assert all(r["tax"] > 0 for r in rows)
+
+
+def test_one_kind_of_account_has_no_order_to_compare():
+    from tradelab.core.retirement_plan import compare_withdrawal_orders
+    plan = _plan(accounts=[Account("A", TFSA, 1_000, "me"), Account("B", TFSA, 1_000, "me")])
+    assert len(compare_withdrawal_orders(plan)) == 1

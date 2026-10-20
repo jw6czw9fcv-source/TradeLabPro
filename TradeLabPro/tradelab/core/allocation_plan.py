@@ -108,6 +108,40 @@ def rebalance(mix: dict, target: dict, drift_pp: float = DRIFT_PP) -> dict:
     return {"total": total, "rows": rows, "drifted": drifted}
 
 
+def deploy_cash(mix: dict, target: dict) -> dict:
+    """How the cash an account holds beyond its target cash share would be put
+    to work without selling anything: each class short of its target gets a
+    share of it in proportion to how short it is; if the cash covers every
+    shortfall, the rest goes by the target mix. Returns {investable, buys:
+    {class: dollars}, after_pct: {class: % after}}. Amounts are what the target
+    implies, not what to do."""
+    total = sum(float(v) for v in mix.values())
+    cash = float(mix.get("cash", 0.0))
+    keep = total * float(target.get("cash") or 0.0) / 100.0
+    investable = max(0.0, cash - keep)
+    buys = {c: 0.0 for c in TARGET_CLASSES if c != "cash"}
+    if investable <= 0 or total <= 0:
+        return {"investable": 0.0, "buys": buys, "after_pct": {}}
+    short = {c: max(0.0, total * float(target.get(c) or 0.0) / 100.0 - float(mix.get(c, 0.0)))
+             for c in buys}
+    need = sum(short.values())
+    if need >= investable and need > 0:
+        for c in buys:
+            buys[c] = investable * short[c] / need
+    else:
+        for c in buys:
+            buys[c] = short[c]
+        rest = investable - need
+        weights = {c: float(target.get(c) or 0.0) for c in buys}
+        wsum = sum(weights.values())
+        for c in buys:
+            buys[c] += rest * (weights[c] / wsum if wsum else 0.0)
+    after = {c: float(mix.get(c, 0.0)) + buys.get(c, 0.0) for c in CLASSES}
+    after["cash"] = cash - sum(buys.values())
+    return {"investable": investable, "buys": buys,
+            "after_pct": {c: v / total * 100.0 for c, v in after.items()}}
+
+
 def trading_check(trading_value: float, total_value: float, cap_pct: float) -> dict:
     """Whether the trading portfolio stays inside its cap of the whole book."""
     share = trading_value / total_value * 100.0 if total_value else 0.0
