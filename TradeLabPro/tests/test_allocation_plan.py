@@ -156,3 +156,22 @@ def test_cash_short_of_the_gaps_goes_in_proportion_and_the_target_cash_is_kept()
     none = ap.deploy_cash({"stocks": 60_000, "bonds": 40_000, "cash": 0, "other": 0},
                           {"stocks": 60, "bonds": 40, "cash": 0})
     assert none["investable"] == 0
+
+
+def test_the_startup_check_notifies_once_a_day(qapp, tmp_path, monkeypatch):
+    from PySide6.QtCore import QSettings
+    from tradelab.data.database import Database
+    from tradelab.ui.panels.plan import PlanPanel
+    sent = []
+    monkeypatch.setattr("tradelab.ui.panels.plan.notify", lambda title, text: sent.append((title, text)) or True)
+    db = Database(path=tmp_path / "n.db")
+    db.set_cash("CELI", "CAD", 1_000)
+    panel = PlanPanel(db, settings=QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat))
+    panel.startup_check()                     # cash only: checked at once, review due
+    assert len(sent) == 1 and "to look at in your plan" in sent[0][0]
+    assert "Review due" in sent[0][1]
+    panel.startup_check()                     # same day: not again
+    assert len(sent) == 1
+    panel.refresh()                           # an ordinary refresh never notifies
+    assert len(sent) == 1
+    db.conn.close()

@@ -15,7 +15,7 @@ from tradelab.core.logging_config import get_logger
 from tradelab.data.database import Database
 from tradelab.settings import app_settings
 from tradelab.ui import theme
-from tradelab.ui.common import StatusLabel, _hint, flag_problem
+from tradelab.ui.common import StatusLabel, _hint, flag_problem, notify
 
 log = get_logger(__name__)
 
@@ -23,6 +23,7 @@ TRADING_KEY = "Plan/tradingPortfolio"
 CAP_KEY = "Plan/tradingCapPct"
 REVIEW_KEY = "Plan/lastReview"
 BUDGET_KEY = "RetirementSim/last_budget"
+NOTIFIED_KEY = "Plan/lastNotified"
 CLASS_CHOICES = ["auto", "stocks", "bonds", "cash", "other"]
 
 
@@ -281,6 +282,9 @@ class PlanPanel(QWidget):
             self.status.setText("No portfolios yet - add positions in the Portfolio tab.")
             self.recompute()
             return
+        if not symbols and not self._fx_pairs:
+            self._on_priced({}, {}, "")          # cash only, in CAD: nothing to price
+            return
         self.status.setText("Pricing your portfolios…")
         self._worker = _PlanWorker(symbols, self._fx_pairs.values())
         self._worker.done.connect(self._on_priced)
@@ -422,7 +426,27 @@ class PlanPanel(QWidget):
         return ("ok", f"Spending ${b['spending']:,.0f} is under the safe budget of "
                       f"${b['safe']:,.0f} a year (checked {b['checked']}).")
 
+    def startup_check(self):
+        """At launch: check the plan, and if anything wants a look, say so in a
+        Windows notification - at most once a day."""
+        self._notify_when_done = True
+        self.refresh()
+
+    def _maybe_notify(self, items):
+        if not getattr(self, "_notify_when_done", False):
+            return
+        self._notify_when_done = False
+        warns = [text for kind, text in items if kind == "warn"]
+        today = dt.date.today().isoformat()
+        if not warns or str(self._settings.value(NOTIFIED_KEY, "")) == today:
+            return
+        title = f"TradeLab - {len(warns)} thing{'s' if len(warns) > 1 else ''} to look at in your plan"
+        if notify(title, warns[0] + (" (and more in the Plan tab)" if len(warns) > 1 else "")):
+            self._settings.setValue(NOTIFIED_KEY, today)
+            self._settings.sync()
+
     def _show(self, items, table_rows):
+        self._maybe_notify(items)
         self.check_items = items
         self.checklist.clear()
         marks = {"ok": ("✓", theme.UP), "warn": ("⚠", theme.WARN), "info": ("•", theme.MUTED)}
@@ -484,8 +508,11 @@ class PlanPanel(QWidget):
         etfs = self.db.etf_list()
         screener = next((r for r in etfs if symbol in {str(r.get("ticker") or "").upper(),
                                                          str(r.get("yahoo") or "").upper()}), None)
-        mer = screener.get("mer") if screener else None
         meta = facts.get("meta") or {}
+        mer = screener.get("mer") if screener else None
+        mer_source = "ETF Screener" if mer is not None else ""
+        if mer is None and meta.get("expense_ratio") is not None:
+            mer, mer_source = meta["expense_ratio"], "Yahoo"
         split = ap.split_of(symbol, etfs, self.db.asset_class_overrides().get(symbol), meta)
         account = self.cand_account.currentText()
         if account == "(no portfolio)":
@@ -498,7 +525,8 @@ class PlanPanel(QWidget):
             if sum(mix.values()):
                 account_rows = ap.rebalance(mix, target)["rows"]
         holdings = facts.get("holdings") or ({symbol: 1.0} if meta.get("quote_type") == "EQUITY" else {})
-        items = assess(symbol, prices, meta, mer=mer, dividend_yield=facts.get("yield"),
+        items = assess(symbol, prices, meta, mer=mer, mer_source=mer_source,
+                       dividend_yield=facts.get("yield"),
                        holdings=holdings, owned=self.owned_map(facts.get("owned_comps")),
                        split=split, account=account, account_rows=account_rows)
         self.candidate_items = items

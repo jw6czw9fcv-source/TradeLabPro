@@ -633,3 +633,17 @@ def test_re_entering_the_same_statement_corrects_it_rather_than_doubling_it():
     fund.add_snapshot(rt.Snapshot(date="2026-08-08", value=200.0))
     assert len(fund.snapshots) == 1
     assert fund.value == pytest.approx(200.0)
+
+
+def test_fee_drag_compares_the_plan_fee_with_a_lower_one():
+    from tradelab.core.retirement import Account, Fund, Snapshot, fee_drag
+    account = Account(name="Group plan", fee_pct=1.75, funds=[
+        Fund(name="A", snapshots=[Snapshot(date="2026-09-30", value=60_000)]),
+        Fund(name="B", fee_pct=1.25, snapshots=[Snapshot(date="2026-09-30", value=40_000)])])
+    drag = fee_drag(account, low_fee_pct=0.25, gross_pct=5.0)
+    assert drag["fee_pct"] == pytest.approx(1.55)              # value-weighted
+    assert drag["per_year_now"] == pytest.approx(1_300)
+    expected10 = 100_000 * (1.0475 ** 10 - 1.0345 ** 10)
+    assert drag["gaps"][10] == pytest.approx(expected10)
+    assert drag["gaps"][20] > drag["gaps"][10] > 0
+    assert fee_drag(Account(name="No fee", funds=account.funds[:1]), 0.25, 5.0) is None

@@ -222,7 +222,8 @@ def sync_settings():
         s.setValue(key, value)
     s.sync()
     yield s
-    for key in ("ibkr/sync_at_startup", "ibkr/sync_portfolio", "ibkr/flex_token", "ibkr/flex_query"):
+    for key in ("ibkr/sync_at_startup", "ibkr/sync_portfolio", "ibkr/sync_targets",
+                "ibkr/flex_token", "ibkr/flex_query"):
         s.remove(key)
     s.sync()
 
@@ -258,3 +259,51 @@ def test_the_startup_sync_is_off_unless_switched_on(qapp, db, monkeypatch):
     import tradelab.ui.app as app
     monkeypatch.setattr(app, "_IbkrPositionsWorker", lambda *a: pytest.fail("fetched"))
     assert app.PortfolioPanel(db).startup_sync() is False
+
+
+def test_two_accounts_sync_one_after_the_other_each_with_its_query(qapp, db, monkeypatch, sync_settings):
+    import tradelab.ui.app as app
+    seen_queries = []
+    reports = {"q-reer": ([{"symbol": "VTI", "shares": 5, "entry_price": 250.0}], {}, False, True),
+               "q-celi": ([{"symbol": "XBB.TO", "shares": 9, "entry_price": 28.0}], {}, False, True)}
+
+    class Worker(_FakeFlexWorker):
+        def __init__(self, token, query):
+            super().__init__(token, query)
+            self.query = query
+
+        def start(self):
+            seen_queries.append(self.query)
+            self.done.emit(reports[self.query], "")
+
+    monkeypatch.setattr(app, "_IbkrPositionsWorker", Worker)
+    app.save_sync_targets([{"portfolio": "RRSP", "query": "q-reer"},
+                           {"portfolio": "CELI", "query": "q-celi"}])
+    panel = app.PortfolioPanel(db)
+    synced = []
+    panel.synced.connect(synced.append)
+    assert panel.startup_sync() is True
+    for _ in range(5):
+        qapp.processEvents()
+    assert seen_queries == ["q-reer", "q-celi"] and synced == ["RRSP", "CELI"]
+    assert sorted((p["portfolio"], p["symbol"]) for p in db.positions()) == [
+        ("CELI", "XBB.TO"), ("RRSP", "VTI")]
+
+
+def test_the_older_single_sync_setting_still_reads(qapp, sync_settings):
+    import tradelab.ui.app as app
+    sync_settings.remove("ibkr/sync_targets")
+    assert app.sync_targets() == [{"portfolio": "RRSP", "query": ""}]
+
+
+def test_the_checkbox_follows_the_portfolio_in_the_box(qapp, db, sync_settings):
+    import tradelab.ui.app as app
+    app.save_sync_targets([{"portfolio": "CELI", "query": "q2"}])
+    panel = app.PortfolioPanel(db)
+    panel.import_portfolio.setCurrentText("CELI")
+    assert panel.sync_at_start.isChecked() and panel.sync_query.text() == "q2"
+    panel.import_portfolio.setCurrentText("RRSP")
+    assert not panel.sync_at_start.isChecked()
+    panel.sync_query.setText("q1")
+    panel.sync_at_start.setChecked(True)
+    assert {t["portfolio"]: t["query"] for t in app.sync_targets()} == {"CELI": "q2", "RRSP": "q1"}

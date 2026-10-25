@@ -1085,6 +1085,27 @@ def available_horizons(account: Account) -> list:
 
 # --- persistence -------------------------------------------------------------
 
+def fee_drag(account: Account, low_fee_pct: float, gross_pct: float,
+             years=(10, 20)) -> dict | None:
+    """What the plan's fees cost against a lower fee, in dollars.
+
+    The plan's fee is each fund's own when it has one, else the plan's, weighted
+    by what each fund holds. Both are grown at the same return before fees
+    (`gross_pct`), so the gap is the fees alone: value x (1+g-low)^n minus value
+    x (1+g-fee)^n, with nothing added or taken out. None without a balance or a
+    fee on file. An assumption-driven illustration, not a recommendation to move."""
+    value = account.value
+    held = [(f.value or 0.0, account.fee_for(f)) for f in account.funds]
+    weighted = sum(v for v, fee in held if fee is not None)
+    if not value or not weighted:
+        return None
+    fee = sum(v * fee for v, fee in held if fee is not None) / weighted
+    g, plan_f, low_f = gross_pct / 100.0, fee / 100.0, low_fee_pct / 100.0
+    gaps = {n: value * ((1 + g - low_f) ** n - (1 + g - plan_f) ** n) for n in years}
+    return {"value": value, "fee_pct": fee, "low_fee_pct": low_fee_pct,
+            "gross_pct": gross_pct, "per_year_now": value * (plan_f - low_f), "gaps": gaps}
+
+
 class RetirementBook:
     """JSON-backed list of Account (retirement.json in the data folder).
 

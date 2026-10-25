@@ -621,9 +621,11 @@ section that could not be read can be looked at.
 empty the portfolio. A report without that section changes nothing and says so.
 
 **Sync when TradeLab starts.** Choose the portfolio in the **into** box and tick
-**Sync when TradeLab starts**: from then on, each launch fetches the Flex report
-in the background and replaces that portfolio with what it holds — no question
-asked — then Home and the Plan tab re-value the book. A failed fetch leaves the
+**Sync this portfolio when TradeLab starts**: from then on, each launch fetches
+its Flex report in the background and replaces that portfolio with what it
+holds — no question asked — then Home and the Plan tab re-value the book. Do
+it once per IBKR account (a REER, a CELI): each portfolio can have its own
+**query id** (blank uses the Journal tab's), and they sync one after the other. A failed fetch leaves the
 portfolio as it was and says why in a pop-up. Flex reports are built from
 IBKR's end-of-day data, so a trade made today shows up the next day.
 
@@ -804,6 +806,14 @@ are struck **before** the plan's investment management fee. Type that fee once
 and every excess figure gains an *After fee* twin. A fund that beats its index
 by 0.03 points and charges 1.5% did not beat it for you — it lost by about 1.5
 points. Without the fee column that fund looks like a winner.
+
+**What the fees cost, in dollars.** Under the fee box, set a lower fee to
+compare with (0.25% by default, a low-cost index fund) and a return before
+fees (5% by default). The line says how much more the plan's fee costs this
+year, and the gap after 10 and 20 years if both grew at that return with
+nothing added or taken out. An illustration on your assumptions: moving a group
+plan can have conditions (employer contributions, transfer fees), so ask
+before deciding.
 
 **Two returns, and they answer different questions.**
 
@@ -1052,11 +1062,15 @@ Every decision in it is yours; TradeLab only measures against them.
   the spending it was checked with.
 - **Review.** About every quarter the checklist says a review is due; go
   through it, then click **Mark reviewed today**.
+- **Notifications.** A few seconds after TradeLab starts, it checks the plan;
+  if anything is marked ⚠ (a review due, a drift, the trading side over its
+  cap), a Windows notification says so in the corner of the screen — at most
+  once a day — so you don't need to open the tab to know.
 
 - **Candidate check — the facts before you buy.** Type a symbol (XBB.TO, VTI…),
   pick the portfolio it would go in, and click **Check**. You get one line
-  each, with its basis: **fees** (the MER from the ETF Screener, in dollars per
-  $10,000 a year), **risk** (the CSA band from ten years of monthly swings),
+  each, with its basis: **fees** (the MER from the ETF Screener, else Yahoo's,
+  in dollars per $10,000 a year), **risk** (the CSA band from ten years of monthly swings),
   **worst fall** (how deep, and when), **returns** over 1, 5 and 10 years
   (dividends included), **overlap** (how much of it is in companies you already
   own, directly or inside your funds), **your plan** (the class it adds to, and

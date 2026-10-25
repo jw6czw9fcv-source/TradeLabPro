@@ -87,7 +87,7 @@ def overlap(candidate_holdings: dict, owned: dict) -> dict:
 
 
 def assess(symbol: str, prices: pd.Series | None, meta: dict | None, *,
-           mer: float | None = None, dividend_yield: float | None = None,
+           mer: float | None = None, mer_source: str = "", dividend_yield: float | None = None,
            holdings: dict | None = None, owned: dict | None = None,
            split: dict | None = None, account: str | None = None,
            account_rows: list | None = None) -> list:
@@ -109,7 +109,8 @@ def assess(symbol: str, prices: pd.Series | None, meta: dict | None, *,
         items.append(("ok", "Fees", "A stock has no management fee (only the trade's commission)."))
     elif mer is not None:
         items.append(("warn" if mer > 0.005 else "ok", "Fees",
-                      f"MER {mer:.2%} - ${PER * mer:,.0f} a year per $10,000"
+                      f"MER {mer:.2%}" + (f" ({mer_source})" if mer_source else "")
+                      + f" - ${PER * mer:,.0f} a year per $10,000"
                       + (", high for an index fund." if mer > 0.005 else ".")))
     else:
         items.append(("warn", "Fees", "Not on file - add the fund to the ETF Screener with its MER, "

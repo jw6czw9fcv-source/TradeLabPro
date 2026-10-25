@@ -3117,8 +3117,33 @@ class _ResolveSymbolsWorker(QThread):
             self.done.emit(None, str(exc))
 
 
-IBKR_SYNC_KEY = "ibkr/sync_at_startup"
+IBKR_SYNC_KEY = "ibkr/sync_at_startup"            # before 2.60: one portfolio, on/off
 IBKR_SYNC_PORTFOLIO_KEY = "ibkr/sync_portfolio"
+IBKR_SYNC_TARGETS_KEY = "ibkr/sync_targets"         # [{portfolio, query}] as JSON
+
+
+def sync_targets(settings=None) -> list:
+    """The portfolios to sync at startup, [{portfolio, query}] - a blank query
+    means the Journal tab's. Reads the older single-portfolio setting too."""
+    s = settings or app_settings()
+    raw = s.value(IBKR_SYNC_TARGETS_KEY, "")
+    try:
+        targets = json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        targets = None
+    if targets is None:
+        on = str(s.value(IBKR_SYNC_KEY, "false")).lower() in ("true", "1")
+        portfolio = str(s.value(IBKR_SYNC_PORTFOLIO_KEY, "") or "").strip()
+        targets = [{"portfolio": portfolio, "query": ""}] if on and portfolio else []
+    return [{"portfolio": str(t.get("portfolio") or "").strip(), "query": str(t.get("query") or "").strip()}
+            for t in targets if isinstance(t, dict) and str(t.get("portfolio") or "").strip()]
+
+
+def save_sync_targets(targets, settings=None):
+    s = settings or app_settings()
+    s.setValue(IBKR_SYNC_TARGETS_KEY, json.dumps(targets))
+    s.setValue(IBKR_SYNC_KEY, bool(targets))
+    s.sync()
 
 
 class PortfolioPanel(QWidget):
@@ -3158,15 +3183,20 @@ class PortfolioPanel(QWidget):
         self.import_portfolio.setToolTip("The portfolio this import replaces - use one per "
                                          "IBKR account.")
         imp.addWidget(self.import_portfolio)
-        self.sync_at_start = QCheckBox("Sync when TradeLab starts")
+        self.import_portfolio.currentTextChanged.connect(self._show_sync_state)
+        self.sync_at_start = QCheckBox("Sync this portfolio when TradeLab starts")
         self.sync_at_start.setToolTip(
-            "Each time TradeLab starts, fetch the Flex report and replace the portfolio "
-            "named in the box with what it holds - no question asked. Ticking it remembers "
-            "that portfolio.")
-        self.sync_at_start.setChecked(
-            str(app_settings().value(IBKR_SYNC_KEY, "false")).lower() in ("true", "1"))
+            "Each time TradeLab starts, fetch this portfolio's Flex report and replace it with "
+            "what it holds - no question asked. Tick it for each IBKR account (a REER, a "
+            "CELI), each with its own query id.")
+        self.sync_query = QLineEdit(); self.sync_query.setMaximumWidth(150)
+        self.sync_query.setPlaceholderText("query id (blank: Journal's)")
+        self.sync_query.setToolTip("The Flex query for this account. Blank uses the query id "
+                                   "saved in the Journal tab.")
+        self.sync_query.editingFinished.connect(self._save_sync_query)
         self.sync_at_start.toggled.connect(self._save_sync_setting)
         imp.addWidget(self.sync_at_start)
+        imp.addWidget(self.sync_query)
         imp.addWidget(_hint("Imports your open positions - and the cash, when the report has its "
                             "Cash Report section - into the portfolio named beside the buttons; "
                             "each import replaces what that portfolio held (read-only). The Flex "
@@ -3303,56 +3333,88 @@ class PortfolioPanel(QWidget):
         return written
 
     # --- the sync at startup ---------------------------------------------------
+    # Several portfolios can sync - one per IBKR account (a REER, a CELI), each
+    # with its own Flex query; blank uses the Journal tab's query.
+    def _show_sync_state(self, *_):
+        portfolio = self.import_portfolio.currentText().strip()
+        entry = next((t for t in sync_targets() if t["portfolio"] == portfolio), None)
+        self.sync_at_start.blockSignals(True)
+        self.sync_at_start.setChecked(entry is not None)
+        self.sync_at_start.blockSignals(False)
+        self.sync_query.setText((entry or {}).get("query", ""))
+
     def _save_sync_setting(self, on):
-        settings = app_settings()
-        settings.setValue(IBKR_SYNC_KEY, bool(on))
+        portfolio = self.import_portfolio.currentText().strip() or "IBKR"
+        targets = [t for t in sync_targets() if t["portfolio"] != portfolio]
         if on:
-            portfolio = self.import_portfolio.currentText().strip() or "IBKR"
-            settings.setValue(IBKR_SYNC_PORTFOLIO_KEY, portfolio)
+            targets.append({"portfolio": portfolio, "query": self.sync_query.text().strip()})
             self.status.setText(f"IBKR will sync into '{portfolio}' each time TradeLab starts.")
-        settings.sync()
+        save_sync_targets(targets)
+
+    def _save_sync_query(self):
+        portfolio = self.import_portfolio.currentText().strip()
+        targets = sync_targets()
+        for t in targets:
+            if t["portfolio"] == portfolio:
+                t["query"] = self.sync_query.text().strip()
+                save_sync_targets(targets)
 
     def startup_sync(self):
-        """At launch, when switched on: pull the Flex report and replace the
-        chosen portfolio with it, without asking. Returns True if started."""
+        """At launch: pull each chosen portfolio's Flex report, one after the
+        other, and replace the portfolio with it, without asking. Returns True
+        if a sync started."""
+        targets = sync_targets()
+        if not targets:
+            return False
         settings = app_settings()
-        if str(settings.value(IBKR_SYNC_KEY, "false")).lower() not in ("true", "1"):
-            return False
         token = str(settings.value("ibkr/flex_token", "") or "").strip()
-        query = str(settings.value("ibkr/flex_query", "") or "").strip()
-        portfolio = str(settings.value(IBKR_SYNC_PORTFOLIO_KEY, "") or "").strip()
-        if not token or not query or not portfolio:
-            flag_problem(self.status, "IBKR sync at startup is on, but the Flex token, query id "
-                                      "or portfolio is missing - set them, or untick the box.")
+        default_query = str(settings.value("ibkr/flex_query", "") or "").strip()
+        queue = [(t["portfolio"], t.get("query") or default_query) for t in targets]
+        missing = [p for p, q in queue if not q]
+        if not token or missing:
+            flag_problem(self.status, "IBKR sync at startup is on, but the Flex token or a query id "
+                                      "is missing" + (f" (for {', '.join(missing)})" if missing else "")
+                                      + " - set them, or untick the box.")
+            queue = [(p, q) for p, q in queue if q] if token else []
+        if not queue or (self._ibkr_worker is not None and self._ibkr_worker.isRunning()):
             return False
-        if self._ibkr_worker is not None and self._ibkr_worker.isRunning():
-            return False
+        self._sync_queue = queue
+        self._sync_token = token
+        self._sync_next()
+        return True
+
+    def _sync_next(self):
+        if not getattr(self, "_sync_queue", None):
+            return
+        portfolio, query = self._sync_queue.pop(0)
         self._sync_portfolio = portfolio
         self.status.setText(f"Syncing '{portfolio}' from IBKR…")
-        self._ibkr_worker = _IbkrPositionsWorker(token, query)
+        self._ibkr_worker = _IbkrPositionsWorker(self._sync_token, query)
         self._ibkr_worker.done.connect(self._on_startup_synced)
         self._ibkr_worker.start()
-        return True
 
     def _on_startup_synced(self, holdings, error):
         portfolio = getattr(self, "_sync_portfolio", "IBKR")
-        if error or holdings is None:
-            flag_problem(self.status, f"IBKR sync at startup failed: {error or 'no data'}. "
-                                      f"'{portfolio}' is unchanged.")
-            return
-        positions, cash, *rest = holdings
-        positions_section = bool(len(rest) > 1 and rest[1])
-        if not positions and not positions_section:
-            flag_problem(self.status, "IBKR sync at startup: the report has no Open Positions "
-                                      f"section, so '{portfolio}' is unchanged.")
-            return
-        written = self._write_ibkr(portfolio, positions, cash)
-        log.info("IBKR synced at startup: %d position(s) into %s%s", written, portfolio,
-                 " with its cash" if cash else "")
-        self.status.setText(
-            f"IBKR synced at {time.strftime('%H:%M')}: {written} position(s) in '{portfolio}'"
-            + (", cash included." if cash else " (cash as you entered it - the report has none)."))
-        self.synced.emit(portfolio)
+        try:
+            if error or holdings is None:
+                flag_problem(self.status, f"IBKR sync at startup failed: {error or 'no data'}. "
+                                          f"'{portfolio}' is unchanged.")
+                return
+            positions, cash, *rest = holdings
+            positions_section = bool(len(rest) > 1 and rest[1])
+            if not positions and not positions_section:
+                flag_problem(self.status, "IBKR sync at startup: the report has no Open Positions "
+                                          f"section, so '{portfolio}' is unchanged.")
+                return
+            written = self._write_ibkr(portfolio, positions, cash)
+            log.info("IBKR synced at startup: %d position(s) into %s%s", written, portfolio,
+                     " with its cash" if cash else "")
+            self.status.setText(
+                f"IBKR synced at {time.strftime('%H:%M')}: {written} position(s) in '{portfolio}'"
+                + (", cash included." if cash else " (cash as you entered it - the report has none)."))
+            self.synced.emit(portfolio)
+        finally:
+            QTimer.singleShot(0, self._sync_next)
 
     def _apply_ibkr(self, positions, source, cash=None, cash_section=False,
                     positions_section=False):
@@ -3451,6 +3513,7 @@ class PortfolioPanel(QWidget):
             combo.addItems(choices)
             combo.setCurrentText(typed or fallback)
             combo.blockSignals(False)
+        self._show_sync_state()
 
     def set_cash(self):
         portfolio = self.cash_portfolio.currentText().strip()
@@ -8612,6 +8675,27 @@ class RetirementPanel(AutoRefresh, QWidget):
         row.addStretch()
         outer.addLayout(row)
 
+        # What the fees cost, against a lower fee - the same return before
+        # fees for both, so the gap is the fees alone.
+        drag_row = QHBoxLayout()
+        drag_row.addWidget(QLabel("Compare the fees with"))
+        self.low_fee = QDoubleSpinBox(); self.low_fee.setRange(0, 3); self.low_fee.setDecimals(2)
+        self.low_fee.setSingleStep(0.05); self.low_fee.setSuffix(" %"); self.low_fee.setValue(0.25)
+        self.low_fee.setToolTip("A low-cost index fund's yearly fee - yours to set.")
+        drag_row.addWidget(self.low_fee)
+        drag_row.addWidget(QLabel("at a return before fees of"))
+        self.gross_return = QDoubleSpinBox(); self.gross_return.setRange(0, 15)
+        self.gross_return.setDecimals(1); self.gross_return.setSuffix(" %")
+        self.gross_return.setValue(5.0)
+        drag_row.addWidget(self.gross_return)
+        drag_row.addStretch()
+        outer.addLayout(drag_row)
+        self.fee_drag_line = QLabel("")
+        self.fee_drag_line.setWordWrap(True)
+        outer.addWidget(self.fee_drag_line)
+        self.low_fee.valueChanged.connect(lambda _v: self._render_fee_drag())
+        self.gross_return.valueChanged.connect(lambda _v: self._render_fee_drag())
+
         self.published_text = QTextEdit()
         self.published_text.setMaximumHeight(90)
         self.published_text.setPlaceholderText(
@@ -8899,6 +8983,30 @@ class RetirementPanel(AutoRefresh, QWidget):
         self.published_table.resizeColumnsToContents()
         self._fit_table(self.published_table)
 
+    def _render_fee_drag(self):
+        from tradelab.core import retirement as rt
+        account = self.current_account()
+        drag = rt.fee_drag(account, self.low_fee.value(), self.gross_return.value()) \
+            if account else None
+        if drag is None:
+            self.fee_drag_line.setText(
+                "Set the plan fee above to see what it costs against a lower fee."
+                if account and account.value else "")
+            return
+        if drag["fee_pct"] <= drag["low_fee_pct"]:
+            self.fee_drag_line.setText(
+                f"The plan's fee ({drag['fee_pct']:.2f}%) is no higher than {drag['low_fee_pct']:.2f}% "
+                "- nothing to gain on fees.")
+            return
+        g10, g20 = drag["gaps"][10], drag["gaps"][20]
+        self.fee_drag_line.setText(
+            f"<b>Fees:</b> {drag['fee_pct']:.2f}% a year on ${drag['value']:,.0f} is about "
+            f"${drag['per_year_now']:,.0f} a year more than at {drag['low_fee_pct']:.2f}%. Grown at "
+            f"{drag['gross_pct']:.1f}% before fees with nothing added or taken out, the gap would be "
+            f"about <b>${g10:,.0f} after 10 years</b> and <b>${g20:,.0f} after 20</b>. An "
+            "illustration on these assumptions - moving a group plan can have conditions "
+            "(employer contributions, transfer fees); ask before deciding. Not advice.")
+
     def _sync_published_controls(self, d):
         """Keep the fund and horizon pickers in step with what is on file,
         without letting a rebuild fire the signals that trigger another render."""
@@ -8924,6 +9032,7 @@ class RetirementPanel(AutoRefresh, QWidget):
         fee = account.fee_pct if account else None
         self.fee_input.setText("" if fee is None else f"{fee:g}")
         self._loading = False
+        self._render_fee_drag()
 
     # --- contributions --------------------------------------------------------
 
@@ -9657,6 +9766,12 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(6000, self.settings_panel.startup_checks)
         except Exception:
             log.exception("Could not schedule the backup and update check")
+        # The plan, checked: a Windows notification if something wants a look.
+        try:
+            if self.db.positions() or self.db.cash():
+                QTimer.singleShot(9000, self.plan_panel.startup_check)
+        except Exception:
+            log.exception("Could not schedule the plan check")
 
     def _on_ibkr_synced(self, _portfolio):
         """A sync replaced a portfolio: re-value what shows the book."""

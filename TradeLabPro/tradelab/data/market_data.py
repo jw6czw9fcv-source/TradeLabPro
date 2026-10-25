@@ -475,7 +475,7 @@ def _yahoo_quote_meta(symbol: str) -> dict:
     """Yahoo (yfinance) quote metadata with an offline deterministic fallback.
     The Yahoo provider's implementation; call get_quote_meta() instead."""
     meta = {"market_cap": 0.0, "sector": "Unknown", "industry": "Unknown",
-            "country": "Unknown", "name": symbol, "quote_type": ""}
+            "country": "Unknown", "name": symbol, "quote_type": "", "expense_ratio": None}
     if yf is not None:
         try:
             info = yf.Ticker(symbol).info
@@ -491,6 +491,12 @@ def _yahoo_quote_meta(symbol: str) -> dict:
             meta["country"] = info.get("country") or "Unknown"
             meta["name"] = _company_name_from_info(info, symbol)
             meta["quote_type"] = info.get("quoteType") or ""
+            # A fund's management expense ratio. Yahoo gives it in percent
+            # (VTI 0.03, XEQT.TO 0.2 - checked against the published MERs on
+            # 2026-10-25); stored as a fraction like the ETF Screener's `mer`.
+            ratio = info.get("netExpenseRatio")
+            if isinstance(ratio, (int, float)) and 0 <= ratio < 10:
+                meta["expense_ratio"] = float(ratio) / 100.0
         except Exception:
             pass
 

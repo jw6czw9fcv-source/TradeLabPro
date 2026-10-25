@@ -124,6 +124,38 @@ def _problem_closed(*_):
     _problem_lines.clear()
 
 
+_tray = None
+
+
+def notify(title, text):
+    """A Windows notification in the corner of the screen - for news worth
+    knowing that is not a problem to stop for (a review due, a drift). False
+    when it could not be shown: no system tray, the test suite, a headless
+    run. GUI thread only."""
+    global _tray
+    app = QApplication.instance()
+    if (app is None or os.environ.get(NO_POPUPS_ENV)
+            or QApplication.platformName() == "offscreen"):
+        return False
+    try:
+        from PySide6.QtWidgets import QSystemTrayIcon
+        if _tray is None:
+            if not QSystemTrayIcon.isSystemTrayAvailable():
+                return False
+            icon = app.windowIcon()
+            if icon.isNull():
+                icon = app.style().standardIcon(QStyle.SP_MessageBoxInformation)
+            _tray = QSystemTrayIcon(icon, app)
+            _tray.setToolTip(APP_NAME)
+            _tray.show()
+        _tray.showMessage(title, text, QSystemTrayIcon.Information, 10000)
+        log.info("Notified: %s - %s", title, text)
+        return True
+    except Exception:
+        log.debug("Could not show a notification", exc_info=True)
+        return False
+
+
 def flag_problem(label, text, details=""):
     """A failure: say it on the panel's status line and in a pop-up. details,
     when given, goes in the pop-up only - too long for a status line."""

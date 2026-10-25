@@ -119,3 +119,18 @@ def test_an_empty_symbol_pops_up(tmp_path, monkeypatch):
     panel.check_candidate()
     assert shown and "Type a symbol" in shown[0]
     db.conn.close()
+
+
+def test_a_fee_from_yahoo_is_named_as_such():
+    items = cd.assess("XEQT.TO", None, {"quote_type": "ETF"}, mer=0.002, mer_source="Yahoo")
+    fees = next(t for _k, label, t in items if label == "Fees")
+    assert fees.startswith("MER 0.20% (Yahoo)") and "$20 a year" in fees
+
+
+def test_yahoo_expense_ratios_are_read_as_percent(monkeypatch):
+    from tradelab.data import market_data
+    info = {"quoteType": "ETF", "netExpenseRatio": 0.2, "category": "Global Equity", "longName": "XEQT"}
+    monkeypatch.setattr(market_data, "yf", type("_yf", (), {
+        "Ticker": staticmethod(lambda s: type("_t", (), {"info": info})())}))
+    meta = market_data._yahoo_quote_meta("XEQT.TO")
+    assert meta["expense_ratio"] == pytest.approx(0.002)
