@@ -1,7 +1,13 @@
 # TradeLab Pro Project Status
 
-Current version: 2.59.0
+Current version: 2.60.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.60.0 (What fees cost, and a word when it matters)
+- **Fee drag:** `retirement.fee_drag(account, low_fee_pct, gross_pct)` - value-weighted plan fee vs a lower one, same gross return; Retirement tab line with low-fee and gross-return inputs.
+- **Notifications:** `common.notify(title, text)` (one shared QSystemTrayIcon; off in tests/offscreen); `PlanPanel.startup_check()` 9 s after launch notifies the first warning, once a day (`Plan/lastNotified`).
+- **Yahoo MER:** `_yahoo_quote_meta` `expense_ratio` = `netExpenseRatio` / 100 (Yahoo gives percent; checked on VTI/XBB.TO/XEQT.TO/VFV.TO 2026-10-25); candidate check falls back to it, labelled.
+- **Sync per account:** `ibkr/sync_targets` JSON [{portfolio, query}] (`sync_targets()` reads the old single setting), synced in turn (`_sync_next`); per-portfolio checkbox + query field in the Portfolio tab.
 
 ## Completed in 2.59.0 (Cash to work, money out in order)
 - **Cash put to work:** `allocation_plan.deploy_cash(mix, target)` - cash beyond the target cash share, spread over the classes short of target by shortfall (rest by target), no selling; a Plan checklist line when it is >= max($500, 1% of the portfolio).

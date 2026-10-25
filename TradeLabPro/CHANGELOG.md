@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.60.0 - What fees cost, and a word when it matters
+
+### Added
+- **What the fees cost, in dollars** (Retirement tab): the plan's fee against a lower one you choose (0.25% by default), both grown at the same return before fees - how much more it costs this year, and the gap after 10 and 20 years. An illustration; moving a group plan can have conditions.
+- **Windows notifications:** a few seconds after starting, TradeLab checks your plan and, if something is marked ⚠ (a review due, a drift, trading over its cap), says so in a notification - at most once a day.
+- **Fund fees from Yahoo** in the candidate check when the fund is not in the ETF Screener, labelled as such (Yahoo's figure is in percent; checked against four published MERs).
+- **A startup sync for each IBKR account:** tick "Sync this portfolio when TradeLab starts" per portfolio, each with its own Flex query id (blank uses the Journal's); they sync one after the other. The earlier single-portfolio setting carries over.
+
+### Verified
+- Full pytest suite passes (1603), including 7 new tests: the fee gap value-weighted and compounded, the once-a-day notification and no notification from an ordinary refresh, a Yahoo fee named and read as percent, two accounts synced in turn with their own queries, the old setting still read, and the checkbox following the portfolio in the box.
+
 ## 2.59.0 - Cash to work, money out in order
 
 ### Added
