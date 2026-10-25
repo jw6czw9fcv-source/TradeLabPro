@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.59.0** | *unreleased* | Cash to work, money out in order |
+| **2.59.0** | 2026-10-25 | Cash to work, money out in order |
 | **2.58.0** | 2026-10-19 | The facts before you buy |
 | **2.57.2** | 2026-10-18 | In sync with IBKR |
 | **2.57.1** | 2026-10-18 | One download at a time |
