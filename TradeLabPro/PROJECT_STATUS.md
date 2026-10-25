@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.58.0
+Current version: 2.59.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.59.0 (Cash to work, money out in order)
+- **Cash put to work:** `allocation_plan.deploy_cash(mix, target)` - cash beyond the target cash share, spread over the classes short of target by shortfall (rest by target), no selling; a Plan checklist line when it is >= max($500, 1% of the portfolio).
+- **Withdrawal order:** `retirement_plan.compare_withdrawal_orders(plan)` - every permutation of the account kinds held (`KIND_LABELS`), with capital left, tax and OAS recovery summed in today's $, `runs_out`, `best`, `current`; Retirement Sim "Withdrawal order" window.
 
 ## Completed in 2.58.0 (The facts before you buy)
 - **Candidate check** in the Plan tab: `core/candidate.py` `assess()` -> (kind, label, text) lines - fees (Screener MER only), CSA band (`etf_metrics.csa_volatility`), `worst_drawdown`, `annualized_return` 1/5/10y, `overlap` vs owned symbols + owned funds' top holdings, plan fit (class vs the portfolio's target drift), `placement` (US-listed + yield -> REER: treaty Art. XXI(2), IRS PLR-142074-07; TFSA 15% withheld). `_CandidateWorker` fetches prices (11y adjusted), meta, dividends, compositions.

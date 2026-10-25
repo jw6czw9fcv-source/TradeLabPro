@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.58.0**
+**Version 2.59.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
 **Home** dashboard showing your book, a chart of its year so far, the market
@@ -967,6 +967,14 @@ margin left, amber when spending is within 10% of it, red (and a pop-up) when
 spending is above it. Real crashes can be deeper than the % vol implies, so
 keep a margin. A calculation on your assumptions, not advice.
 
+**Withdrawal order.** Runs the plan drawing from each kind of account — REER/FERR,
+CELI, non-registered — in every order, and lists in a window what each leaves
+at the end, the tax paid over the projection and the OAS clawback within it
+(today's dollars), and when the money runs out. ★ marks the order that leaves
+the most. The RRIF minimum is drawn whatever the order; only what is drawn
+beyond it follows the order. It compares orders, not other strategies (such as
+drawing more in a low-tax year). A calculation, not advice.
+
 **Key dates.** Type each person's birth month in the People table's **Born**
 column (e.g. 1962-08) and **Key dates** lists the reminders that follow from it
 and from when the plan starts each pension: when the RRQ application opens (12
@@ -1032,6 +1040,11 @@ Every decision in it is yours; TradeLab only measures against them.
   against the target, and what getting back would take in dollars (**buy** /
   **sell**). More than 5 points off counts as drift. These are the moves it
   would take, not moves to make.
+- **Cash to put to work.** When a portfolio holds more cash than its target
+  cash share, the checklist shows how that cash would be spread by your target
+  without selling anything: each class short of its target gets a share in
+  proportion to how short it is (any rest goes by the target mix). Then pick
+  the funds with the candidate check.
 - **Trading portfolio and its cap.** Pick the portfolio you trade from and the
   most it may be of everything (10% unless you change it); the checklist says
   whether it is inside.

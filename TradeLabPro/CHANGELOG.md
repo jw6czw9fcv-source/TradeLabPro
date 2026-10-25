@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.59.0 - Cash to work, money out in order
+
+### Added
+- **Cash to put to work** in the Plan tab: when a portfolio holds more cash than its target cash share, the checklist shows how that cash would be spread by your target mix without selling anything - each class short of its target gets a share in proportion to how short it is.
+- **Withdrawal order** in Retirement Sim: the plan run drawing from REER/FERR, CELI and non-registered accounts in every order, with what each leaves at the end, the tax paid and the OAS clawback over the projection (today's dollars), and when the money runs out. The RRIF minimum is drawn whatever the order. Orders only - not other strategies; a calculation, not advice.
+
+### Verified
+- Full pytest suite passes (1596), including 6 new tests: cash spread by shortfall without selling, cash short of the gaps going in proportion with the target cash kept, every order of three account kinds compared with one best and one as entered, a single kind having nothing to compare, and the Retirement Sim window and its pop-up.
+
 ## 2.58.0 - The facts before you buy
 
 ### Added

@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.59.0 - Cash to work, money out in order - the Plan tab shows how idle cash would go by your target mix, and Retirement Sim compares the order you draw your accounts in
+
 2.58.0 - The facts before you buy - the Plan tab checks any fund or stock: fees, risk band, worst fall, returns, overlap, plan fit and the account that suits it
 
 2.57.2 - In sync with IBKR - the IBKR portfolio can sync itself each time TradeLab starts, and an account with everything sold now empties its portfolio
