@@ -655,3 +655,85 @@ class FlowLayout(QLayout):
             x = next_x
             line_height = max(line_height, hint.height())
         return y + line_height - rect.y()
+
+
+def _build_condition_row(condition, on_change, on_remove, removable=True):
+    """Build one condition-editing row: field + (tunable) period + operator +
+    value(s) OR a second field + its period. Shared by the Scanner's custom
+    filters, the Strategy Builder, and the Alerts builder so they stay
+    identical. Pass removable=False for a single fixed row (Alerts) with no
+    × delete button. Returns (row_widget, widgets_dict)."""
+    from tradelab.core.filters import (field_choices, field_has_period,
+                                       field_default_period, OPERATORS, FIELD_OPERATORS)
+    row = QWidget(); h = QHBoxLayout(row); h.setContentsMargins(0, 0, 0, 0)
+    field = QComboBox()
+    for key, label in field_choices():
+        field.addItem(label, key)
+    fi = field.findData(condition.field); field.setCurrentIndex(fi if fi >= 0 else 0)
+    period = QSpinBox(); period.setRange(1, 500); period.setMaximumWidth(60)
+    period.setValue(int(condition.period or field_default_period(condition.field) or 14))
+    op = QComboBox(); op.addItems(OPERATORS); op.setCurrentText(condition.operator)
+    v1 = QDoubleSpinBox(); v1.setRange(-1e9, 1e9); v1.setDecimals(2); v1.setValue(condition.value1)
+    v2 = QDoubleSpinBox(); v2.setRange(-1e9, 1e9); v2.setDecimals(2)
+    v2.setValue(condition.value2 if condition.value2 is not None else condition.value1)
+    field2 = QComboBox()
+    for key, label in field_choices():
+        field2.addItem(label, key)
+    f2 = field2.findData(condition.field2); field2.setCurrentIndex(f2 if f2 >= 0 else 0)
+    period2 = QSpinBox(); period2.setRange(1, 500); period2.setMaximumWidth(60)
+    period2.setValue(int(condition.period2 or field_default_period(field2.currentData()) or 14))
+
+    def sync():
+        is_field = op.currentText() in FIELD_OPERATORS
+        period.setVisible(field_has_period(field.currentData()))
+        v1.setVisible(not is_field)
+        v2.setVisible(op.currentText() == "Between")
+        field2.setVisible(is_field)
+        period2.setVisible(is_field and field_has_period(field2.currentData()))
+
+    def on_field_change():
+        p = field_default_period(field.currentData())
+        if p:
+            period.setValue(p)  # pick a new indicator -> pre-fill its default period
+        sync()
+
+    def on_field2_change():
+        p = field_default_period(field2.currentData())
+        if p:
+            period2.setValue(p)
+        sync()
+
+    field.currentTextChanged.connect(on_field_change)
+    field2.currentTextChanged.connect(on_field2_change)
+    op.currentTextChanged.connect(sync)
+    sync()
+
+    widgets = {"row": row, "field": field, "period": period, "op": op,
+               "v1": v1, "v2": v2, "field2": field2, "period2": period2}
+    if on_change:
+        for w in (field, period, op, v1, v2, field2, period2):
+            try: w.currentTextChanged.connect(lambda *_: on_change())
+            except Exception: pass
+            try: w.valueChanged.connect(lambda *_: on_change())
+            except Exception: pass
+    h.addWidget(field, 2); h.addWidget(period); h.addWidget(op, 1)
+    h.addWidget(v1, 1); h.addWidget(v2, 1); h.addWidget(field2, 2); h.addWidget(period2)
+    if removable:
+        rm = QToolButton(); rm.setText("×"); rm.setMaximumWidth(24); rm.clicked.connect(lambda: on_remove(row))
+        h.addWidget(rm)
+    return row, widgets
+
+
+def _row_to_condition(w):
+    from tradelab.core.filters import FilterCondition, FIELD_OPERATORS, field_has_period
+    op = w["op"].currentText()
+    is_field = op in FIELD_OPERATORS
+    return FilterCondition(
+        field=w["field"].currentData(),
+        period=(w["period"].value() if field_has_period(w["field"].currentData()) else None),
+        operator=op,
+        value1=w["v1"].value(),
+        value2=(w["v2"].value() if op == "Between" else None),
+        field2=(w["field2"].currentData() if is_field else None),
+        period2=(w["period2"].value() if is_field and field_has_period(w["field2"].currentData()) else None),
+    )

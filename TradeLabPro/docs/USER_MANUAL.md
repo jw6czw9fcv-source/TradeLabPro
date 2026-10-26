@@ -985,6 +985,28 @@ the most. The RRIF minimum is drawn whatever the order; only what is drawn
 beyond it follows the order. It compares orders, not other strategies (such as
 drawing more in a low-tax year). A calculation, not advice.
 
+**Best split.** With two people, runs the plan with 0% to 50% of eligible
+pension income (RRIF payments from 65, a pension plan's) moved to the
+lower-income spouse and lists what each leaves, the tax and the OAS clawback;
+**Use** sets the best one in the split box. The same share every year — the
+law lets it change yearly, so a year-by-year choice could do slightly better.
+
+**REER or CELI?** For money saved now: pick who saves, how much and when it
+would come out. The same pre-tax dollars in a REER (deducted now, taxed when
+withdrawn) and in a CELI (after tax now, never taxed again) are compared from
+the plan's own marginal rates now and in that year (the OAS clawback counts
+later). The REER leaves more exactly when the rate later is lower. The window
+recalls the limits: REER room is 18% of last year's earned income, up to
+$33,810 for 2026 and $35,390 for 2027, contributions until the end of the year
+you turn 71 (the first 60 days of a year count for the year before); the CELI's
+2026 limit is $7,000.
+
+**Draw REER early.** Compares drawing the REER down early — enough each year
+until 71 to bring the owner's taxable income up to $40,000, $50,000, $60,000
+or $70,000 (today's dollars) — with drawing nothing extra. The extra is saved
+(CELI first). It aims to lower the RRIF minimums and the OAS clawback later;
+the table shows whether it does on your plan.
+
 **Key dates.** Type each person's birth month in the People table's **Born**
 column (e.g. 1962-08) and **Key dates** lists the reminders that follow from it
 and from when the plan starts each pension: when the RRQ application opens (12
@@ -1336,6 +1358,12 @@ confirmation). You can pull your paper fills straight into the **Trade Journal**
 ## 18. Trade journal
 
 Log your trades, tag them, and review what actually works.
+
+**Tax summary…** gathers one year: the trades closed that year with their gains
+and losses per currency, and the contributions and withdrawals recorded in the
+Retirement tab's plans, with **Export CSV**. It cannot know which account a
+trade was in (gains inside a REER or a CELI are not taxed) or what the slips
+say — compare it with your T4RSP, T5, T3 and Relevés; it is not a tax return.
 
 **Log a trade.** Enter symbol, side (Long/Short), quantity, entry, an optional
 **stop**, a strategy name, tags, and notes. Each trade shows **P&L, P&L %,
