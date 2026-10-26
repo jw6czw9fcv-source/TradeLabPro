@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.61.0 - Less tax, by the numbers
+
+### Added
+- **Best split** (Retirement Sim): the plan with 0% to 50% of eligible pension income moved to the lower-income spouse - what each leaves, the tax and the OAS clawback - with a button to use the best one.
+- **REER or CELI?** (Retirement Sim): the same pre-tax dollars saved in each, from the plan's marginal rates now and in the year they come out (the OAS clawback counts later); the REER wins exactly when the later rate is lower. With the limits from canada.ca: 18% of last year's earned income up to $33,810 for 2026 and $35,390 for 2027.
+- **Draw REER early** (Retirement Sim): drawing the REER down to a target taxable income each year until 71, compared with drawing nothing extra.
+- **Tax summary** (Journal tab): a year's closed trades by currency and the Retirement tab's contributions and withdrawals, with CSV export - to compare with the slips, not a return.
+
+### Changed
+- Eleven more tabs moved out of the app's main file into their own modules (about 7,100 lines left, from 12,000). Nothing changes on screen.
+
+### Verified
+- Full pytest suite passes (1615), including 12 new tests: every split compared with the best one usable, the REER winning exactly when the later rate is lower and new RRSP room capped by the year's limit, an early drawdown topping income up until 71 and compared with none, the tax summary by year and currency with its CSV, and each new window. A scan of every module found no name used but undefined.
+
 ## 2.60.0 - What fees cost, and a word when it matters
 
 ### Added

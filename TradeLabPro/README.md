@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.61.0 - Less tax, by the numbers - the best pension split, REER or CELI for new savings, drawing the REER down early, and a tax-season summary
+
 2.60.0 - What fees cost, and a word when it matters - a group plan's fees in dollars against a lower fee, a Windows notification when the plan wants a look, fund fees from Yahoo, and a startup sync for each IBKR account
 
 2.59.0 - Cash to work, money out in order - the Plan tab shows how idle cash would go by your target mix, and Retirement Sim compares the order you draw your accounts in

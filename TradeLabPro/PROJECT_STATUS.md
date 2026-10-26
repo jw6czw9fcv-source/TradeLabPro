@@ -1,7 +1,14 @@
 # TradeLab Pro Project Status
 
-Current version: 2.60.0
+Current version: 2.61.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.61.0 (Less tax, by the numbers)
+- **Best split:** `retirement_plan.compare_splits(plan, tax_fn_for, splits)` (shared `_totals` / `_mark_best`); Retirement Sim window with "Use N%".
+- **REER or CELI:** `tax_quebec.reer_or_celi` (marginal rates now/later via `marginal_rate`, +15% OAS recovery above the threshold) and `rrsp_new_room` (`RRSP_EARNED_INCOME_RATE` 0.18, `RRSP_DOLLAR_LIMIT` 2025-2027 from canada.ca, read 2026-10-26).
+- **Early REER drawdown:** `Plan.meltdown_to` / `meltdown_until_age` (step 2b of `project`, counted as RRIF payments from 65) and `compare_meltdown`.
+- **Tax summary:** `core/tax_summary.py` (`summary`, `as_text`, `to_csv`); Journal tab "Tax summary...".
+- **Split, second pass:** Retirement, Dividends, Seasonality, Heatmap, Alerts, News, Notes, Risk, Paper Trading, Plugins, Replay -> `ui/panels/`; `_build_condition_row` / `_row_to_condition` -> `ui/common.py`. app.py ~7,100 lines.
 
 ## Completed in 2.60.0 (What fees cost, and a word when it matters)
 - **Fee drag:** `retirement.fee_drag(account, low_fee_pct, gross_pct)` - value-weighted plan fee vs a lower one, same gross return; Retirement tab line with low-fee and gross-return inputs.
