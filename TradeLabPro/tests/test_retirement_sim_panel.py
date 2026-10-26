@@ -620,3 +620,37 @@ def test_a_single_kind_of_account_pops_up(panel, monkeypatch):
     _fill(panel, [["Anne", 66]], [["REER", "registered", 300_000, "Anne"]])
     panel.compare_orders()
     assert shown and "only one kind of account" in shown[0]
+
+
+def test_the_best_split_is_shown_and_can_be_used(panel, monkeypatch):
+    from PySide6.QtWidgets import QTableWidget
+    _fill(panel, [["Lui", 70], ["Elle", 70]], [["FERR", "registered", 400_000, "Lui"]],
+          [["Pension", "Lui", 60_000, 65, ""]])
+    panel.spending.setValue(40_000)
+    panel.splitting.setValue(0)
+    panel.compare_split()
+    table = panel.split_dialog.findChild(QTableWidget)
+    assert table.rowCount() == 11
+    best = next(r for r in panel.split_rows if r["best"])
+    from PySide6.QtWidgets import QPushButton
+    use = next(b for b in panel.split_dialog.findChildren(QPushButton) if b.text().startswith("Use "))
+    use.click()
+    assert panel.splitting.value() == best["split_pct"]
+
+
+def test_one_person_has_no_split_to_compare(panel, monkeypatch):
+    shown = []
+    monkeypatch.setattr("tradelab.ui.common.show_problem", lambda text, parent=None: shown.append(text))
+    _fill(panel, [["Anne", 70]], [["FERR", "registered", 400_000, "Anne"]])
+    panel.compare_split()
+    assert shown and "two people" in shown[0]
+
+
+def test_reer_or_celi_window_compares_from_the_plan(panel):
+    _fill(panel, [["Anne", 64]], [["CELI", "tfsa", 100_000, "Anne"]],
+          [["Travail", "Anne", 120_000, 0, 66]])
+    panel.reer_or_celi()
+    out = panel.saving_result
+    assert out["rate_now"] > out["rate_later"]          # high income now, little later
+    assert out["better"] == "REER"
+    panel.saving_dialog.close()

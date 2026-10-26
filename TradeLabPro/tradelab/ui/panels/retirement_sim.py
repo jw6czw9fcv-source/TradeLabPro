@@ -194,6 +194,18 @@ class RetirementSimPanel(QWidget):
                           "in every order, and compare what is left, the tax paid and the OAS "
                           "clawback.")
         orders.clicked.connect(self.compare_orders)
+        split = QPushButton("Best split")
+        split.setToolTip("Run the plan with 0% to 50% of eligible pension income moved to the "
+                         "lower-income spouse, and show which leaves the most.")
+        split.clicked.connect(self.compare_split)
+        saver = QPushButton("REER or CELI?")
+        saver.setToolTip("For money saved now: compare a REER and a CELI with your marginal "
+                         "tax rate now and in the year it would come out.")
+        saver.clicked.connect(self.reer_or_celi)
+        melt = QPushButton("Draw REER early")
+        melt.setToolTip("Compare drawing the REER down early - up to a taxable income each "
+                      "year until 71 - with drawing nothing extra.")
+        melt.clicked.connect(self.compare_meltdown)
         save = QPushButton("Save inputs"); save.clicked.connect(self.save)
         save_sim = QPushButton("Save sim")
         save_sim.setToolTip("Keep the current run on the chart as the line to compare "
@@ -207,7 +219,10 @@ class RetirementSimPanel(QWidget):
                        self.volatility, QLabel("  Project"),
                        self.until_age, QLabel("  Pension"), self.splitting,
                        self.todays_dollars,
-                       self.paths, run, trajectories, ages, dates, budget, orders, save, save_sim,
+                       self.paths, run, trajectories, ages, dates, budget, orders, split, saver,
+                       melt,
+                       save,
+                       save_sim,
                        clear_sim):
             controls.addWidget(widget)
         layout.addWidget(bar)
@@ -729,6 +744,171 @@ class RetirementSimPanel(QWidget):
         worker = self._budget_worker
         if worker is not None and worker.isRunning():
             worker.wait(30000)
+
+    def _results_window(self, title, intro, headers, rows, cells_of, attr, use=None):
+        """A small window listing compared runs - one row each, the best in bold."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.resize(860, 360)
+        v = QVBoxLayout(dialog)
+        v.addWidget(_hint(intro + " " + theme.NOT_ADVICE))
+        table = QTableWidget(len(rows), len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        for r, row in enumerate(rows):
+            for c, text in enumerate(cells_of(row)):
+                item = QTableWidgetItem(text)
+                if row.get("best"):
+                    font = item.font(); font.setBold(True); item.setFont(font)
+                table.setItem(r, c, item)
+        table.resizeColumnsToContents()
+        v.addWidget(table, 1)
+        buttons = QHBoxLayout(); buttons.addStretch()
+        if use is not None:
+            label, action = use
+            apply = QPushButton(label)
+            apply.clicked.connect(lambda: (action(), dialog.accept()))
+            buttons.addWidget(apply)
+        close = QPushButton("Close"); close.clicked.connect(dialog.accept)
+        buttons.addWidget(close)
+        v.addLayout(buttons)
+        setattr(self, attr, dialog)
+        dialog.show()
+        return dialog
+
+    def reer_or_celi(self):
+        """A window: one person, an amount saved now, the year it comes out -
+        and which account leaves more after tax, from the plan's own incomes."""
+        from tradelab.core.retirement_plan import project
+        plan = self.build_plan()
+        if plan is None:
+            flag_problem(self.status, "Add at least one person and one account first.")
+            return
+        rows = project(plan)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("New savings - REER or CELI?")
+        dialog.resize(760, 330)
+        v = QVBoxLayout(dialog)
+        v.addWidget(_hint(
+            "The same pre-tax dollars in a REER (deducted now, taxed when withdrawn) or a CELI "
+            "(after tax now, never taxed again), grown alike. The REER leaves more exactly when "
+            "your marginal rate when it comes out is lower than today's. Rates come from this "
+            "plan's projected taxable income, in today's dollars, on the 2026 tables; a PSV "
+            "above the clawback threshold adds 15%. " + theme.NOT_ADVICE))
+        row = QHBoxLayout()
+        person = QComboBox(); person.addItems([p.name for p in plan.people])
+        amount = QDoubleSpinBox(); amount.setRange(100, 1_000_000); amount.setDecimals(0)
+        amount.setSingleStep(500); amount.setPrefix("$"); amount.setValue(7_000)
+        years = QSpinBox(); years.setRange(1, max(1, len(rows) - 1)); years.setValue(min(10, max(1, len(rows) - 1)))
+        years.setSuffix(" years from now")
+        for w in (QLabel("Who"), person, QLabel("saves"), amount, QLabel("taken out in"), years):
+            row.addWidget(w)
+        row.addStretch()
+        v.addLayout(row)
+        result = QLabel(""); result.setWordWrap(True)
+        v.addWidget(result)
+        close = QPushButton("Close"); close.clicked.connect(dialog.accept)
+        v.addWidget(close, 0, Qt.AlignRight)
+
+        def show():
+            from tradelab.core.tax_quebec import reer_or_celi, rrsp_new_room
+            name = person.currentText()
+            n = years.value()
+            now_row, later_row = rows[0], rows[min(n, len(rows) - 1)]
+            income_now = now_row["income_by_owner"].get(name, 0.0) / now_row["deflator"]
+            income_later = later_row["income_by_owner"].get(name, 0.0) / later_row["deflator"]
+            age_now, age_later = now_row["ages"][name], later_row["ages"][name]
+            oas_later = any(i.is_oas and i.owner == name and i.starts_at_age <= age_later
+                            for i in plan.incomes)
+            out = reer_or_celi(amount.value(), income_now, age_now, income_later, age_later, n,
+                               plan.nominal_return - plan.inflation, oas_later)
+            self.saving_result = out
+            verdict = {"REER": "the <b>REER</b> leaves more", "CELI": "the <b>CELI</b> leaves more",
+                       "same": "both leave about the same"}[out["better"]]
+            room = rrsp_new_room(income_now, now_row["calendar_year"] + 1)
+            result.setText(
+                f"{name}: taxable income about ${income_now:,.0f} now (marginal rate "
+                f"{out['rate_now']:.1%}) and ${income_later:,.0f} at {age_later} (marginal rate "
+                f"{out['rate_later']:.1%}{', clawback included' if out['clawback'] else ''}). "
+                f"After {n} years and tax, {verdict}: REER ${out['reer']:,.0f}, CELI "
+                f"${out['celi']:,.0f} (today's dollars, a real return of "
+                f"{plan.nominal_return - plan.inflation:.1%}).<br><br>"
+                "<b>Limits:</b> REER room grows each year by 18% of the previous year's earned "
+                "income, up to $33,810 for 2026 and $35,390 for 2027"
+                + (f" - about ${room:,.0f} next year from this income if it is all earned income"
+                   if room else "")
+                + "; contributions can go in until December 31 of the year you turn 71, and those "
+                "made in the first 60 days of a year count for the year before. Your notice of "
+                "assessment has your exact room. The CELI's 2026 limit is $7,000 (People table: "
+                "TFSA room).")
+
+        for w in (person.currentIndexChanged, amount.valueChanged, years.valueChanged):
+            w.connect(lambda *_: show())
+        show()
+        self.saving_dialog = dialog
+        dialog.show()
+
+    def compare_meltdown(self):
+        from tradelab.core.retirement_plan import REGISTERED, compare_meltdown
+        plan = self.build_plan()
+        if plan is None:
+            flag_problem(self.status, "Add at least one person and one account first.")
+            return
+        if not any(a.kind == REGISTERED and a.balance for a in plan.accounts):
+            flag_problem(self.status, "There is no REER/FERR balance in the plan to draw down.")
+            return
+        rows = compare_meltdown(plan)
+        self.meltdown_rows = rows
+        self._results_window(
+            "Drawing the REER down early",
+            f"Each year until 71, the REER is drawn enough to bring each owner's taxable income "
+            f"up to the target (today's dollars, indexed), even when the spending does not need "
+            f"it - the extra is saved, CELI first, then taxed as it grows outside. It aims to "
+            f"lower the RRIF minimums and the OAS clawback later. Projected to age "
+            f"{self.until_age.value()}; ★ leaves the most.",
+            ["Draw up to", "Left at the end (today's $)", "Tax paid (today's $)",
+             "of which OAS clawback", "Money runs out", ""],
+            rows, lambda r: [("nothing extra" if r["target"] is None else f"{r['target']:,.0f} $ a year"),
+                             f"{r['capital_at_end']:,.0f} $", f"{r['tax']:,.0f} $",
+                             f"{r['oas_recovery']:,.0f} $",
+                             str(r["runs_out"]) if r["runs_out"] else "never",
+                             " ".join(m for m, on in (("★ most left", r["best"]),
+                                                       ("(as now)", r["current"])) if on)],
+            "meltdown_dialog")
+        self.status.setText("Early REER drawdowns compared - see the window.")
+
+    def compare_split(self):
+        from tradelab.core.retirement_plan import compare_splits
+        from tradelab.core.tax_quebec import household_tax_fn
+        plan = self.build_plan()
+        if plan is None:
+            flag_problem(self.status, "Add at least one person and one account first.")
+            return
+        if len(plan.people) < 2:
+            flag_problem(self.status, "Pension splitting needs two people in the People table.")
+            return
+        inflation = self.inflation.value() / 100.0
+        rows = compare_splits(plan, lambda f: household_tax_fn(f, inflation),
+                              current=self.splitting.value())
+        self.split_rows = rows
+        best = next(r for r in rows if r["best"])
+        self._results_window(
+            "Pension split compared",
+            f"The same plan with 0% to 50% of eligible pension income (RRIF payments from 65, "
+            f"a pension plan's) moved to the lower-income spouse, to age "
+            f"{self.until_age.value()}. ★ leaves the most. The same share every year - the law "
+            "lets it change each year, so a year-by-year choice could do slightly better.",
+            ["Split", "Left at the end (today's $)", "Tax paid (today's $)",
+             "of which OAS clawback", "Money runs out", ""],
+            rows, lambda r: [f"{r['split_pct']}%", f"{r['capital_at_end']:,.0f} $",
+                             f"{r['tax']:,.0f} $", f"{r['oas_recovery']:,.0f} $",
+                             str(r["runs_out"]) if r["runs_out"] else "never",
+                             " ".join(m for m, on in (("★ most left", r["best"]),
+                                                       ("(set now)", r["current"])) if on)],
+            "split_dialog",
+            use=(f"Use {best['split_pct']}%", lambda: self.splitting.setValue(best["split_pct"])))
+        self.status.setText("Pension splits compared - see the window.")
 
     ORDER_HEADERS = ["Draw from (first → last)", "Left at the end (today's $)",
                      "Tax paid (today's $)", "of which OAS clawback", "Money runs out", ""]

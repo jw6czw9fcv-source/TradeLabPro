@@ -929,3 +929,47 @@ def test_one_kind_of_account_has_no_order_to_compare():
     from tradelab.core.retirement_plan import compare_withdrawal_orders
     plan = _plan(accounts=[Account("A", TFSA, 1_000, "me"), Account("B", TFSA, 1_000, "me")])
     assert len(compare_withdrawal_orders(plan)) == 1
+
+
+# -- pension splitting ----------------------------------------------------------------
+
+def test_every_split_is_compared_and_one_is_best():
+    from tradelab.core.retirement_plan import compare_splits
+    from tradelab.core.tax_quebec import household_tax_fn
+    plan = _plan(people=[Person("lui", 70), Person("elle", 70)], years=10, spending=40_000,
+                 accounts=[Account("FERR", REGISTERED, 400_000, "lui")],
+                 incomes=[Income("Pension", "lui", 60_000, starts_at_age=65)])
+    rows = compare_splits(plan, lambda f: household_tax_fn(f), current=0)
+    assert [r["split_pct"] for r in rows] == list(range(0, 51, 5))
+    assert sum(r["best"] for r in rows) == 1
+    none, half = rows[0], rows[-1]
+    # One earner: moving pension income to the spouse lowers the household's tax.
+    assert half["tax"] < none["tax"]
+    best = next(r for r in rows if r["best"])
+    assert best["split_pct"] > 0 and best["capital_at_end"] >= none["capital_at_end"]
+    assert rows[0]["current"] is True
+
+
+# -- drawing the REER down early -------------------------------------------------------
+
+def test_an_early_drawdown_tops_income_up_to_the_target_until_71():
+    plan = _plan(people=[Person("me", 66)], years=8, spending=0,
+                 accounts=[Account("REER", REGISTERED, 500_000, "me"),
+                           Account("CELI", TFSA, 0, "me")],
+                 incomes=[Income("RRQ", "me", 15_000, starts_at_age=65)],
+                 tax_fn=_flat(0.20), meltdown_to=50_000, meltdown_until_age=71)
+    rows = project(plan)
+    # Ages 66-70: 35,000 more each year to reach 50,000; at 71 only the RRIF minimum.
+    assert [round(r["forced_withdrawal"]) for r in rows[:5]] == [35_000] * 5
+    assert rows[5]["ages"]["me"] == 71 and rows[5]["forced_withdrawal"] < 35_000
+
+
+def test_early_drawdowns_are_compared_with_drawing_nothing_extra():
+    from tradelab.core.retirement_plan import compare_meltdown
+    plan = _plan(people=[Person("me", 66)], years=25, spending=30_000,
+                 accounts=[Account("REER", REGISTERED, 600_000, "me"),
+                           Account("CELI", TFSA, 50_000, "me")],
+                 incomes=[Income("RRQ", "me", 15_000, starts_at_age=65)], tax_fn=_flat(0.25))
+    rows = compare_meltdown(plan, targets=(None, 40_000, 60_000))
+    assert [r["target"] for r in rows] == [None, 40_000, 60_000]
+    assert sum(r["best"] for r in rows) == 1 and rows[0]["current"]

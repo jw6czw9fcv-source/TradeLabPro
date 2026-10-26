@@ -284,6 +284,14 @@ class Plan:
     # increase to two-thirds was cancelled federally (21 March 2025) and in
     # Québec (25 November 2025) - see tax_quebec.CAPITAL_GAINS_INCLUSION.
     gains_inclusion: float = 0.5
+    # Drawing a REER down early: each year before `meltdown_until_age`, take
+    # enough more from the registered accounts to bring each owner's taxable
+    # income up to `meltdown_to` (today's dollars, indexed), even if the
+    # spending does not need it - the extra is saved like any surplus (TFSA
+    # first). None draws nothing extra. Taken as RRIF payments, so from 65 they
+    # count as eligible pension income.
+    meltdown_to: float | None = None
+    meltdown_until_age: int = 71
 
 
 # Where the surplus goes: the TFSA first, while there is room, because what
@@ -519,6 +527,27 @@ def project(plan: Plan) -> list[dict]:
             pension_by_owner[account.owner] = pension_by_owner.get(
                 account.owner, 0.0) + take
 
+        # 2b. A chosen early drawdown: top each owner's taxable income up to
+        #     the target while the registered money is there to do it.
+        if plan.meltdown_to:
+            target = float(plan.meltdown_to) * (1.0 + plan.inflation) ** year
+            for account in accounts:
+                if account.kind != REGISTERED:
+                    continue
+                age = ages.get(account.owner, 0)
+                if age >= int(plan.meltdown_until_age):
+                    continue
+                extra = min(balances[account.name],
+                            max(0.0, target - by_owner.get(account.owner, 0.0)))
+                if extra <= 0:
+                    continue
+                balances[account.name] -= extra
+                forced += extra
+                by_owner[account.owner] = by_owner.get(account.owner, 0.0) + extra
+                if age >= 65:
+                    pension_by_owner[account.owner] = pension_by_owner.get(
+                        account.owner, 0.0) + extra
+
         tax = (float(tax_fn(by_owner, ages, pension_by_owner, year, oas_by_owner))
                if tax_fn else 0.0)
         available = gross_income + forced - tax
@@ -701,6 +730,62 @@ def compare_start_ages(plan: Plan) -> list[dict]:
         best["best"] = True
         out.extend(options)
     return out
+
+
+def _totals(rows: list) -> dict:
+    """Capital left at the end, and tax / OAS clawback over the whole
+    projection, all in today's dollars; plus when money runs out."""
+    last = rows[-1]
+    failed = depletion_year(rows)
+    return {"capital_at_end": last["closing"] / last["closing_deflator"],
+            "tax": sum(r["tax"] / r["deflator"] for r in rows),
+            "oas_recovery": sum((r.get("oas_recovery") or 0.0) / r["deflator"] for r in rows),
+            "runs_out": rows[failed]["calendar_year"] if failed is not None else None}
+
+
+def _mark_best(rows: list, tie_key) -> list:
+    if rows:
+        best = max(rows, key=lambda r: (r["runs_out"] is None, r["runs_out"] or 0,
+                                        round(r["capital_at_end"], 2), tie_key(r)))
+        best["best"] = True
+    return rows
+
+
+def compare_splits(plan: Plan, tax_fn_for, splits=range(0, 51, 5), current=None) -> list[dict]:
+    """The plan with each share of eligible pension income moved to the
+    lower-income spouse. `tax_fn_for(fraction)` builds the tax model for a
+    split (a fraction, 0.25 for 25%). One row per split, with what is left at
+    the end, the tax and the OAS clawback over the projection (today's $);
+    `best` leaves the most (the smaller split breaks a tie). Pension splitting
+    needs two people - with one, every split is the same.
+
+    The share is the same every year here; the law lets it change each year,
+    so a year-by-year choice could do a little better. Not advice."""
+    from dataclasses import replace
+    rows = []
+    for pct in splits:
+        result = project(replace(plan, tax_fn=tax_fn_for(pct / 100.0)))
+        if result:
+            rows.append({"split_pct": pct, **_totals(result), "best": False,
+                         "current": current is not None and abs(pct - current) < 1e-9})
+    return _mark_best(rows, lambda r: -r["split_pct"])
+
+
+def compare_meltdown(plan: Plan, targets=(None, 40_000, 50_000, 60_000, 70_000),
+                     until_age: int = 71) -> list[dict]:
+    """The plan with the REER drawn down early to each target taxable income
+    (today's dollars) until `until_age`, against drawing nothing extra (None).
+    What is left at the end, the tax and the OAS clawback over the whole
+    projection (today's $); `best` leaves the most (drawing less breaks a tie).
+    A calculation on the plan's assumptions, not advice."""
+    from dataclasses import replace
+    rows = []
+    for target in targets:
+        result = project(replace(plan, meltdown_to=target, meltdown_until_age=until_age))
+        if result:
+            rows.append({"target": target, **_totals(result), "best": False,
+                         "current": target is None})
+    return _mark_best(rows, lambda r: -(r["target"] or 0))
 
 
 KIND_LABELS = {REGISTERED: "REER/FERR", TFSA: "CELI", TAXABLE: "Non-registered"}

@@ -6798,9 +6798,13 @@ class JournalPanel(QWidget):
         flex_btn = QPushButton("Import from IBKR (Flex)…"); flex_btn.clicked.connect(self.import_ibkr_flex)
         flex_btn.setToolTip("Fetch your Flex Query report directly over IBKR's Flex Web Service (read-only).")
         export_btn = QPushButton("Export CSV"); export_btn.clicked.connect(self.export_csv)
+        tax_btn = QPushButton("Tax summary…"); tax_btn.clicked.connect(self.tax_summary)
+        tax_btn.setToolTip("One year's closed trades and retirement-plan contributions, gathered "
+                           "for tax season - to compare with your slips.")
         controls.addWidget(close_btn); controls.addWidget(edit_note_btn); controls.addWidget(del_btn)
         controls.addStretch()
         controls.addWidget(import_btn); controls.addWidget(ibkr_btn); controls.addWidget(flex_btn); controls.addWidget(export_btn)
+        controls.addWidget(tax_btn)
         layout.addLayout(controls)
 
         # --- breakdown ----------------------------------------------------
@@ -6942,6 +6946,52 @@ class JournalPanel(QWidget):
         self._flex_worker = IbkrFlexWorker(token, query)
         self._flex_worker.done.connect(self._on_flex_done)
         self._flex_worker.start()
+
+    def tax_summary(self, year=None):
+        """A window: one year's closed trades and plan flows, for tax season."""
+        from tradelab.core import tax_summary as ts
+        from tradelab.core.retirement import RetirementBook
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Tax-season summary")
+        dialog.resize(760, 480)
+        v = QVBoxLayout(dialog)
+        row = QHBoxLayout()
+        pick = QSpinBox(); pick.setRange(2000, 2100)
+        pick.setValue(int(year) if year else time.localtime().tm_year - 1)
+        export = QPushButton("Export CSV…")
+        row.addWidget(QLabel("Year")); row.addWidget(pick); row.addStretch(); row.addWidget(export)
+        v.addLayout(row)
+        text = QTextEdit(); text.setReadOnly(True)
+        v.addWidget(text, 1)
+        close = QPushButton("Close"); close.clicked.connect(dialog.accept)
+        v.addWidget(close, 0, Qt.AlignRight)
+
+        def show():
+            try:
+                accounts = RetirementBook(getattr(self, "retirement_path", None)).accounts
+            except Exception:
+                log.exception("Could not read the Retirement tab's plans")
+                accounts = []
+            self.tax_data = ts.summary(pick.value(), self.journal.all(), accounts)
+            text.setPlainText(ts.as_text(self.tax_data))
+
+        def save():
+            path, _ = QFileDialog.getSaveFileName(self, "Export tax summary",
+                                                  f"tax_summary_{pick.value()}.csv",
+                                                  "CSV files (*.csv)")
+            if not path:
+                return
+            try:
+                Path(path).write_text(ts.to_csv(self.tax_data), encoding="utf-8")
+                self.status.setText(f"Tax summary exported to {path}.")
+            except OSError as exc:
+                flag_problem(self.status, f"Could not write {path}: {exc}")
+
+        pick.valueChanged.connect(lambda _v: show())
+        export.clicked.connect(save)
+        show()
+        self.tax_dialog = dialog
+        dialog.show()
 
     def import_ibkr_flex(self):
         """Direct pull via IBKR's Flex Web Service. The user supplies their own

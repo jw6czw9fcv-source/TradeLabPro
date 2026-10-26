@@ -153,6 +153,56 @@ CAPITAL_GAINS_INCLUSION = Figure(0.5, GAINS_INCLUSION_SOURCE, verified=True, ind
 OAS_RECOVERY_RATE = Figure(0.15, CRA_OAS, verified=True, indexed=False)
 
 
+CRA_RRSP_LIMITS = ("canada.ca - MP, DB, RRSP, DPSP, ALDA, TFSA limits, YMPE and the YAMPE "
+                   "(read 2026-10-26)")
+CRA_RRSP_ROOM = ("canada.ca - How contributions affect your RRSP deduction limit "
+                 "(read 2026-10-26)")
+# The RRSP deduction limit: 18% of the previous year's earned income, capped at
+# the year's dollar limit, plus unused room carried forward, less any pension
+# adjustment.
+RRSP_EARNED_INCOME_RATE = Figure(0.18, CRA_RRSP_ROOM, verified=True, indexed=False)
+RRSP_DOLLAR_LIMIT = {2025: Figure(32_490, CRA_RRSP_LIMITS, verified=True),
+                     2026: Figure(33_810, CRA_RRSP_LIMITS, verified=True),
+                     2027: Figure(35_390, CRA_RRSP_LIMITS, verified=True)}
+
+
+def rrsp_new_room(earned_income_last_year: float, year: int) -> float | None:
+    """This year's new RRSP room from last year's earned income - before any
+    unused room carried forward or pension adjustment, which only the CRA's
+    notice of assessment knows. None for a year whose limit is not on file."""
+    limit = RRSP_DOLLAR_LIMIT.get(int(year))
+    if limit is None:
+        return None
+    return min(float(RRSP_EARNED_INCOME_RATE) * max(0.0, float(earned_income_last_year)),
+               float(limit))
+
+
+def reer_or_celi(amount: float, income_now: float, age_now: int, income_later: float,
+                 age_later: int, years: int, growth: float, oas_later: bool = False) -> dict:
+    """The same pre-tax dollars saved in a REER or in a CELI, compared.
+
+    A REER deposit is deducted at today's marginal rate and the withdrawal is
+    taxed at the marginal rate of the year it comes out; a CELI takes after-tax
+    money and is never taxed again. So, grown alike for `years` at `growth`:
+    REER = amount x (1+g)^n x (1 - rate later), CELI = amount x (1 - rate now)
+    x (1+g)^n - the REER wins exactly when the rate later is lower. Incomes are
+    in today's dollars, against the 2026 tables. With OAS later, a dollar above
+    the recovery threshold also loses 15% to the clawback.
+    """
+    table = year_2026()
+    now = marginal_rate(income_now, age_now, table)
+    later = marginal_rate(income_later, age_later, table)
+    clawback = bool(oas_later) and income_later > float(table.oas_recovery_threshold)
+    if clawback:
+        later += float(OAS_RECOVERY_RATE)
+    grown = float(amount) * (1.0 + float(growth)) ** int(years)
+    reer = grown * (1.0 - later)
+    celi = grown * (1.0 - now)
+    return {"rate_now": now, "rate_later": later, "clawback": clawback,
+            "reer": reer, "celi": celi, "better": "REER" if reer > celi + 0.5 else
+            ("CELI" if celi > reer + 0.5 else "same"), "gap": abs(reer - celi)}
+
+
 def oas_recovery(net_income: float, oas_received: float, table: "TaxYear" = None) -> float:
     """The OAS pension paid back for a year: 15% of net income above the
     threshold, never more than the OAS received - so someone still earning a

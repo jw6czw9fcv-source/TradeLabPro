@@ -321,3 +321,24 @@ def test_half_of_a_capital_gain_is_taxable():
     from tradelab.core.tax_quebec import CAPITAL_GAINS_INCLUSION
     # The increase to two-thirds was cancelled in Ottawa and in Québec.
     assert float(CAPITAL_GAINS_INCLUSION) == 0.5 and CAPITAL_GAINS_INCLUSION.verified
+
+
+def test_reer_beats_celi_exactly_when_the_rate_later_is_lower():
+    from tradelab.core.tax_quebec import reer_or_celi
+    high_now = reer_or_celi(7_000, income_now=120_000, age_now=64, income_later=40_000,
+                            age_later=72, years=8, growth=0.03)
+    assert high_now["rate_now"] > high_now["rate_later"] and high_now["better"] == "REER"
+    grown = 7_000 * 1.03 ** 8
+    assert high_now["reer"] == pytest.approx(grown * (1 - high_now["rate_later"]))
+    assert high_now["celi"] == pytest.approx(grown * (1 - high_now["rate_now"]))
+    low_now = reer_or_celi(7_000, income_now=30_000, age_now=64, income_later=110_000,
+                           age_later=72, years=8, growth=0.03, oas_later=True)
+    assert low_now["clawback"] and low_now["better"] == "CELI"
+
+
+def test_new_rrsp_room_is_18_percent_up_to_the_year_limit():
+    from tradelab.core.tax_quebec import rrsp_new_room
+    assert rrsp_new_room(100_000, 2026) == pytest.approx(18_000)
+    assert rrsp_new_room(250_000, 2026) == pytest.approx(33_810)
+    assert rrsp_new_room(250_000, 2027) == pytest.approx(35_390)
+    assert rrsp_new_room(50_000, 2031) is None
