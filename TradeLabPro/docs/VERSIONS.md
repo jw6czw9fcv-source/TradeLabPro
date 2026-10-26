@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.61.0** | *unreleased* | Less tax, by the numbers |
+| **2.61.0** | 2026-10-26 | Less tax, by the numbers |
 | **2.60.0** | 2026-10-25 | What fees cost, and a word when it matters |
 | **2.59.0** | 2026-10-25 | Cash to work, money out in order |
 | **2.58.0** | 2026-10-19 | The facts before you buy |
