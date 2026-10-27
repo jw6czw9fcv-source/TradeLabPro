@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.62.0 - A shortlist, side by side
+
+### Added
+- **Shortlist check** in AI Assist: type several symbols and get the candidate check's facts for each in one table - fees, risk band, worst fall and when, returns over 1, 5 and 10 years, overlap with what you own, and the account that suits it - ordered by the criteria you pick (a second breaks ties; an unknown figure always sorts last). **Explain with AI** describes what stands out and the trade-offs from that table, and is told never to say what to buy, sell or hold.
+
+### Fixed
+- **AI Assist used outdated model names and a reply budget too small for models that think first**, which could bring back an empty answer. It now uses Claude Opus 5.5 by default (Sonnet 5.5 and Haiku 5.5 to choose from), with room for the reply; a request the model declines is retried on another model automatically, and otherwise says it was declined.
+
+### Verified
+- Full pytest suite passes (1623), including 8 new tests: the facts of a fund and a stock, ordering by one or two criteria with unknowns last, the table the AI sees, the request sent on the current model with its fallback and no-verdict prompt, a declined request reported, Haiku sent without a fallback, and the AI Assist table filled and ordered. Checked on real data (four funds).
+
 ## 2.61.0 - Less tax, by the numbers
 
 ### Added

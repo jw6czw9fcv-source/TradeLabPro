@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.61.0
+Current version: 2.62.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.62.0 (A shortlist, side by side)
+- **Shortlist check** (AI Assist tab): `candidate.gather` / `facts` / `rank` (`SORTS`, unknowns last) / `table_text`; `_ShortlistWorker`; "Explain with AI" with `ai_assistant.SHORTLIST_SYSTEM` (no buy/sell/hold, no best choice, no amounts). `AIAssistantPanel(db)`.
+- **AI requests brought up to date:** `ai_assistant.MODELS` claude-opus-5-5 (default) / claude-sonnet-5-5 / claude-haiku-5-5; `MAX_TOKENS` 16000 (thinking is always on); `fallbacks: "default"` + beta `server-side-fallback-2026-07-01` on Opus/Sonnet 5.5; `stop_reason: refusal` reported.
 
 ## Completed in 2.61.0 (Less tax, by the numbers)
 - **Best split:** `retirement_plan.compare_splits(plan, tax_fn_for, splits)` (shared `_totals` / `_mark_best`); Retirement Sim window with "Use N%".
