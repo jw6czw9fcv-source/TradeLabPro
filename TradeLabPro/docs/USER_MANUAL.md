@@ -1482,6 +1482,21 @@ sector).
 A natural-language assistant that **explains** indicators, scores, and setups in
 plain English.
 
+**Shortlist check — candidates side by side.** Type several symbols (XEQT.TO
+VEQT.TO XBB.TO VTI…) and click **Check all**: each gets the candidate check's
+facts in one row — fees (from the ETF Screener, else Yahoo), risk (CSA band),
+worst fall and when, returns over 1, 5 and 10 years, overlap with what you
+already own, and the account that suits it. **Order by** the criteria that
+matter to you (lowest fees, smallest worst fall, lowest risk, best 10- or 5-year
+return, least overlap — a second one breaks ties); an unknown figure always
+sorts last. **Explain with AI** sends the table to the assistant, which says
+what stands out, the trade-offs and what deserves a second look — it is told
+never to say what to buy, sell or hold. The table works without an API key.
+
+The assistant uses Claude Opus 5.5 by default (Sonnet 5.5 and Haiku 5.5 are in
+the model list); a request the model declines is retried on another model
+automatically, and otherwise says it was declined.
+
 ![The AI Assist tab: the no-live-data disclaimer, API-key field and model picker, symbol-context loader, and chat.](images/ai_assist.png)
 
 > ⚠ **No live market data.** It reasons over the indicator snapshot TradeLab Pro

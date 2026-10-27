@@ -23,19 +23,26 @@ import os
 
 from tradelab.core.ai_ranker import explain_symbol
 
-# Latest-generation Claude models (see project env notes). Sonnet is the
-# default: capable and cost-sensible for an interactive assistant; Opus for
-# deepest reasoning, Haiku for cheapest/fastest.
-DEFAULT_MODEL = "claude-sonnet-5"
+# Current Claude models (2026-10). Opus 5.5 is the default; Sonnet 5.5 is the
+# faster, cheaper choice, Haiku 5.5 the cheapest. All think before answering
+# (adaptive thinking is always on), so the answer budget below leaves room for
+# that thinking - at the old 1024 the reply could come back empty.
+DEFAULT_MODEL = "claude-opus-5-5"
 MODELS = [
-    "claude-sonnet-5",
-    "claude-opus-4-8",
-    "claude-haiku-4-5-20251001",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
 ]
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
-MAX_TOKENS = 1024
+MAX_TOKENS = 16000
+TIMEOUT_SECONDS = 300
+# A request the model's safety classifiers decline is re-run server-side on a
+# recommended model instead of coming back as a refusal. Opus 5.5 and Sonnet
+# 5.5 accept it; Haiku 5.5 has no server-side fallback.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+FALLBACK_MODELS = ("claude-opus-5-5", "claude-sonnet-5-5")
 
 SYSTEM_PROMPT = (
     "You are the built-in analysis assistant inside TradeLabPro, a desktop "
@@ -53,6 +60,24 @@ SYSTEM_PROMPT = (
     "invent data you were not given.\n"
     "- Keep answers concise and end anything resembling a trade discussion with "
     "a brief reminder that this is educational information, not financial advice."
+)
+
+
+SHORTLIST_SYSTEM = (
+    "You are the built-in assistant inside TradeLabPro. The user, a Canadian "
+    "investor, has put a shortlist of funds or stocks side by side; the table "
+    "below is computed by the app from ten years of prices and published data. "
+    "Explain it in plain language so they can decide faster:\n"
+    "- Say what stands out: the lowest fees, the deepest past fall, the steadiest, "
+    "big overlaps with what they already own, which ones keep their US dividends "
+    "whole in a REER rather than a CELI.\n"
+    "- Point out trade-offs and anything worth a second look, and say what the "
+    "table cannot show (future returns, a fund's strategy, the investor's needs).\n"
+    "- Use only the figures in the table; say 'n/a' is unknown, never guess it.\n"
+    "Hard rules: you are not a licensed financial advisor. Never tell the user to "
+    "buy, sell or hold anything, never rank one as 'the best choice' for them, and "
+    "never suggest amounts. Past returns do not predict future ones. End with one "
+    "line saying this is information for their own decision, not advice. Be concise."
 )
 
 
@@ -145,8 +170,10 @@ def _default_transport(payload: dict, api_key: str) -> dict:
         "anthropic-version": API_VERSION,
         "content-type": "application/json",
     }
+    if "fallbacks" in payload:
+        headers["anthropic-beta"] = FALLBACK_BETA
     try:
-        resp = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+        resp = requests.post(API_URL, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
     except Exception as e:
         raise AIAssistantError(f"Could not reach the AI service: {e}") from e
     if resp.status_code == 401:
@@ -177,14 +204,20 @@ def ask(messages: list[dict], api_key: str | None, model: str = DEFAULT_MODEL,
     sys_prompt = system
     if context:
         sys_prompt = f"{system}\n\nReference data for this session:\n{context}"
+    model = model or DEFAULT_MODEL
     payload = {
-        "model": model or DEFAULT_MODEL,
+        "model": model,
         "max_tokens": max_tokens,
         "system": sys_prompt,
         "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
     }
+    if model in FALLBACK_MODELS:
+        payload["fallbacks"] = "default"
     transport = transport or _default_transport
     data = transport(payload, api_key.strip())
+    if isinstance(data, dict) and data.get("stop_reason") == "refusal":
+        raise AIAssistantError("The AI declined this request. Rephrase it as a question about "
+                               "the data, or try another model.")
     # Anthropic Messages API: {"content": [{"type": "text", "text": "..."}], ...}
     try:
         blocks = data.get("content", [])

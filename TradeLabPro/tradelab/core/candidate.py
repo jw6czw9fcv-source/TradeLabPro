@@ -86,6 +86,91 @@ def overlap(candidate_holdings: dict, owned: dict) -> dict:
             "covered_pct": sum((candidate_holdings or {}).values()) * 100.0}
 
 
+def gather(symbol: str, owned_funds=()) -> dict:
+    """Everything the check needs about one symbol, from the data source: ten
+    years of adjusted prices, what it is, its dividend yield, its top holdings,
+    and the top holdings of the funds already owned (for the overlap).
+    Network-bound - call it off the UI thread."""
+    from tradelab.core.etf_metrics import dividend_yield, get_prices
+    from tradelab.data.market_data import get_dividends, get_fund_composition, get_quote_meta
+    prices = get_prices(symbol, "11y")
+    meta = get_quote_meta(symbol)
+    last = float(prices.iloc[-1]) if prices is not None and len(prices) else None
+    comp = get_fund_composition(symbol) or {}
+    return {"prices": prices, "meta": meta,
+            "yield": dividend_yield(get_dividends(symbol), last) if last else None,
+            "holdings": comp.get("top_holdings") or {},
+            "owned_comps": {s: (get_fund_composition(s) or {}).get("top_holdings") or {}
+                            for s in owned_funds}}
+
+
+def facts(symbol: str, prices, meta: dict | None, *, mer=None, mer_source="",
+          dividend_yield=None, holdings=None, owned=None, split=None) -> dict:
+    """The numbers behind the check, for one row of a comparison table -
+    None where there is no basis for a figure."""
+    from tradelab.core.etf_metrics import csa_level, csa_volatility
+    meta = meta or {}
+    single = str(meta.get("quote_type") or "").upper() == "EQUITY"
+    row = {"symbol": symbol, "name": meta.get("name") or symbol,
+           "kind": "stock" if single else "fund", "mer": 0.0 if single else mer,
+           "mer_source": "" if single else mer_source, "stdev": None, "band": None,
+           "worst_fall": None, "worst_when": "", "ret1": None, "ret5": None, "ret10": None,
+           "overlap_pct": None, "adds": "", "suits": placement(symbol, dividend_yield)["suits"],
+           "yield": dividend_yield}
+    if prices is not None and pd.Series(prices).dropna().shape[0] >= 60:
+        stdev, _months = csa_volatility(prices)
+        row["stdev"], row["band"] = stdev, csa_level(stdev)
+        dd = worst_drawdown(prices)
+        if dd:
+            row["worst_fall"] = dd[0]
+            row["worst_when"] = f"{dd[1]:%b %Y}-{dd[2]:%b %Y}"
+        for years in (1, 5, 10):
+            row[f"ret{years}"] = annualized_return(prices, years)
+    if holdings:
+        row["overlap_pct"] = overlap(holdings, owned or {})["pct"]
+    if split:
+        row["adds"] = ", ".join(f"{k} {v:.0%}" for k, v in split.items()) if len(split) > 1 \
+            else next(iter(split))
+    return row
+
+
+# How a shortlist can be ordered: (label, field, highest first?). A missing
+# figure always sorts last - "unknown" is never a win.
+SORTS = [("Lowest fees", "mer", False), ("Smallest worst fall", "worst_fall", True),
+         ("Lowest risk", "stdev", False), ("Best 10-year return", "ret10", True),
+         ("Best 5-year return", "ret5", True), ("Least overlap", "overlap_pct", False)]
+
+
+def rank(rows: list, *labels) -> list:
+    """Rows ordered by one or more SORTS labels, in that priority."""
+    keys = [next(s for s in SORTS if s[0] == label) for label in labels if label]
+
+    def key(row):
+        out = []
+        for _label, fieldname, high in keys:
+            v = row.get(fieldname)
+            out.append((v is None, -(v or 0) if high else (v or 0)))
+        return out
+    return sorted(rows, key=key)
+
+
+def table_text(rows: list) -> str:
+    """The comparison as plain text - what the AI is shown, figure for figure."""
+    def pct(v, d=1):
+        return "n/a" if v is None else f"{v * 100:.{d}f}%"
+    lines = ["symbol | name | kind | fees/yr | risk (yearly swing, CSA band) | worst fall (when) | "
+             "return 1y / 5y / 10y per year | overlap with what is owned | adds to | account that suits"]
+    for r in rows:
+        lines.append(" | ".join([
+            r["symbol"], str(r["name"])[:40], r["kind"], pct(r["mer"], 2),
+            f"{pct(r['stdev'])} ({r['band'] or 'n/a'})",
+            f"{pct(r['worst_fall'], 0)} ({r['worst_when'] or 'n/a'})",
+            f"{pct(r['ret1'])} / {pct(r['ret5'])} / {pct(r['ret10'])}",
+            "n/a" if r["overlap_pct"] is None else f"{r['overlap_pct']:.0f}%",
+            r["adds"] or "n/a", r["suits"]]))
+    return "\n".join(lines)
+
+
 def assess(symbol: str, prices: pd.Series | None, meta: dict | None, *,
            mer: float | None = None, mer_source: str = "", dividend_yield: float | None = None,
            holdings: dict | None = None, owned: dict | None = None,

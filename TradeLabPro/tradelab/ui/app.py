@@ -4813,21 +4813,50 @@ class _AIWorker(QThread):
     done = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, messages, api_key, model, context):
+    def __init__(self, messages, api_key, model, context, system=None):
         super().__init__()
         self._messages = messages
         self._api_key = api_key
         self._model = model
         self._context = context
+        self._system = system
 
     def run(self):
         from tradelab.core import ai_assistant
         try:
-            reply = ai_assistant.ask(self._messages, self._api_key,
-                                     model=self._model, context=self._context)
+            reply = ai_assistant.ask(self._messages, self._api_key, model=self._model,
+                                     system=self._system or ai_assistant.SYSTEM_PROMPT,
+                                     context=self._context)
             self.done.emit(reply)
         except Exception as e:
             self.failed.emit(str(e))
+
+
+class _ShortlistWorker(QThread):
+    """The candidate check's data for several symbols, one after the other,
+    off the UI thread."""
+    done = Signal(object, object)   # {symbol: gathered facts}, [errors]
+
+    def __init__(self, symbols, owned_funds):
+        super().__init__()
+        self.symbols, self.owned_funds = list(symbols), list(owned_funds)
+
+    def run(self):
+        from tradelab.core.candidate import gather
+        out, errors = {}, []
+        for symbol in self.symbols:
+            try:
+                g = gather(symbol, self.owned_funds)
+                if g.get("prices") is None and not (g.get("meta") or {}).get("quote_type"):
+                    errors.append(f"{symbol}: no data (a Canadian listing ends in .TO)")
+                    continue
+                out[symbol] = g
+            except Exception as exc:
+                errors.append(f"{symbol}: {exc}")
+        try:
+            self.done.emit(out, errors)
+        except RuntimeError:
+            pass
 
 
 class AIAssistantPanel(QWidget):
@@ -4835,12 +4864,15 @@ class AIAssistantPanel(QWidget):
     explains scans/charts/setups in plain language using the user's own
     Anthropic API key. Falls back to the offline Trade Coach with no key."""
 
-    def __init__(self):
+    def __init__(self, db=None):
         super().__init__()
+        self.db = db                # for the shortlist: what you own, your Screener
         self._settings = app_settings()
         self._history = []          # [{"role","content"}] chat turns for the API
         self._context = None        # optional symbol indicator snapshot
         self._worker = None
+        self._shortlist_worker = None
+        self.shortlist = []         # fact rows of the last shortlist check
         layout = QVBoxLayout(self)
 
         layout.addWidget(_hint(
@@ -4889,6 +4921,37 @@ class AIAssistantPanel(QWidget):
         ctx_row.addWidget(load_btn); ctx_row.addStretch()
         layout.addLayout(ctx_row)
 
+        # --- shortlist check: several candidates side by side ---
+        box = QGroupBox("Shortlist check - compare candidates side by side")
+        sv = QVBoxLayout(box)
+        srow = QHBoxLayout()
+        self.shortlist_symbols = QLineEdit()
+        self.shortlist_symbols.setPlaceholderText("Symbols, e.g. XEQT.TO VEQT.TO XBB.TO VTI")
+        self.shortlist_symbols.returnPressed.connect(self.check_shortlist)
+        from tradelab.core.candidate import SORTS
+        self.shortlist_sort = QComboBox(); self.shortlist_sort.addItems([s[0] for s in SORTS])
+        self.shortlist_then = QComboBox(); self.shortlist_then.addItems(["(then)"] + [s[0] for s in SORTS])
+        self.shortlist_sort.currentIndexChanged.connect(lambda _i: self._show_shortlist())
+        self.shortlist_then.currentIndexChanged.connect(lambda _i: self._show_shortlist())
+        check_btn = QPushButton("Check all"); check_btn.clicked.connect(self.check_shortlist)
+        explain_btn = QPushButton("Explain with AI"); explain_btn.clicked.connect(self.explain_shortlist)
+        srow.addWidget(self.shortlist_symbols, 1); srow.addWidget(QLabel("Order by"))
+        srow.addWidget(self.shortlist_sort); srow.addWidget(self.shortlist_then)
+        srow.addWidget(check_btn); srow.addWidget(explain_btn)
+        sv.addLayout(srow)
+        self.shortlist_table = QTableWidget(0, 10)
+        self.shortlist_table.setHorizontalHeaderLabels(
+            ["Symbol", "Name", "Fees/yr", "Risk (CSA)", "Worst fall", "1 yr", "5 yr/yr",
+             "10 yr/yr", "Overlap", "Account"])
+        self.shortlist_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.shortlist_table.verticalHeader().setVisible(False)
+        self.shortlist_table.setMinimumHeight(150)
+        sv.addWidget(self.shortlist_table)
+        sv.addWidget(_hint("The candidate check's facts for each symbol, ordered by what you choose. "
+                           "Explain with AI describes what stands out - it never says what to buy. "
+                           + theme.NOT_ADVICE))
+        layout.addWidget(box)
+
         # --- conversation ---
         self.log = QTextEdit(); self.log.setReadOnly(True); layout.addWidget(self.log, 1)
         ask_row = QHBoxLayout()
@@ -4933,6 +4996,101 @@ class AIAssistantPanel(QWidget):
             self._append("System", f"Loaded context for {sym}. Ask a question about it below.")
         except Exception as e:
             self._append("System", f"Could not load {sym}: {e}")
+
+    # -- shortlist --
+    def check_shortlist(self):
+        symbols = []
+        for s in re.split(r"[\s,;]+", self.shortlist_symbols.text().upper()):
+            if s and s not in symbols:
+                symbols.append(s)
+        if not symbols:
+            flag_problem(self.status, "Type the symbols to compare, e.g. XEQT.TO VEQT.TO XBB.TO.")
+            return
+        if self._shortlist_worker is not None and self._shortlist_worker.isRunning():
+            return
+        owned = sorted({str(p["symbol"]).upper() for p in self.db.positions()}) if self.db else []
+        self.status.setText(f"Checking {len(symbols)} symbol(s)…")
+        self._shortlist_worker = _ShortlistWorker(symbols, owned)
+        self._shortlist_worker.done.connect(self._on_shortlist)
+        self._shortlist_worker.start()
+
+    def _on_shortlist(self, gathered, errors):
+        from tradelab.core import allocation_plan as ap
+        from tradelab.core.candidate import facts
+        etfs = self.db.etf_list() if self.db else []
+        overrides = self.db.asset_class_overrides() if self.db else {}
+        positions = self.db.positions() if self.db else []
+        rows = []
+        for symbol, g in gathered.items():
+            meta = g.get("meta") or {}
+            screener = next((r for r in etfs if symbol in {str(r.get("ticker") or "").upper(),
+                                                             str(r.get("yahoo") or "").upper()}), None)
+            if screener and screener.get("mer") is not None:
+                mer, source = screener["mer"], "ETF Screener"
+            elif meta.get("expense_ratio") is not None:
+                mer, source = meta["expense_ratio"], "Yahoo"
+            else:
+                mer, source = None, ""
+            owned = {str(p["symbol"]).upper(): p.get("portfolio") for p in positions}
+            for fund, top in (g.get("owned_comps") or {}).items():
+                for sym in top:
+                    owned.setdefault(str(sym).upper(), f"inside {fund}")
+            holdings = g.get("holdings") or ({symbol: 1.0}
+                                             if str(meta.get("quote_type")).upper() == "EQUITY" else {})
+            rows.append(facts(symbol, g.get("prices"), meta, mer=mer, mer_source=source,
+                              dividend_yield=g.get("yield"), holdings=holdings, owned=owned,
+                              split=ap.split_of(symbol, etfs, overrides.get(symbol), meta)))
+        self.shortlist = rows
+        self._show_shortlist()
+        if errors:
+            flag_problem(self.status, "Could not check: " + "; ".join(errors))
+        else:
+            self.status.setText(f"Checked {len(rows)} symbol(s). Facts, not advice.")
+
+    def _show_shortlist(self):
+        from tradelab.core.candidate import rank
+        then = self.shortlist_then.currentText()
+        rows = rank(self.shortlist, self.shortlist_sort.currentText(),
+                    None if then.startswith("(") else then)
+        self.shortlist = rows
+
+        def pct(v, d=1):
+            return "—" if v is None else f"{v * 100:.{d}f}%"
+        self.shortlist_table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            cells = [row["symbol"], str(row["name"]),
+                     pct(row["mer"], 2) + (f" ({row['mer_source']})" if row["mer_source"] else ""),
+                     f"{pct(row['stdev'])} {row['band'] or ''}".strip(),
+                     f"{pct(row['worst_fall'], 0)} {row['worst_when']}".strip(),
+                     pct(row["ret1"]), pct(row["ret5"]), pct(row["ret10"]),
+                     "—" if row["overlap_pct"] is None else f"{row['overlap_pct']:.0f}%",
+                     row["suits"]]
+            for c, text in enumerate(cells):
+                self.shortlist_table.setItem(r, c, QTableWidgetItem(text))
+        self.shortlist_table.resizeColumnsToContents()
+
+    def explain_shortlist(self):
+        from tradelab.core import ai_assistant
+        from tradelab.core.candidate import table_text
+        if not self.shortlist:
+            flag_problem(self.status, "Check a shortlist first (Check all).")
+            return
+        key = self._current_key()
+        if not ai_assistant.is_configured(key):
+            flag_problem(self.status, "Explain with AI needs your Anthropic API key above. The table "
+                                      "itself works without it.")
+            return
+        question = ("Explain this shortlist: what stands out, the trade-offs, and what deserves a "
+                    "second look.")
+        self._append("You", question)
+        self._history.append({"role": "user", "content": question})
+        self.send_btn.setEnabled(False); self.prompt.setEnabled(False)
+        self.status.setText("Thinking...")
+        self._worker = _AIWorker(list(self._history), key, self.model_combo.currentText(),
+                                 table_text(self.shortlist), system=ai_assistant.SHORTLIST_SYSTEM)
+        self._worker.done.connect(self._on_reply)
+        self._worker.failed.connect(self._on_error)
+        self._worker.start()
 
     # -- chat --
     def _append(self, who, text):
@@ -4999,6 +5157,14 @@ class AIAssistantPanel(QWidget):
                     pass
             worker.wait(3000)
             self._worker = None
+        shortlist = self._shortlist_worker
+        if shortlist is not None:
+            try:
+                shortlist.done.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            shortlist.wait(3000)
+            self._shortlist_worker = None
 
 
 _COACH_GRADE_COLORS = {"A": "#3fb950", "B": "#5fd657", "C": "#e3b341",
@@ -6533,7 +6699,7 @@ class MainWindow(QMainWindow):
         self.home_panel.market_source = self.market_panel.market_summary
         self.market_panel.marketRefreshed.connect(self.home_panel.refresh_market_line)
         self.news_panel = NewsPanel()
-        self.ai_panel = AIAssistantPanel()
+        self.ai_panel = AIAssistantPanel(self.db)
         self.risk_panel = RiskPanel(self.db)
         self.paper_panel = PaperTradingPanel()
         self.journal_panel = JournalPanel(self.chart, self.cfg)
