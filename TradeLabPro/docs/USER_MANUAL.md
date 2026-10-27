@@ -1493,6 +1493,22 @@ sorts last. **Explain with AI** sends the table to the assistant, which says
 what stands out, the trade-offs and what deserves a second look — it is told
 never to say what to buy, sell or hold. The table works without an API key.
 
+**From a Morningstar export.** Morningstar has no free API, so the shortlist
+reads the export of a screener you run on your subscription. In Morningstar's
+screener, add the **Ticker** (*Symbole*) column to the view — without it a fund
+cannot be priced — and export to Excel; French or English exports both work.
+Click **Import Morningstar…** and pick the file: its funds appear in a list
+with their category, star rating, medalist rating, fees, 12-month yield, size
+and start date. Narrow it with the filters — leveraged, inverse and crypto
+products are hidden by default, and you can ask for 3, 4 or 5 stars and a
+fee ceiling — click a column to sort, select a few funds (Ctrl+click) and
+click **Check selected** (or double-click one): they join the shortlist and
+are checked at once. The shortlist then shows each fund's Morningstar rating,
+uses Morningstar's fee when the ETF Screener has none, and can be ordered by
+stars or medalist rating. The last import is kept until you import another.
+A Canadian listing (priced in CAD) is looked up with `.TO`. Morningstar's
+ratings are its own opinion, not a recommendation from TradeLab.
+
 The assistant uses Claude Opus 5.5 by default (Sonnet 5.5 and Haiku 5.5 are in
 the model list); a request the model declines is retried on another model
 automatically, and otherwise says it was declined.

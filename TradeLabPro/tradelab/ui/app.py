@@ -4864,6 +4864,11 @@ class AIAssistantPanel(QWidget):
     explains scans/charts/setups in plain language using the user's own
     Anthropic API key. Falls back to the offline Trade Coach with no key."""
 
+    MS_STARS = [("Any stars", 0), ("3+ stars", 3), ("4+ stars", 4), ("5 stars", 5)]
+    MS_FEES = [("Any fee", None), ("Fee ≤ 0.25%", 0.0025), ("Fee ≤ 0.50%", 0.005),
+               ("Fee ≤ 1.00%", 0.01)]
+    MS_KEY = "Morningstar/export"   # the last import, as JSON
+
     def __init__(self, db=None):
         super().__init__()
         self.db = db                # for the shortlist: what you own, your Screener
@@ -4924,6 +4929,35 @@ class AIAssistantPanel(QWidget):
         # --- shortlist check: several candidates side by side ---
         box = QGroupBox("Shortlist check - compare candidates side by side")
         sv = QVBoxLayout(box)
+
+        # Morningstar: the user's screener export, filtered, feeds the shortlist.
+        mrow = QHBoxLayout()
+        ms_btn = QPushButton("Import Morningstar…"); ms_btn.clicked.connect(self.import_morningstar)
+        self.ms_hide = QCheckBox("Hide leveraged, inverse, crypto"); self.ms_hide.setChecked(True)
+        self.ms_stars = QComboBox(); self.ms_stars.addItems([s[0] for s in self.MS_STARS])
+        self.ms_fee = QComboBox(); self.ms_fee.addItems([f[0] for f in self.MS_FEES])
+        self.ms_hide.toggled.connect(lambda _c: self._show_morningstar())
+        self.ms_stars.currentIndexChanged.connect(lambda _i: self._show_morningstar())
+        self.ms_fee.currentIndexChanged.connect(lambda _i: self._show_morningstar())
+        ms_add = QPushButton("Check selected"); ms_add.clicked.connect(self.add_morningstar_selection)
+        mrow.addWidget(ms_btn); mrow.addWidget(self.ms_hide); mrow.addWidget(self.ms_stars)
+        mrow.addWidget(self.ms_fee); mrow.addWidget(ms_add); mrow.addStretch()
+        sv.addLayout(mrow)
+        self.ms_info = QLabel(""); self.ms_info.setStyleSheet("color:#8a9099;")
+        sv.addWidget(self.ms_info)
+        self.ms_table = QTableWidget(0, 9)
+        self.ms_table.setHorizontalHeaderLabels(
+            ["Symbol", "Name", "Category", "Stars", "Medalist", "Fees/yr", "12-mo yield", "Size",
+             "Since"])
+        self.ms_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.ms_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.ms_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.ms_table.verticalHeader().setVisible(False)
+        self.ms_table.setMinimumHeight(170)
+        self.ms_table.doubleClicked.connect(lambda _i: self.add_morningstar_selection())
+        sv.addWidget(self.ms_table)
+        self.morningstar = self._load_morningstar()
+
         srow = QHBoxLayout()
         self.shortlist_symbols = QLineEdit()
         self.shortlist_symbols.setPlaceholderText("Symbols, e.g. XEQT.TO VEQT.TO XBB.TO VTI")
@@ -4939,18 +4973,20 @@ class AIAssistantPanel(QWidget):
         srow.addWidget(self.shortlist_sort); srow.addWidget(self.shortlist_then)
         srow.addWidget(check_btn); srow.addWidget(explain_btn)
         sv.addLayout(srow)
-        self.shortlist_table = QTableWidget(0, 10)
+        self.shortlist_table = QTableWidget(0, 11)
         self.shortlist_table.setHorizontalHeaderLabels(
             ["Symbol", "Name", "Fees/yr", "Risk (CSA)", "Worst fall", "1 yr", "5 yr/yr",
-             "10 yr/yr", "Overlap", "Account"])
+             "10 yr/yr", "Overlap", "Account", "Morningstar"])
         self.shortlist_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.shortlist_table.verticalHeader().setVisible(False)
         self.shortlist_table.setMinimumHeight(150)
         sv.addWidget(self.shortlist_table)
-        sv.addWidget(_hint("The candidate check's facts for each symbol, ordered by what you choose. "
-                           "Explain with AI describes what stands out - it never says what to buy. "
-                           + theme.NOT_ADVICE))
+        sv.addWidget(_hint("Import a Morningstar screener export (with its Ticker column), filter it, "
+                           "select a few funds (Ctrl+click) and Check selected. The candidate check's "
+                           "facts for each symbol, ordered by what you choose. Explain with AI describes "
+                           "what stands out - it never says what to buy. " + theme.NOT_ADVICE))
         layout.addWidget(box)
+        self._show_morningstar()
 
         # --- conversation ---
         self.log = QTextEdit(); self.log.setReadOnly(True); layout.addWidget(self.log, 1)
@@ -4997,6 +5033,83 @@ class AIAssistantPanel(QWidget):
         except Exception as e:
             self._append("System", f"Could not load {sym}: {e}")
 
+    # -- Morningstar export --
+    def _load_morningstar(self):
+        try:
+            saved = json.loads(self._settings.value(self.MS_KEY, "", type=str) or "{}")
+        except (ValueError, TypeError):
+            saved = {}
+        self._ms_source = saved.get("file", ""), saved.get("imported", "")
+        return saved.get("rows") or []
+
+    def import_morningstar(self, path=None):
+        from datetime import date
+        from tradelab.core.morningstar import read_export
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Import a Morningstar export", str(Path.home() / "Downloads"),
+                "Morningstar export (*.xlsx *.csv);;All files (*.*)")
+            if not path:
+                return
+        try:
+            rows = read_export(path)
+        except Exception as exc:
+            flag_problem(self.status, f"Could not read {Path(path).name}: {exc}")
+            return
+        self.morningstar = json.loads(json.dumps(rows, default=str))   # dates as text, as saved
+        self._ms_source = Path(path).name, date.today().isoformat()
+        self._settings.setValue(self.MS_KEY, json.dumps(
+            {"file": self._ms_source[0], "imported": self._ms_source[1], "rows": self.morningstar}))
+        self._show_morningstar()
+        self.status.setText(f"Imported {len(rows)} funds from {Path(path).name}.")
+
+    def _show_morningstar(self):
+        from tradelab.core.morningstar import pick
+        rows = pick(self.morningstar, hide_speculative=self.ms_hide.isChecked(),
+                    min_stars=self.MS_STARS[self.ms_stars.currentIndex()][1],
+                    max_mer=self.MS_FEES[self.ms_fee.currentIndex()][1])
+        t = self.ms_table
+        t.setSortingEnabled(False)
+        t.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            size = row.get("size")
+            cells = [table_item(row["yahoo"]), table_item(row["name"]),
+                     table_item(row.get("category") or ""),
+                     table_item(row.get("stars") or 0, True, row.get("stars") or "—"),
+                     table_item(row.get("medal_rank") or 0, True, row.get("medalist") or "—"),
+                     table_item(row["mer"] if row.get("mer") is not None else 99, True,
+                                "—" if row.get("mer") is None else f"{row['mer']:.2%}"),
+                     table_item(row.get("yield12") or 0, True,
+                                "—" if row.get("yield12") is None else f"{row['yield12']:.2%}"),
+                     table_item(size or 0, True, "—" if not size else
+                                f"{fmt_large(size)} {row.get('size_currency') or ''}".strip()),
+                     table_item(row.get("inception") or "")]
+            for c, item in enumerate(cells):
+                t.setItem(r, c, item)
+        t.setSortingEnabled(True)
+        t.resizeColumnsToContents()
+        t.setVisible(bool(self.morningstar))
+        if self.morningstar:
+            name, imported = self._ms_source
+            self.ms_info.setText(f"{len(rows)} of {len(self.morningstar)} funds shown - from {name}, "
+                                 f"imported {imported}. Morningstar's ratings are its opinion.")
+        else:
+            self.ms_info.setText("No Morningstar export imported yet.")
+
+    def add_morningstar_selection(self):
+        picked = []
+        for idx in self.ms_table.selectionModel().selectedRows():
+            item = self.ms_table.item(idx.row(), 0)
+            if item and item.text() not in picked:
+                picked.append(item.text())
+        if not picked:
+            flag_problem(self.status, "Select funds in the Morningstar list first "
+                                      "(Ctrl+click or Shift+click for several).")
+            return
+        current = [s for s in re.split(r"[\s,;]+", self.shortlist_symbols.text().upper()) if s]
+        self.shortlist_symbols.setText(" ".join(current + [s for s in picked if s not in current]))
+        self.check_shortlist()
+
     # -- shortlist --
     def check_shortlist(self):
         symbols = []
@@ -5020,13 +5133,18 @@ class AIAssistantPanel(QWidget):
         etfs = self.db.etf_list() if self.db else []
         overrides = self.db.asset_class_overrides() if self.db else {}
         positions = self.db.positions() if self.db else []
+        from tradelab.core.morningstar import by_symbol
+        ratings = by_symbol(self.morningstar)
         rows = []
         for symbol, g in gathered.items():
             meta = g.get("meta") or {}
+            m = ratings.get(symbol) or {}
             screener = next((r for r in etfs if symbol in {str(r.get("ticker") or "").upper(),
                                                              str(r.get("yahoo") or "").upper()}), None)
             if screener and screener.get("mer") is not None:
                 mer, source = screener["mer"], "ETF Screener"
+            elif m.get("mer") is not None:
+                mer, source = m["mer"], "Morningstar"
             elif meta.get("expense_ratio") is not None:
                 mer, source = meta["expense_ratio"], "Yahoo"
             else:
@@ -5037,9 +5155,11 @@ class AIAssistantPanel(QWidget):
                     owned.setdefault(str(sym).upper(), f"inside {fund}")
             holdings = g.get("holdings") or ({symbol: 1.0}
                                              if str(meta.get("quote_type")).upper() == "EQUITY" else {})
-            rows.append(facts(symbol, g.get("prices"), meta, mer=mer, mer_source=source,
-                              dividend_yield=g.get("yield"), holdings=holdings, owned=owned,
-                              split=ap.split_of(symbol, etfs, overrides.get(symbol), meta)))
+            row = facts(symbol, g.get("prices"), meta, mer=mer, mer_source=source,
+                        dividend_yield=g.get("yield"), holdings=holdings, owned=owned,
+                        split=ap.split_of(symbol, etfs, overrides.get(symbol), meta))
+            row.update({k: m.get(k) for k in ("stars", "medalist", "medal_rank")})
+            rows.append(row)
         self.shortlist = rows
         self._show_shortlist()
         if errors:
@@ -5048,7 +5168,7 @@ class AIAssistantPanel(QWidget):
             self.status.setText(f"Checked {len(rows)} symbol(s). Facts, not advice.")
 
     def _show_shortlist(self):
-        from tradelab.core.candidate import rank
+        from tradelab.core.candidate import morningstar_text, rank
         then = self.shortlist_then.currentText()
         rows = rank(self.shortlist, self.shortlist_sort.currentText(),
                     None if then.startswith("(") else then)
@@ -5064,7 +5184,7 @@ class AIAssistantPanel(QWidget):
                      f"{pct(row['worst_fall'], 0)} {row['worst_when']}".strip(),
                      pct(row["ret1"]), pct(row["ret5"]), pct(row["ret10"]),
                      "—" if row["overlap_pct"] is None else f"{row['overlap_pct']:.0f}%",
-                     row["suits"]]
+                     row["suits"], morningstar_text(row) or "—"]
             for c, text in enumerate(cells):
                 self.shortlist_table.setItem(r, c, QTableWidgetItem(text))
         self.shortlist_table.resizeColumnsToContents()

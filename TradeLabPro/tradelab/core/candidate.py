@@ -138,7 +138,8 @@ def facts(symbol: str, prices, meta: dict | None, *, mer=None, mer_source="",
 # figure always sorts last - "unknown" is never a win.
 SORTS = [("Lowest fees", "mer", False), ("Smallest worst fall", "worst_fall", True),
          ("Lowest risk", "stdev", False), ("Best 10-year return", "ret10", True),
-         ("Best 5-year return", "ret5", True), ("Least overlap", "overlap_pct", False)]
+         ("Best 5-year return", "ret5", True), ("Least overlap", "overlap_pct", False),
+         ("Most Morningstar stars", "stars", True), ("Best medalist rating", "medal_rank", True)]
 
 
 def rank(rows: list, *labels) -> list:
@@ -159,7 +160,8 @@ def table_text(rows: list) -> str:
     def pct(v, d=1):
         return "n/a" if v is None else f"{v * 100:.{d}f}%"
     lines = ["symbol | name | kind | fees/yr | risk (yearly swing, CSA band) | worst fall (when) | "
-             "return 1y / 5y / 10y per year | overlap with what is owned | adds to | account that suits"]
+             "return 1y / 5y / 10y per year | overlap with what is owned | adds to | account that suits | "
+             "Morningstar rating (from the user's export)"]
     for r in rows:
         lines.append(" | ".join([
             r["symbol"], str(r["name"])[:40], r["kind"], pct(r["mer"], 2),
@@ -167,8 +169,18 @@ def table_text(rows: list) -> str:
             f"{pct(r['worst_fall'], 0)} ({r['worst_when'] or 'n/a'})",
             f"{pct(r['ret1'])} / {pct(r['ret5'])} / {pct(r['ret10'])}",
             "n/a" if r["overlap_pct"] is None else f"{r['overlap_pct']:.0f}%",
-            r["adds"] or "n/a", r["suits"]]))
+            r["adds"] or "n/a", r["suits"], morningstar_text(r) or "n/a"]))
     return "\n".join(lines)
+
+
+def morningstar_text(row: dict) -> str:
+    """ "4 stars, Silver" from an imported Morningstar export - "" when none."""
+    parts = []
+    if row.get("stars"):
+        parts.append(f"{row['stars']} star" + ("s" if row["stars"] > 1 else ""))
+    if row.get("medalist"):
+        parts.append(row["medalist"])
+    return ", ".join(parts)
 
 
 def assess(symbol: str, prices: pd.Series | None, meta: dict | None, *,
