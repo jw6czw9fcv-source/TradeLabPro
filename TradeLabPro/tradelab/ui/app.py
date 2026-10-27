@@ -5046,8 +5046,16 @@ class AIAssistantPanel(QWidget):
         from datetime import date
         from tradelab.core.morningstar import read_export
         if not path:
+            # Start on the newest export in Downloads - the browser names a second
+            # download "sanstitre (1).xlsx", easy to miss beside the first.
+            downloads = Path.home() / "Downloads"
+            try:
+                newest = max((p for p in downloads.iterdir() if p.suffix.lower() in (".xlsx", ".csv")),
+                             key=lambda p: p.stat().st_mtime, default=None)
+            except OSError:
+                newest = None
             path, _ = QFileDialog.getOpenFileName(
-                self, "Import a Morningstar export", str(Path.home() / "Downloads"),
+                self, "Import a Morningstar export", str(newest or downloads),
                 "Morningstar export (*.xlsx *.csv);;All files (*.*)")
             if not path:
                 return
