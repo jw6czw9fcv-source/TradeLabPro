@@ -10,93 +10,93 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.63.0** | *unreleased* | Morningstar, in the shortlist |
-| **2.62.0** | *unreleased* | A shortlist, side by side |
-| **2.61.0** | *unreleased* | Less tax, by the numbers |
-| **2.60.0** | *unreleased* | What fees cost, and a word when it matters |
-| **2.59.0** | *unreleased* | Cash to work, money out in order |
-| **2.58.0** | *unreleased* | The facts before you buy |
-| **2.57.2** | *unreleased* | In sync with IBKR |
-| **2.57.1** | *unreleased* | One download at a time |
-| **2.57.0** | *unreleased* | Your plan, checked |
-| **2.56.0** | *unreleased* | How much is safe to spend |
-| **2.55.0** | *unreleased* | What you own, day by day |
-| **2.54.1** | *unreleased* | Where the cash went |
-| **2.54.0** | *unreleased* | Kept current, kept safe |
-| **2.53.0** | *unreleased* | Waiting for a pension, counted |
-| **2.52.0** | *unreleased* | The OAS clawback, counted |
-| **2.51.0** | *unreleased* | Retirement, with its taxes paid |
-| **2.50.0** | *unreleased* | An IBKR account, imported whole |
-| **2.49.0** | *unreleased* | The whole account, at today's prices |
-| **2.48.0** | *unreleased* | Your numbers, in Claude |
-| **2.47.0** | *unreleased* | Fresh when you open it |
-| **2.46.1** | *unreleased* | One rule for a bad download |
-| **2.46.0** | *unreleased* | What inflation is actually for |
-| **2.45.0** | *unreleased* | The order returns arrive in |
-| **2.44.0** | *unreleased* | How long the money lasts |
-| **2.43.0** | *unreleased* | Fill an allocation by a rule you set |
-| **2.42.0** | *unreleased* | One risk rating, the published one |
-| **2.41.0** | *unreleased* | Your ETF workbook, in the app |
-| **2.40.0** | *unreleased* | Your workplace retirement plan, fund by fund |
-| **2.39.0** | *unreleased* | Your account year-to-date, charted on Home |
-| **2.38.0** | *unreleased* | Coming up: scheduled dates for your holdings |
-| **2.37.0** | *unreleased* | Look-through exposure |
-| **2.36.0** | *unreleased* | Home dashboard, market context and a consistency pass |
-| **2.35.0** | *unreleased* | Dividend tracker |
-| **2.34.1** | *unreleased* | Analytics matches IBKR: native prices, CAD totals, honest data |
-| **2.34.0** | *unreleased* | Portfolio analytics + IBKR position import |
-| **2.33.0** | *unreleased* | Seasonality analysis |
-| **2.32.0** | *unreleased* | AI Trading Coach |
-| **2.31.0** | *unreleased* | Faster Market refresh: batched downloads, both markets cached |
-| **2.30.0** | *unreleased* | Advance/decline breadth on the Market tab |
-| **2.29.0** | *unreleased* | Country-first Market tab; chart Measure tool; Esc-to-cursor |
-| **2.28.0** | *unreleased* | Scanner sectors separated by market (US / Canada) |
-| **2.27.0** | *unreleased* | Chart date axis + Scanner sector baskets |
-| **2.26.0** | *unreleased* | Market favorability: global indices + sector ranking |
-| **2.25.0** | *unreleased* | Stop/bracket orders + News feed |
-| **2.24.0** | *unreleased* | Notes tab, two-row tabs, chart full screen |
-| **2.23.0** | *unreleased* | Links page (Phase 16) |
-| **2.22.0** | *unreleased* | Data-source abstraction (Phase 15) |
-| **2.21.0** | *unreleased* | Heatmap ↔ Scanner link (Phase 14) |
-| **2.20.0** | *unreleased* | Chart Replay (Phase 13) |
-| **2.19.0** | *unreleased* | Risk & Position Sizing (Phase 12) |
-| **2.18.4** | *unreleased* | Journal: click a header to sort |
-| **2.18.3** | *unreleased* | Journal: show trade dates |
-| **2.18.2** | *unreleased* | Fix "no trades found" on IBKR import |
-| **2.18.1** | *unreleased* | IBKR Flex credentials: save & keep |
-| **2.18.0** | *unreleased* | Trade Journal (Phase 11) |
-| **2.17.0** | *unreleased* | Heatmap: group by Industry/Country, Theme baskets, World map |
-| **2.16.0** | *unreleased* | Heatmap: Portfolio map + performance periods |
-| **2.15.0** | *unreleased* | ETF / Index heatmaps |
-| **2.14.3** | *unreleased* | Company names on the chart (KO, CAT, JPM…) |
-| **2.14.2** | *unreleased* | Heatmap auto-refresh |
-| **2.14.1** | *unreleased* | Window fits the screen (layout fix) |
-| **2.14.0** | *unreleased* | Market Heatmap |
-| **2.13.0** | *unreleased* | Alerts Engine |
-| **2.12.5** | *unreleased* | Manual: Open as PDF |
-| **2.12.4** | *unreleased* | Manual zoom follows screenshots |
-| **2.12.3** | *unreleased* | Manual window polish |
-| **2.12.2** | *unreleased* | User manual screenshots |
-| **2.12.1** | *unreleased* | Help menu |
-| **2.12.0** | *unreleased* | Paper Trading (Phase 8) |
-| **2.11.0** | *unreleased* | AI Assistant (Phase 7, option b: LLM-backed) |
-| **2.10.1** | *unreleased* | Company name on chart + sub-pane safeguard |
-| **2.10.0** | *unreleased* | Plugin SDK (Phase 6) |
-| **2.9.0** | *unreleased* | No-code Strategy Builder + configurable indicators (Phase 5) |
-| **2.8.0** | *unreleased* | Backtesting Lab (Phase 4) |
-| **2.7.0** | *unreleased* | Market Dashboard (Phase 3) |
-| **2.6.1** | *unreleased* | Junk-symbol filter fix |
-| **2.6.0** | *unreleased* | Sector/market-cap context, multi-strategy scanning, confidence scoring (SCN-030) |
-| **2.5.0** | *unreleased* | Custom Technical Filter Builder (SCN-026) |
-| **2.4.1** | *unreleased* | Chart workspace multi-tab UX |
-| **2.4.0** | *unreleased* | Scanner Preset Manager upgrade (SCN-029) |
-| **2.3.2** | *unreleased* | Chart Engine rendering fixes, part 2 (BUY/SELL, crosshair, multi-tab) |
-| **2.3.1** | *unreleased* | Chart Engine rendering fixes (found during first manual test of Phase 1) |
-| **2.3.0** | *unreleased* | Scanner result color standard (Phase 2 kickoff, SCN-027) |
-| **2.2.2** | *unreleased* | Installer fix, part 2 (all launchers protected) |
-| **2.2.1** | *unreleased* | Installer fix |
-| **2.2.0** | *unreleased* | Chart Engine Phase 1 (PyQtGraph rewrite) |
-| **2.1.11** | *unreleased* | Exchange UI Cleanup |
+| **2.63.0** | 2026-10-26 | Morningstar, in the shortlist |
+| **2.62.0** | 2026-10-26 | A shortlist, side by side |
+| **2.61.0** | 2026-10-26 | Less tax, by the numbers |
+| **2.60.0** | 2026-10-25 | What fees cost, and a word when it matters |
+| **2.59.0** | 2026-10-25 | Cash to work, money out in order |
+| **2.58.0** | 2026-10-19 | The facts before you buy |
+| **2.57.2** | 2026-10-18 | In sync with IBKR |
+| **2.57.1** | 2026-10-18 | One download at a time |
+| **2.57.0** | 2026-10-18 | Your plan, checked |
+| **2.56.0** | 2026-10-17 | How much is safe to spend |
+| **2.55.0** | 2026-10-17 | What you own, day by day |
+| **2.54.1** | 2026-10-14 | Where the cash went |
+| **2.54.0** | 2026-10-13 | Kept current, kept safe |
+| **2.53.0** | 2026-10-13 | Waiting for a pension, counted |
+| **2.52.0** | 2026-10-11 | The OAS clawback, counted |
+| **2.51.0** | 2026-10-11 | Retirement, with its taxes paid |
+| **2.50.0** | 2026-10-10 | An IBKR account, imported whole |
+| **2.49.0** | 2026-10-10 | The whole account, at today's prices |
+| **2.48.0** | 2026-10-08 | Your numbers, in Claude |
+| **2.47.0** | 2026-10-06 | Fresh when you open it |
+| **2.46.1** | 2026-10-05 | One rule for a bad download |
+| **2.46.0** | 2026-08-15 | What inflation is actually for |
+| **2.45.0** | 2026-08-15 | The order returns arrive in |
+| **2.44.0** | 2026-08-12 | How long the money lasts |
+| **2.43.0** | 2026-08-12 | Fill an allocation by a rule you set |
+| **2.42.0** | 2026-08-11 | One risk rating, the published one |
+| **2.41.0** | 2026-08-10 | Your ETF workbook, in the app |
+| **2.40.0** | 2026-08-08 | Your workplace retirement plan, fund by fund |
+| **2.39.0** | 2026-08-08 | Your account year-to-date, charted on Home |
+| **2.38.0** | 2026-07-28 | Coming up: scheduled dates for your holdings |
+| **2.37.0** | 2026-07-27 | Look-through exposure |
+| **2.36.0** | 2026-07-27 | Home dashboard, market context and a consistency pass |
+| **2.35.0** | 2026-07-26 | Dividend tracker |
+| **2.34.1** | 2026-07-26 | Analytics matches IBKR: native prices, CAD totals, honest data |
+| **2.34.0** | 2026-07-24 | Portfolio analytics + IBKR position import |
+| **2.33.0** | 2026-07-23 | Seasonality analysis |
+| **2.32.0** | 2026-07-23 | AI Trading Coach |
+| **2.31.0** | 2026-07-23 | Faster Market refresh: batched downloads, both markets cached |
+| **2.30.0** | 2026-07-23 | Advance/decline breadth on the Market tab |
+| **2.29.0** | 2026-07-23 | Country-first Market tab; chart Measure tool; Esc-to-cursor |
+| **2.28.0** | 2026-07-22 | Scanner sectors separated by market (US / Canada) |
+| **2.27.0** | 2026-07-22 | Chart date axis + Scanner sector baskets |
+| **2.26.0** | 2026-07-22 | Market favorability: global indices + sector ranking |
+| **2.25.0** | 2026-07-21 | Stop/bracket orders + News feed |
+| **2.24.0** | 2026-07-21 | Notes tab, two-row tabs, chart full screen |
+| **2.23.0** | 2026-07-21 | Links page (Phase 16) |
+| **2.22.0** | 2026-07-20 | Data-source abstraction (Phase 15) |
+| **2.21.0** | 2026-07-20 | Heatmap ↔ Scanner link (Phase 14) |
+| **2.20.0** | 2026-07-20 | Chart Replay (Phase 13) |
+| **2.19.0** | 2026-07-20 | Risk & Position Sizing (Phase 12) |
+| **2.18.4** | 2026-07-19 | Journal: click a header to sort |
+| **2.18.3** | *no tag of its own* | Journal: show trade dates |
+| **2.18.2** | *no tag of its own* | Fix "no trades found" on IBKR import |
+| **2.18.1** | *no tag of its own* | IBKR Flex credentials: save & keep |
+| **2.18.0** | 2026-07-19 | Trade Journal (Phase 11) |
+| **2.17.0** | 2026-07-19 | Heatmap: group by Industry/Country, Theme baskets, World map |
+| **2.16.0** | 2026-07-19 | Heatmap: Portfolio map + performance periods |
+| **2.15.0** | *no tag of its own* | ETF / Index heatmaps |
+| **2.14.3** | 2026-07-19 | Company names on the chart (KO, CAT, JPM…) |
+| **2.14.2** | 2026-07-19 | Heatmap auto-refresh |
+| **2.14.1** | 2026-07-19 | Window fits the screen (layout fix) |
+| **2.14.0** | 2026-07-19 | Market Heatmap |
+| **2.13.0** | *no tag of its own* | Alerts Engine |
+| **2.12.5** | 2026-07-15 | Manual: Open as PDF |
+| **2.12.4** | 2026-07-15 | Manual zoom follows screenshots |
+| **2.12.3** | 2026-07-15 | Manual window polish |
+| **2.12.2** | 2026-07-15 | User manual screenshots |
+| **2.12.1** | 2026-07-15 | Help menu |
+| **2.12.0** | 2026-07-15 | Paper Trading (Phase 8) |
+| **2.11.0** | 2026-07-14 | AI Assistant (Phase 7, option b: LLM-backed) |
+| **2.10.1** | 2026-07-14 | Company name on chart + sub-pane safeguard |
+| **2.10.0** | 2026-07-14 | Plugin SDK (Phase 6) |
+| **2.9.0** | 2026-07-13 | No-code Strategy Builder + configurable indicators (Phase 5) |
+| **2.8.0** | 2026-07-13 | Backtesting Lab (Phase 4) |
+| **2.7.0** | 2026-07-13 | Market Dashboard (Phase 3) |
+| **2.6.1** | 2026-07-13 | Junk-symbol filter fix |
+| **2.6.0** | 2026-07-13 | Sector/market-cap context, multi-strategy scanning, confidence scoring (SCN-030) |
+| **2.5.0** | 2026-07-12 | Custom Technical Filter Builder (SCN-026) |
+| **2.4.1** | 2026-07-11 | Chart workspace multi-tab UX |
+| **2.4.0** | *no tag of its own* | Scanner Preset Manager upgrade (SCN-029) |
+| **2.3.2** | *no tag of its own* | Chart Engine rendering fixes, part 2 (BUY/SELL, crosshair, multi-tab) |
+| **2.3.1** | *no tag of its own* | Chart Engine rendering fixes (found during first manual test of Phase 1) |
+| **2.3.0** | *no tag of its own* | Scanner result color standard (Phase 2 kickoff, SCN-027) |
+| **2.2.2** | 2026-07-11 | Installer fix, part 2 (all launchers protected) |
+| **2.2.1** | *no tag of its own* | Installer fix |
+| **2.2.0** | *no tag of its own* | Chart Engine Phase 1 (PyQtGraph rewrite) |
+| **2.1.11** | *no tag of its own* | Exchange UI Cleanup |
 
 87 releases. Two kinds of row carry no date, and they are not the same
 thing: **unreleased** is newer than every tag — built and committed, not yet
