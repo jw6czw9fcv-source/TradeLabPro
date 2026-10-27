@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.63.0 - Morningstar, in the shortlist
+
+### Added
+- **Morningstar import** (AI Assist): reads the Excel or CSV export of a screener run on your Morningstar subscription, in French or English. Its funds appear in a list with category, star rating, medalist rating, fees, 12-month yield, size and start date; leveraged, inverse and crypto products are hidden by default, and the list can be narrowed to 3, 4 or 5 stars and a fee ceiling. Select a few funds and **Check selected**: they join the shortlist and are checked at once. The shortlist shows each fund's Morningstar rating, uses Morningstar's fee when the ETF Screener has none, and can be ordered by stars or medalist rating. A Canadian listing is looked up with .TO. The last import is kept, and the file picker opens on the newest export in Downloads. An export without the Ticker column says how to add it.
+
+### Verified
+- Full pytest suite passes (1629), including 6 new tests: a French Excel export (prices, sizes and dates written the French way, a Canadian listing, a class suffix, a duplicate), an English CSV, an export without symbols, the filters, ordering by the ratings, and the AI Assist list imported, filtered, saved and fed into the shortlist. Checked on a real export (124 funds).
+
 ## 2.62.0 - A shortlist, side by side
 
 ### Added

@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.62.0
+Current version: 2.63.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.63.0 (Morningstar, in the shortlist)
+- **Morningstar import:** `core/morningstar.py` - `read_export` (xlsx via zipfile/ElementTree, no openpyxl; CSV sniffed; French or English headers, "9,92 $ US" / "1,12 G $" / "19 oct. 2018"; symbol column required; duplicates dropped), `yahoo_symbol` (CAD -> .TO, ZSP.U -> ZSP-U.TO), `pick` (speculative categories hidden, min stars, max MER), `by_symbol`. "Rendement sur 12 mois" is a yield (`yield12`).
+- **AI Assist:** Morningstar list (filters, sortable, Check selected / double-click), last import saved in settings `Morningstar/export`; shortlist rows carry stars / medalist, MER Screener -> Morningstar -> Yahoo; `SORTS` + "Most Morningstar stars" / "Best medalist rating"; `candidate.morningstar_text` in the table and `table_text`.
 
 ## Completed in 2.62.0 (A shortlist, side by side)
 - **Shortlist check** (AI Assist tab): `candidate.gather` / `facts` / `rank` (`SORTS`, unknowns last) / `table_text`; `_ShortlistWorker`; "Explain with AI" with `ai_assistant.SHORTLIST_SYSTEM` (no buy/sell/hold, no best choice, no amounts). `AIAssistantPanel(db)`.
