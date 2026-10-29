@@ -115,6 +115,7 @@ from tradelab.ui.panels.home import (  # noqa: E402,F401
 from tradelab.ui.panels.retirement_sim import (  # noqa: E402,F401
     RetirementSimPanel)
 from tradelab.ui.panels.plan import PlanPanel  # noqa: E402,F401
+from tradelab.ui.panels.guide import GuidePanel  # noqa: E402,F401
 from tradelab.ui.common import (  # noqa: E402,F401
     _build_condition_row,
     _row_to_condition)
@@ -6804,6 +6805,7 @@ class MainWindow(QMainWindow):
         self.etf_screener_panel = EtfScreenerPanel(self.db, self.chart, self.cfg)
         self.retirement_sim_panel = RetirementSimPanel(self.db)
         self.plan_panel = PlanPanel(self.db)
+        self.guide_panel = GuidePanel(self.db, on_plan_changed=self._on_guide_plan)
         self.portfolio_panel = PortfolioPanel(self.db, self.chart, self.cfg)
         self.portfolio_panel.synced.connect(self._on_ibkr_synced)
         self.analytics_panel = PortfolioAnalyticsPanel(self.db, self.chart, self.cfg)
@@ -6849,7 +6851,9 @@ class MainWindow(QMainWindow):
         # a tall tab can't force the window past the screen height):
         #   1) Market context  2) Find & watch  3) Analyze, size & act
         #   4) Track & review  5) Research/build  6) Utilities.
-        tabs.addTab(_scroll_tab(self.home_panel), "Home")              # your book at a glance
+        tabs.addTab(_scroll_tab(self.guide_panel), "Guide")            # new here? start here
+        home_page = _scroll_tab(self.home_panel)
+        tabs.addTab(home_page, "Home")                                # your book at a glance
         tabs.addTab(_scroll_tab(self.market_panel), "Market")          # is it a good day?
         tabs.addTab(self._heatmap_page, "Heatmap")                    # where's the strength?
         tabs.addTab(_scroll_tab(self.news_panel), "News")             # any catalysts?
@@ -6880,6 +6884,9 @@ class MainWindow(QMainWindow):
         # the manual viewer scrolls itself, and nesting the two fights over the
         # wheel.
         tabs.addTab(self.help_panel, "Help")                          # how does this work?
+        # The Guide opens first until a level has been chosen; then Home does.
+        if self.guide_panel.has_profile():
+            tabs.setCurrentWidget(home_page)
         # UI-001: keep the left control area usable.  The splitter may still
         # be resized, but the scanner/watchlist/settings column will not
         # collapse to an unreadable width.
@@ -7270,6 +7277,14 @@ class MainWindow(QMainWindow):
             except Exception:
                 log.exception("Refresh after the IBKR sync failed")
 
+    def _on_guide_plan(self):
+        """The Guide set a portfolio's target mix: the Plan tab shows it."""
+        try:
+            self.plan_panel._load_targets()
+            self.plan_panel.recompute()
+        except Exception:
+            log.exception("Showing the Guide's level in the Plan tab failed")
+
     def _warm_market(self):
         try:
             self.market_panel.refresh_market()
@@ -7297,6 +7312,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.plan_panel.shutdown()
+        except Exception:
+            pass
+        try:
+            self.guide_panel.shutdown()   # the levels' history download
         except Exception:
             pass
         try:

@@ -138,6 +138,44 @@ to paste into the browser.
 9. **Ask.** Open **AI Assist**, load a symbol's context, and ask "what is this
    setup telling me?" in plain English.
 
+### New to investing? The Guide
+
+The **Guide** tab, first in the row, takes a beginner through it one step at a
+time. It opens first until you have chosen a level; after that the app opens
+on Home.
+
+**Step 1 — About you.** When you will need the money, how big a drop you could
+live through without selling (a 20% drop turns $10,000 into $8,000 for a
+while), which accounts you have, the amount to invest now and each month, and
+two checks that usually come first: a few months of expenses set aside, and no
+expensive debt.
+
+**Step 2 — Your level.** Six levels, from *Capital first* (mostly cash and
+bonds) to *All stocks*. For each:
+
+- **May return a year** — from the FP Canada / Institute of Financial Planning
+  2026 Projection Assumption Guidelines (fixed income 3.2%, short-term 2.4%,
+  Canadian equities 6.3%, U.S. 6.4%, international 6.6%, emerging 7.5%), for a
+  typical global index mix, less a 0.25% index-fund fee. The guidelines are
+  made for 10 years or more.
+- **Your money in … years** — what your amounts would grow to at that rate.
+- **Worst fall, worst 12 months, worst 5 years** — what really happened since
+  2002, measured on Canadian-listed index funds that stand in for stocks and
+  bonds (XIU, XSP, XIN, XBB — not picks), rebalanced monthly.
+
+The level your answers point to is marked ★: the highest one whose real worst
+fall stays within the drop you said you could live with, and no higher than
+your horizon allows — with the reason in a sentence. You can pick another; a
+level above your answers says what that means, and the choice stays yours.
+
+**Use this level** saves your choice and, for the portfolio you pick, sets it
+as that portfolio's target mix in the **Plan** tab — which then shows how far
+the portfolio is from it and what getting there would take.
+
+There is no level with a high return and no risk: the more a level may earn,
+the further it has fallen in bad years. The Guide shows both side by side so
+the choice is made knowing it. It never names a security or says buy or sell.
+
 ---
 
 ## 4. Home
