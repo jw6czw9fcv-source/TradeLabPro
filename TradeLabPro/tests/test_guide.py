@@ -48,7 +48,8 @@ def test_measured_records_get_worse_with_more_stocks(prices):
     assert falls == sorted(falls, reverse=True) and falls[-1] < -0.3
     assert m[0]["worst_fall"] > -0.05             # mostly cash and bonds
     assert m[-1]["worst_when"] and m[-1]["since"] == "2010"
-    assert m[-1]["cagr"] > m[0]["cagr"] and m[-1]["cagr_10y"] is not None
+    assert m[-1]["cagr"] > m[0]["cagr"]
+    assert [w["cagr"] is not None for w in m[-1]["windows"]] == [True] * len(g.WINDOWS)
     assert g.measure({}) is None
     assert g.measure({"XIU.TO": prices["XIU.TO"]}) is None
     no_fx = {k: v for k, v in prices.items() if k != g.FX}
@@ -67,9 +68,23 @@ def test_us_listed_funds_are_counted_in_cad():
 def test_the_projection_rate_follows_the_chosen_basis(prices):
     m = g.measure(prices)
     assert g.rate_for(5, 0, m) == m[5]["cagr"]
-    assert g.rate_for(5, 1, m) == m[5]["cagr_10y"]
-    assert g.rate_for(5, 2, m) == g.expected_return(1, 0, 0)
+    for i in range(len(g.WINDOWS)):
+        assert g.rate_for(5, i, m) == m[5]["windows"][i]["cagr"]
+    assert g.rate_for(5, g.GUIDELINES_BASIS, m) == g.expected_return(1, 0, 0)
     assert g.rate_for(5, 0, None) == g.expected_return(1, 0, 0)   # no record yet
+
+
+def test_a_shorter_period_leaves_an_older_crash_out(prices):
+    """The crash is in year 4 of 15: the last 10 years do not have it."""
+    m = g.measure(prices)[5]
+    whole, ten, three, one = m["windows"]
+    assert whole["worst_fall"] == m["worst_fall"] < -0.3
+    assert ten["worst_fall"] > whole["worst_fall"]
+    assert ten["worst_when"] != whole["worst_when"]
+    assert three["worst_5y"] is None and one["worst_5y"] is None
+    assert one["worst_12m"] == pytest.approx(one["cagr"])          # one year is one 12 months
+    # The guidelines basis shows the whole record beside it.
+    assert g.window_record(5, g.GUIDELINES_BASIS, g.measure(prices)) == whole
 
 
 def test_the_level_follows_the_tighter_of_horizon_and_drop(prices):
@@ -122,11 +137,16 @@ def test_the_guide_tab_sets_the_plan(tmp_path, prices):
     assert panel.recommended == 5
     assert panel.table.item(5, 0).text().startswith("★")
     assert panel.table.item(5, 2).text().endswith("%")              # since the start
-    assert panel.table.item(5, 5).text().startswith("$")
-    assert panel.table.item(5, 6).text().endswith(")")
-    real = panel.table.item(5, 5).text()
-    panel.basis.setCurrentIndex(2)                                   # the guidelines
-    assert panel.table.item(5, 5).text() != real
+    assert panel.table.item(5, 4).text().startswith("$")
+    assert panel.table.item(5, 5).text().endswith(")")
+    whole_fall = panel.table.item(5, 5).text()
+    real = panel.table.item(5, 4).text()
+    panel.basis.setCurrentIndex(1)                                   # the last 10 years
+    assert panel.table.item(5, 5).text() != whole_fall
+    assert "10 years" in panel.table.horizontalHeaderItem(5).text()
+    panel.basis.setCurrentIndex(g.GUIDELINES_BASIS)
+    assert panel.table.item(5, 4).text() != real
+    assert panel.table.item(5, 5).text() == whole_fall
     panel.table.selectRow(3)
     panel.portfolio.setCurrentText("REER Test")
     panel.use_level()
@@ -138,4 +158,63 @@ def test_the_guide_tab_sets_the_plan(tmp_path, prices):
     assert again.has_profile() and "Balanced" in again.saved_line.text()
     assert again.horizon.currentIndex() == 5 and again.lump.value() == 10_000
     settings.remove(PROFILE_KEY)
+    db.conn.close()
+
+
+def test_every_level_has_one_fund_candidates_and_the_blocks_cover_each_class():
+    assert set(g.ONE_FUND) == set(range(len(g.LEVELS)))
+    assert all(s.endswith(".TO") for syms in g.ONE_FUND.values() for s in syms)
+    assert {b[1] for b in g.BLOCKS} == {"cash", "bonds", "stocks"}
+    assert g.block_amounts(3, 300_000) == {"stocks": 180_000, "bonds": 120_000, "cash": 0}
+
+
+def test_step_3_checks_the_funds_side_by_side(tmp_path, prices, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from tradelab.data.database import Database
+    from tradelab.settings import app_settings
+    from tradelab.ui.panels import guide as guide_panel
+    QApplication.instance() or QApplication([])
+    started = []
+
+    class NoNetwork:
+        def __init__(self, symbols):
+            started.append(list(symbols))
+            self.done = type("S", (), {"connect": lambda *_a: None})()
+
+        def start(self):
+            pass
+
+        def isRunning(self):
+            return False
+
+    monkeypatch.setattr(guide_panel, "_FundsWorker", NoNetwork)
+    monkeypatch.setattr(guide_panel.GuidePanel, "_facts_cache", {})
+    settings = app_settings(); settings.remove(guide_panel.PROFILE_KEY)
+    db = Database(path=tmp_path / "f.db")
+    panel = guide_panel.GuidePanel(db, settings=settings)
+    panel.measured = g.measure(prices)
+    panel.horizon.setCurrentIndex(5); panel.drop.setCurrentIndex(3)
+    panel.lump.setValue(300_000)
+    panel.show_levels()
+    panel.show_funds()
+    level = panel.recommended
+    assert started[-1] == g.ONE_FUND[level]
+    assert g.LEVELS[level][0] in panel.funds_intro.text() and "$" in panel.funds_intro.text()
+
+    def info(name, mer):
+        return {"prices": _prices(3, 0.006, 0.03), "yield": 0.02,
+                "meta": {"quote_type": "ETF", "name": name, "expense_ratio": mer}}
+    syms = g.ONE_FUND[level]
+    panel._on_funds({syms[0]: info("A", 0.0025), syms[1]: info("B", 0.0018)}, [])
+    panel.fund_sort.setCurrentText("Lowest fees")
+    assert panel.fund_table.rowCount() == 2
+    assert panel.fund_table.item(0, 0).text() == syms[1]            # the cheaper first
+    assert "(Yahoo)" in panel.fund_table.item(0, 2).text()
+
+    panel.fund_set.setCurrentIndex(5)                               # Canadian dividend stocks
+    assert started[-1] == g.BLOCKS[4][2] and "dividends" in panel.fund_note.text()
+    panel.fund_extra.setText("vfv.to")
+    panel.check_funds()
+    assert started[-1][-1] == "VFV.TO"
+    settings.remove(guide_panel.PROFILE_KEY)
     db.conn.close()

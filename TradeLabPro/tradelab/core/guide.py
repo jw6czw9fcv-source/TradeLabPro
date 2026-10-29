@@ -55,8 +55,12 @@ FX = "CAD=X"          # Yahoo's USD/CAD: Canadian dollars per US dollar
 BOND_PROXY = "XBB.TO"
 PROXIES = list(STOCK_PROXIES) + [BOND_PROXY, FX]
 
-# Which yearly return the projection uses.
-BASES = ["What it did since 2003", "What it did the last 10 years", "Planners' guidelines (cautious)"]
+# The stretches of history shown: (label, months - None for all of it), and
+# which yearly return the projection uses - one of them, or the guidelines.
+WINDOWS = [("since 2003", None), ("the last 10 years", 120), ("the last 3 years", 36),
+           ("the last year", 12)]
+BASES = [f"What it did {label}" for label, _m in WINDOWS] + ["Planners' guidelines (cautious)"]
+GUIDELINES_BASIS = len(WINDOWS)
 
 # The questions: (label, value) choices.
 HORIZONS = [("Less than 2 years", 1, 0), ("2 to 3 years", 3, 1), ("4 to 5 years", 5, 2),
@@ -67,6 +71,49 @@ DROPS = [("No drop at all", 0.0, "no drop at all"), ("About 5%", 0.05, "a drop o
          ("More than 30%", 0.50, "a drop of more than 30%")]
 ACCOUNTS = ["CELI and REER", "CELI only", "REER only", "Neither yet"]
 YES_NO = ["Yes", "No", "Not sure"]
+
+
+# Step 3 - the funds. Canadian-listed index ETFs, three providers side by side
+# (iShares, Vanguard, BMO, plus the savings ETFs), each checked to exist on
+# Yahoo on 2026-10-28. They are the candidates the guide checks, not picks:
+# the person orders them by what matters to them and chooses.
+ONE_FUND = {0: ["CASH.TO", "PSA.TO", "ZMMK.TO"],
+            1: ["XINC.TO", "VCIP.TO"],
+            2: ["XCNS.TO", "VCNS.TO", "ZCON.TO"],
+            3: ["XBAL.TO", "VBAL.TO", "ZBAL.TO"],
+            4: ["XGRO.TO", "VGRO.TO", "ZGRO.TO"],
+            5: ["XEQT.TO", "VEQT.TO", "ZEQT.TO"]}
+ONE_FUND_NOTE = {
+    0: "Savings and money-market ETFs: high-interest bank deposits or short loans - the "
+       "yield follows the Bank of Canada's rate, and the price barely moves.",
+}
+# (name, class, symbols, what it is)
+BLOCKS = [
+    ("Cash and savings", "cash", ["CASH.TO", "PSA.TO", "ZMMK.TO"],
+     "High-interest deposits and money market: the price barely moves; the yield follows "
+     "the Bank of Canada."),
+    ("Short-term bonds", "bonds", ["XSB.TO", "VSB.TO", "ZSB.TO"],
+     "Canadian bonds of 1 to 5 years: small moves when rates change - suits money needed soon."),
+    ("Bonds, all terms", "bonds", ["XBB.TO", "VAB.TO", "ZAG.TO"],
+     "All Canadian bonds: a little more yield, bigger drops when rates rise (as in 2022)."),
+    ("Canadian stocks", "stocks", ["XIC.TO", "VCN.TO", "ZCN.TO"],
+     "The whole Canadian market, about 200+ companies."),
+    ("Canadian dividend stocks", "stocks", ["VDY.TO", "XEI.TO", "ZDV.TO"],
+     "Canadian companies paying high dividends - still stocks: they rise and fall with the "
+     "market, and are concentrated in a few sectors (banks, energy, telecoms)."),
+    ("U.S. stocks (S&P 500)", "stocks", ["VFV.TO", "XUS.TO", "ZSP.TO"],
+     "The 500 largest US companies, in CAD (unhedged)."),
+    ("International stocks", "stocks", ["XEF.TO", "VIU.TO", "ZEA.TO"],
+     "Developed markets outside North America: Europe, Japan, Australia."),
+    ("Global stocks, outside Canada", "stocks", ["XAW.TO", "VXC.TO"],
+     "The US, international and emerging markets in one fund."),
+]
+
+
+def block_amounts(level: int, amount: float) -> dict:
+    """{class: dollars} of the level's mix for an amount."""
+    _name, st, bo, ca = LEVELS[level]
+    return {"stocks": amount * st, "bonds": amount * bo, "cash": amount * ca}
 
 
 def expected_return(stocks: float, bonds: float, cash: float, fee: float = INDEX_FEE) -> float:
@@ -107,44 +154,60 @@ def level_returns(rets: pd.DataFrame, stocks: float, bonds: float, cash: float) 
     return stocks * stock_part + bonds * rets[BOND_PROXY] + cash * cash_m
 
 
+def stats(r: pd.Series) -> dict:
+    """One stretch of monthly returns: its yearly return, worst fall from a
+    high (counting from the stretch's start), worst and best 12 months and
+    worst 5 years a year - None where the stretch is too short for one."""
+    start = r.index[0] - pd.offsets.MonthEnd(1)
+    growth = pd.concat([pd.Series([1.0], index=[start]), (1 + r).cumprod()])
+    years = len(r) / 12
+    dd = growth / growth.cummax() - 1
+    trough = dd.idxmin()
+    peak = growth.loc[:trough].idxmax()
+    y1 = (growth / growth.shift(12) - 1).dropna()
+    y5 = ((growth / growth.shift(60)) ** (1 / 5) - 1).dropna()
+    return {"cagr": float(growth.iloc[-1] ** (1 / years) - 1),
+            "worst_fall": float(min(dd.min(), 0.0)),
+            "worst_when": f"{peak:%b %Y}-{trough:%b %Y}" if dd.min() < 0 else "",
+            "worst_12m": float(y1.min()) if len(y1) else None,
+            "best_12m": float(y1.max()) if len(y1) else None,
+            "worst_5y": float(y5.min()) if len(y5) else None,
+            "loss_5y": float((y5 < 0).mean()) if len(y5) else None}
+
+
 def measure(prices: dict) -> list | None:
-    """Each level's real record since the proxies' common start: worst fall
-    (and when), worst and best 12 months, worst 5 years a year, and how many
-    5-year stretches lost money. None when the prices are missing."""
+    """Each level's real record since the proxies' common start (the top-level
+    figures - what the recommendation reads, 2008 included) and over each of
+    WINDOWS (`windows`, in the same order). None when the prices are missing."""
     rets = monthly_returns(prices)
     if rets.empty or any(s not in rets for s in PROXIES if s != FX) or len(rets) < 120:
         return None
     out = []
     for name, st, bo, ca in LEVELS:
         r = level_returns(rets, st, bo, ca)
-        growth = (1 + r).cumprod()
-        years = len(r) / 12
-        last10 = growth.iloc[-1] / growth.iloc[-121] if len(growth) > 120 else None
-        dd = growth / growth.cummax() - 1
-        trough = dd.idxmin()
-        peak = growth.loc[:trough].idxmax()
-        y1 = growth / growth.shift(12) - 1
-        y5 = (growth / growth.shift(60)) ** (1 / 5) - 1
-        out.append({"name": name, "worst_fall": float(min(dd.min(), 0.0)),
-                    "worst_when": f"{peak:%b %Y}-{trough:%b %Y}" if dd.min() < 0 else "",
-                    "worst_12m": float(y1.min()), "best_12m": float(y1.max()),
-                    "worst_5y": float(y5.min()), "loss_5y": float((y5 < 0).mean()),
-                    "cagr": float(growth.iloc[-1] ** (1 / years) - 1),
-                    "cagr_10y": None if last10 is None else float(last10 ** 0.1 - 1),
+        windows = [stats(r if months is None else r.iloc[-months:]) for _label, months in WINDOWS]
+        out.append({"name": name, **windows[0], "windows": windows,
                     "since": f"{rets.index[0]:%Y}"})
     return out
 
 
 def rate_for(level: int, basis: int, measured: list | None) -> float:
-    """The yearly return the projection uses: what the level really did (since
-    the start, or the last 10 years) or the guidelines - the guidelines too
-    when there is no record."""
+    """The yearly return the projection uses: what the level really did over
+    the chosen stretch, or the guidelines - the guidelines too when there is
+    no record."""
     m = measured[level] if measured else None
-    if basis == 0 and m:
-        return m["cagr"]
-    if basis == 1 and m and m.get("cagr_10y") is not None:
-        return m["cagr_10y"]
+    if m and basis < len(WINDOWS):
+        return m["windows"][basis]["cagr"]
     return expected_return(*LEVELS[level][1:])
+
+
+def window_record(level: int, basis: int, measured: list | None) -> dict | None:
+    """The record shown beside the chosen basis - the whole history when the
+    basis is the guidelines."""
+    if not measured:
+        return None
+    m = measured[level]
+    return m["windows"][basis] if basis < len(WINDOWS) else m["windows"][0]
 
 
 def recommend(horizon_idx: int, drop_idx: int, measured: list | None = None) -> dict:

@@ -153,7 +153,12 @@ expensive debt.
 **Step 2 — Your level.** Six levels, from *Capital first* (mostly cash and
 bonds) to *All stocks*. For each:
 
-- **Did a year since 2003 / last 10 years** — what the mix really returned, in
+- **Period** — since 2003, the last 10 years, the last 3 years or the last
+  year: the return, the worst fall, the worst 12 months and your money all
+  follow it, so a shorter period leaves older crashes out. A period under 10
+  years shows a warning: it can miss a crash entirely. The level marked ★ is
+  always judged on the worst fall since 2003, 2008 included.
+- **Did a year** — what the mix really returned over the period, in
   CAD: index funds in a typical global mix (Canada 30%, US 45%, international
   20%, emerging 5% — XIU, SPY, EFA, EEM, the US-listed ones at each month's
   exchange rate, unhedged as an all-in-one ETF holds them), bonds XBB, cash at
@@ -164,12 +169,11 @@ bonds) to *All stocks*. For each:
   Guidelines (fixed income 3.2%, short-term 2.4%, Canadian equities 6.3%, U.S.
   6.4%, international 6.6%, emerging 7.5%), less a 0.25% index-fund fee. They
   are deliberately cautious — well under what these mixes did since 2003.
-- **Your money in … years** — what your amounts would grow to, at the return
-  you pick in **Grow my money at**: what the level did since 2003 (the
-  default), what it did the last 10 years (unusually strong for US stocks), or
-  the planners' guidelines.
-- **Worst fall, worst 12 months, worst 5 years** — what really happened since
-  2003, on the same funds.
+- **Your money in … years** — what your amounts would grow to, at the
+  period's return, or at the guidelines' when **Period** is set to the
+  planners' guidelines.
+- **Worst fall, worst 12 months, worst 5 years** — what really happened over
+  the period, on the same funds (worst 5 years needs a period longer than 5).
 
 The level your answers point to is marked ★: the highest one whose real worst
 fall stays within the drop you said you could live with, and no higher than
@@ -179,6 +183,28 @@ level above your answers says what that means, and the choice stays yours.
 **Use this level** saves your choice and, for the portfolio you pick, sets it
 as that portfolio's target mix in the **Plan** tab — which then shows how far
 the portfolio is from it and what getting there would take.
+
+**Step 3 — Your funds.** What could hold your level, side by side. The intro
+line splits your amount by the level's mix (for example, Balanced on $300,000:
+stocks $180,000, bonds $120,000). **Show** picks what to compare:
+
+- **One fund for your level** — the all-in-one ETFs that hold that mix and
+  rebalance themselves (XEQT / VEQT / ZEQT for all stocks, XGRO / VGRO / ZGRO
+  for growth, XBAL / VBAL / ZBAL for balanced, and so on; savings ETFs for
+  Capital first). The least work, and the fewest ways to go wrong.
+- **Building blocks** — one fund per part: cash and savings, short-term bonds,
+  bonds of all terms, Canadian stocks, Canadian dividend stocks, U.S. stocks
+  (S&P 500), international stocks, global stocks outside Canada. More control;
+  you rebalance them yourself, and the Plan tab shows when. Each block says in
+  a line what it is — dividend ETFs, for one, are still stocks.
+
+Each candidate is checked on real prices, dividends included, in CAD: fees,
+risk band, worst fall and when, returns over 1, 5 and 10 years, the account
+that suits it, and its Morningstar rating when you have imported an export.
+**Also check** adds other symbols to the comparison; **Order by** sorts by fees,
+worst fall, risk, returns or ratings. The candidates are broad index ETFs from
+iShares, Vanguard and BMO — TradeLab orders them by what you choose and never
+picks one.
 
 There is no level with a high return and no risk: the more a level may earn,
 the further it has fallen in bad years. The Guide shows both side by side so
