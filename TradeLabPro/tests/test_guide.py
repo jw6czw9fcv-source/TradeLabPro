@@ -10,10 +10,10 @@ from tradelab.core import guide as g
 
 
 def _prices(seed, drift, vol, crash=0.0):
-    """Ten years of month-ends with an optional crash in year 4."""
+    """Fifteen years of month-ends with an optional crash in year 4."""
     rng = np.random.default_rng(seed)
-    idx = pd.date_range("2010-01-31", periods=120, freq="ME")
-    r = rng.normal(drift, vol, 120)
+    idx = pd.date_range("2010-01-31", periods=180, freq="ME")
+    r = rng.normal(drift, vol, 180)
     r[40:46] += crash / 6
     return pd.Series(100 * np.cumprod(1 + r), index=idx)
 
@@ -22,6 +22,7 @@ def _prices(seed, drift, vol, crash=0.0):
 def prices():
     out = {s: _prices(i, 0.007, 0.04, crash=-0.5) for i, s in enumerate(g.STOCK_PROXIES)}
     out[g.BOND_PROXY] = _prices(9, 0.002, 0.008)
+    out[g.FX] = pd.Series(1.30, index=out[g.BOND_PROXY].index)
     return out
 
 
@@ -47,8 +48,28 @@ def test_measured_records_get_worse_with_more_stocks(prices):
     assert falls == sorted(falls, reverse=True) and falls[-1] < -0.3
     assert m[0]["worst_fall"] > -0.05             # mostly cash and bonds
     assert m[-1]["worst_when"] and m[-1]["since"] == "2010"
+    assert m[-1]["cagr"] > m[0]["cagr"] and m[-1]["cagr_10y"] is not None
     assert g.measure({}) is None
     assert g.measure({"XIU.TO": prices["XIU.TO"]}) is None
+    no_fx = {k: v for k, v in prices.items() if k != g.FX}
+    assert g.measure(no_fx) is None
+
+
+def test_us_listed_funds_are_counted_in_cad():
+    idx = pd.date_range("2020-01-31", periods=3, freq="ME")
+    rets = g.monthly_returns({"SPY": pd.Series([100, 100, 100], index=idx),
+                              "XIU.TO": pd.Series([10, 10, 10], index=idx),
+                              g.FX: pd.Series([1.30, 1.43, 1.43], index=idx)})
+    assert rets["SPY"].iloc[0] == pytest.approx(0.10)     # the US dollar rose 10%
+    assert rets["XIU.TO"].iloc[0] == 0
+
+
+def test_the_projection_rate_follows_the_chosen_basis(prices):
+    m = g.measure(prices)
+    assert g.rate_for(5, 0, m) == m[5]["cagr"]
+    assert g.rate_for(5, 1, m) == m[5]["cagr_10y"]
+    assert g.rate_for(5, 2, m) == g.expected_return(1, 0, 0)
+    assert g.rate_for(5, 0, None) == g.expected_return(1, 0, 0)   # no record yet
 
 
 def test_the_level_follows_the_tighter_of_horizon_and_drop(prices):
@@ -100,8 +121,12 @@ def test_the_guide_tab_sets_the_plan(tmp_path, prices):
         panel._worker.wait(1)
     assert panel.recommended == 5
     assert panel.table.item(5, 0).text().startswith("★")
-    assert panel.table.item(5, 3).text().startswith("$")
-    assert panel.table.item(5, 4).text().endswith(")")
+    assert panel.table.item(5, 2).text().endswith("%")              # since the start
+    assert panel.table.item(5, 5).text().startswith("$")
+    assert panel.table.item(5, 6).text().endswith(")")
+    real = panel.table.item(5, 5).text()
+    panel.basis.setCurrentIndex(2)                                   # the guidelines
+    assert panel.table.item(5, 5).text() != real
     panel.table.selectRow(3)
     panel.portfolio.setCurrentText("REER Test")
     panel.use_level()

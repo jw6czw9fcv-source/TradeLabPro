@@ -153,15 +153,23 @@ expensive debt.
 **Step 2 — Your level.** Six levels, from *Capital first* (mostly cash and
 bonds) to *All stocks*. For each:
 
-- **May return a year** — from the FP Canada / Institute of Financial Planning
-  2026 Projection Assumption Guidelines (fixed income 3.2%, short-term 2.4%,
-  Canadian equities 6.3%, U.S. 6.4%, international 6.6%, emerging 7.5%), for a
-  typical global index mix, less a 0.25% index-fund fee. The guidelines are
-  made for 10 years or more.
-- **Your money in … years** — what your amounts would grow to at that rate.
+- **Did a year since 2003 / last 10 years** — what the mix really returned, in
+  CAD: index funds in a typical global mix (Canada 30%, US 45%, international
+  20%, emerging 5% — XIU, SPY, EFA, EEM, the US-listed ones at each month's
+  exchange rate, unhedged as an all-in-one ETF holds them), bonds XBB, cash at
+  a steady 2.4%, rebalanced monthly. They stand in for stocks and bonds and are
+  not picks.
+- **Guidelines, a year** — what financial planners are told to assume: the FP
+  Canada / Institute of Financial Planning 2026 Projection Assumption
+  Guidelines (fixed income 3.2%, short-term 2.4%, Canadian equities 6.3%, U.S.
+  6.4%, international 6.6%, emerging 7.5%), less a 0.25% index-fund fee. They
+  are deliberately cautious — well under what these mixes did since 2003.
+- **Your money in … years** — what your amounts would grow to, at the return
+  you pick in **Grow my money at**: what the level did since 2003 (the
+  default), what it did the last 10 years (unusually strong for US stocks), or
+  the planners' guidelines.
 - **Worst fall, worst 12 months, worst 5 years** — what really happened since
-  2002, measured on Canadian-listed index funds that stand in for stocks and
-  bonds (XIU, XSP, XIN, XBB — not picks), rebalanced monthly.
+  2003, on the same funds.
 
 The level your answers point to is marked ★: the highest one whose real worst
 fall stays within the drop you said you could live with, and no higher than

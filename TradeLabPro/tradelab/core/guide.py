@@ -4,16 +4,19 @@ them (Qt-free, offline-testable).
 Step 1 asks a few plain questions - when the money is needed, which accounts,
 how much, and how big a drop the person could live through without selling.
 Step 2 lays out six levels, from capital first to all stocks, each with:
-- what it may return a year, from the FP Canada / Institute of Financial
-  Planning 2026 Projection Assumption Guidelines (published 2026-04-16:
-  short-term 2.4%, fixed income 3.2%, Canadian equities 6.3%, U.S. 6.4%,
-  international developed 6.6%, emerging markets 7.5%, inflation 2.1%),
-  less an index fund's fee;
-- what it actually did, measured on real prices since 2002: its worst fall,
-  its worst and best 12 months, its worst 5 years.
-Those two together are the honest answer to "how much can I make, and how
-much can I lose" - the guidelines are for projections of 10 years or more,
-and nothing here is a promise.
+- what it really returned a year, measured in CAD on real prices since 2003
+  (October, when the exchange-rate history starts) and over the last 10
+  years - unhedged, as an all-in-one ETF holds its foreign stocks;
+- what it really lost: its worst fall, worst 12 months and worst 5 years;
+- for comparison, what planners are told to assume: the FP Canada /
+  Institute of Financial Planning 2026 Projection Assumption Guidelines
+  (published 2026-04-16: short-term 2.4%, fixed income 3.2%, Canadian
+  equities 6.3%, U.S. 6.4%, international developed 6.6%, emerging markets
+  7.5%, inflation 2.1%), less an index fund's fee. They are deliberately
+  cautious - well under what these mixes did since 2003 - and the person
+  chooses which return the projection uses.
+Return and loss side by side are the honest answer to "how much can I make,
+and how much can I lose"; the past is no promise.
 
 The level the answers point to is the highest one whose measured worst fall
 the person said they could live with, and no higher than their horizon
@@ -42,12 +45,18 @@ LEVELS = [("Capital first", 0.0, 0.3, 0.7),
           ("Growth", 0.8, 0.2, 0.0),
           ("All stocks", 1.0, 0.0, 0.0)]
 
-# How each level is measured: Canadian-listed index funds with a history back
-# to 2001 (the US and international ones hedged to CAD), cash at a steady
+# How each level is measured: index funds with long histories in the same
+# regional weights, the US-listed ones turned into CAD at each month's
+# exchange rate (unhedged, as XEQT or VEQT hold them), cash at a steady
 # short-term rate. They stand in for the asset classes; they are not picks.
-STOCK_PROXIES = {"XIU.TO": 0.30, "XSP.TO": 0.45, "XIN.TO": 0.25}
+STOCK_PROXIES = {"XIU.TO": 0.30, "SPY": 0.45, "EFA": 0.20, "EEM": 0.05}
+USD_PROXIES = ("SPY", "EFA", "EEM")
+FX = "CAD=X"          # Yahoo's USD/CAD: Canadian dollars per US dollar
 BOND_PROXY = "XBB.TO"
-PROXIES = list(STOCK_PROXIES) + [BOND_PROXY]
+PROXIES = list(STOCK_PROXIES) + [BOND_PROXY, FX]
+
+# Which yearly return the projection uses.
+BASES = ["What it did since 2003", "What it did the last 10 years", "Planners' guidelines (cautious)"]
 
 # The questions: (label, value) choices.
 HORIZONS = [("Less than 2 years", 1, 0), ("2 to 3 years", 3, 1), ("4 to 5 years", 5, 2),
@@ -76,16 +85,19 @@ def future_value(lump: float, monthly: float, years: float, rate: float) -> floa
 
 
 def monthly_returns(prices: dict) -> pd.DataFrame:
-    """Month-end returns of each proxy, on the months they all have."""
-    frames = {}
+    """Month-end returns of each proxy in CAD, on the months they all have."""
+    ends = {}
     for sym, s in (prices or {}).items():
-        p = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        p = pd.to_numeric(pd.Series(s), errors="coerce").dropna() if s is not None else pd.Series()
         if p.empty:
             continue
         p.index = pd.to_datetime(p.index)
-        frames[sym] = p.resample("ME").last().pct_change()
-    df = pd.DataFrame(frames).dropna()
-    return df
+        ends[sym] = p.resample("ME").last()
+    if FX not in ends:
+        return pd.DataFrame()
+    frames = {sym: (p * ends[FX] if sym in USD_PROXIES else p).pct_change()
+              for sym, p in ends.items() if sym != FX}
+    return pd.DataFrame(frames).dropna()
 
 
 def level_returns(rets: pd.DataFrame, stocks: float, bonds: float, cash: float) -> pd.Series:
@@ -100,12 +112,14 @@ def measure(prices: dict) -> list | None:
     (and when), worst and best 12 months, worst 5 years a year, and how many
     5-year stretches lost money. None when the prices are missing."""
     rets = monthly_returns(prices)
-    if rets.empty or any(s not in rets for s in PROXIES) or len(rets) < 72:
+    if rets.empty or any(s not in rets for s in PROXIES if s != FX) or len(rets) < 120:
         return None
     out = []
     for name, st, bo, ca in LEVELS:
         r = level_returns(rets, st, bo, ca)
         growth = (1 + r).cumprod()
+        years = len(r) / 12
+        last10 = growth.iloc[-1] / growth.iloc[-121] if len(growth) > 120 else None
         dd = growth / growth.cummax() - 1
         trough = dd.idxmin()
         peak = growth.loc[:trough].idxmax()
@@ -115,8 +129,22 @@ def measure(prices: dict) -> list | None:
                     "worst_when": f"{peak:%b %Y}-{trough:%b %Y}" if dd.min() < 0 else "",
                     "worst_12m": float(y1.min()), "best_12m": float(y1.max()),
                     "worst_5y": float(y5.min()), "loss_5y": float((y5 < 0).mean()),
+                    "cagr": float(growth.iloc[-1] ** (1 / years) - 1),
+                    "cagr_10y": None if last10 is None else float(last10 ** 0.1 - 1),
                     "since": f"{rets.index[0]:%Y}"})
     return out
+
+
+def rate_for(level: int, basis: int, measured: list | None) -> float:
+    """The yearly return the projection uses: what the level really did (since
+    the start, or the last 10 years) or the guidelines - the guidelines too
+    when there is no record."""
+    m = measured[level] if measured else None
+    if basis == 0 and m:
+        return m["cagr"]
+    if basis == 1 and m and m.get("cagr_10y") is not None:
+        return m["cagr_10y"]
+    return expected_return(*LEVELS[level][1:])
 
 
 def recommend(horizon_idx: int, drop_idx: int, measured: list | None = None) -> dict:
@@ -133,9 +161,13 @@ def recommend(horizon_idx: int, drop_idx: int, measured: list | None = None) -> 
         cap_d = drop_idx
     level = min(cap_h, cap_d)
     reasons = []
-    if cap_h <= cap_d:
+    top = len(LEVELS) - 1
+    if cap_h <= cap_d and cap_h < top:
         reasons.append(f"you need the money in {HORIZONS[horizon_idx][0].lower()}, and a "
                        f"higher level can take longer than that to recover from a fall")
+    elif level == top:
+        reasons.append(f"you need the money in {HORIZONS[horizon_idx][0].lower()} - time to "
+                       f"wait out a fall")
     if cap_d <= cap_h:
         if fits == []:
             reasons.append(f"you want {phrase}, and {LEVELS[0][0]} is the level that fell least "

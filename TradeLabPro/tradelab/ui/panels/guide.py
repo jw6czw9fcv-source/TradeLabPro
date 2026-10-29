@@ -114,10 +114,17 @@ class GuidePanel(QWidget):
         v.addWidget(self.steps)
         self.status = StatusLabel(); self.status.setStyleSheet("color:#8a9099;")
         v.addWidget(self.status)
-        self.table = QTableWidget(len(g.LEVELS), 7)
+        brow = QHBoxLayout()
+        brow.addWidget(QLabel("Grow my money at"))
+        self.basis = QComboBox(); self.basis.addItems(g.BASES)
+        self.basis.currentIndexChanged.connect(lambda _i: self._show())
+        brow.addWidget(self.basis); brow.addStretch()
+        v.addLayout(brow)
+        self.table = QTableWidget(len(g.LEVELS), 9)
         self.table.setHorizontalHeaderLabels(
-            ["Level", "Stocks / bonds / cash", "May return a year*", "Your money in … years*",
-             "Worst fall (when)", "Worst 12 months", "Worst 5 years, a year"])
+            ["Level", "Stocks / bonds / cash", "Did a year since 2003", "Last 10 years, a year",
+             "Guidelines, a year*", "Your money in … years", "Worst fall (when)",
+             "Worst 12 months", "Worst 5 years, a year"])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -136,12 +143,15 @@ class GuidePanel(QWidget):
         bv.addWidget(use); bv.addStretch()
         v.addWidget(box)
         v.addWidget(_hint(
-            f"* From the {g.GUIDELINES} - a typical global index mix, less a "
-            f"{g.INDEX_FEE:.2%} index-fund fee - from today's amounts. The guidelines are for 10 "
-            f"years or more; over a shorter time a GIC's actual rate tells more. The worst "
-            f"falls are what really happened, measured on Canadian-listed index funds "
-            f"({', '.join(g.PROXIES)}) since 2002, rebalanced monthly: they stand in for "
-            f"stocks and bonds and are not picks. The past is no promise. " + theme.NOT_ADVICE))
+            "What each level really did, in CAD, since October 2003 and over the last 10 years: "
+            "index funds in a typical global mix (Canada 30%, US 45%, international 20%, "
+            "emerging 5% - XIU, SPY, EFA, EEM, the US-listed ones at each month's exchange rate, "
+            "unhedged as an all-in-one ETF holds them), bonds XBB, cash at a steady 2.4%, "
+            "rebalanced monthly. They stand in for stocks and bonds and are not picks. "
+            f"* The {g.GUIDELINES} are what financial planners are told to assume - deliberately "
+            f"cautious, less a {g.INDEX_FEE:.2%} fee. The last 10 years were unusually strong "
+            "for US stocks; the past is no promise, and the worst falls are the price of the "
+            "returns. " + theme.NOT_ADVICE))
         row = QHBoxLayout()
         back = QPushButton("←  Back"); back.clicked.connect(lambda: self.pages.setCurrentIndex(0))
         row.addWidget(back); row.addStretch()
@@ -154,7 +164,7 @@ class GuidePanel(QWidget):
         self._fill_portfolios()
         self._show()
         if self.measured is None and (self._worker is None or not self._worker.isRunning()):
-            self.status.setText("Measuring what each level really did since 2002…")
+            self.status.setText("Measuring what each level really did since 2003…")
             self._worker = _GuideWorker()
             self._worker.done.connect(self._on_measured)
             self._worker.start()
@@ -172,7 +182,8 @@ class GuidePanel(QWidget):
         return {"horizon": self.horizon.currentIndex(), "drop": self.drop.currentIndex(),
                 "accounts": self.accounts.currentText(), "lump": self.lump.value(),
                 "monthly": self.monthly.value(), "emergency": self.emergency.currentText(),
-                "debt": self.debt.currentText()}
+                "debt": self.debt.currentText(),
+                "basis": self.basis.currentIndex() if hasattr(self, "basis") else 0}
 
     def _show(self):
         a = self.answers()
@@ -184,14 +195,17 @@ class GuidePanel(QWidget):
         self.steps.setText("Before you start: " + " ".join(steps) if steps else "")
         self.steps.setVisible(bool(steps))
         years = g.HORIZONS[a["horizon"]][1]
-        self.table.setHorizontalHeaderItem(3, QTableWidgetItem(f"Your money in {years} years*"))
+        self.table.setHorizontalHeaderItem(5, QTableWidgetItem(f"Your money in {years} years"))
         invested = a["lump"] + a["monthly"] * 12 * years
         for r, (name, st, bo, ca) in enumerate(g.LEVELS):
             m = self.measured[r] if self.measured else None
-            rate = g.expected_return(st, bo, ca)
+            rate = g.rate_for(r, a["basis"], self.measured)
             fv = g.future_value(a["lump"], a["monthly"], years, rate)
             cells = [("★ " if r == rec["level"] else "") + name,
-                     f"{st:.0%} / {bo:.0%} / {ca:.0%}", f"{rate:.1%}",
+                     f"{st:.0%} / {bo:.0%} / {ca:.0%}",
+                     f"{m['cagr']:.1%}" if m else "…",
+                     f"{m['cagr_10y']:.1%}" if m and m.get("cagr_10y") is not None else "…",
+                     f"{g.expected_return(st, bo, ca):.1%}",
                      f"{_money(fv)} (put in {_money(invested)})" if invested else "—",
                      f"{m['worst_fall']:.0%} ({m['worst_when']})" if m else "…",
                      f"{m['worst_12m']:+.0%}" if m else "…",
@@ -259,7 +273,7 @@ class GuidePanel(QWidget):
         except (ValueError, TypeError):
             saved = {}
         a = saved.get("answers") or {}
-        for combo, key in ((self.horizon, "horizon"), (self.drop, "drop")):
+        for combo, key in ((self.horizon, "horizon"), (self.drop, "drop"), (self.basis, "basis")):
             if isinstance(a.get(key), int):
                 combo.setCurrentIndex(a[key])
         for combo, key in ((self.accounts, "accounts"), (self.emergency, "emergency"),
