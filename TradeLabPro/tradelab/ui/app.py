@@ -3180,6 +3180,35 @@ def save_sync_targets(targets, settings=None):
     s.sync()
 
 
+def carry_portfolio_settings(old, new, settings=None):
+    """A portfolio renamed (`new`) or removed (None): the settings that name it
+    follow - its startup sync, the Plan tab's trading portfolio, the Guide's
+    choice."""
+    from tradelab.ui.panels.guide import PROFILE_KEY
+    from tradelab.ui.panels.plan import TRADING_KEY
+    s = settings or app_settings()
+    targets = []
+    for t in sync_targets(s):
+        if t["portfolio"] == old:
+            if new:
+                targets.append({**t, "portfolio": new})
+        else:
+            targets.append(t)
+    save_sync_targets(targets, s)
+    if str(s.value(IBKR_SYNC_PORTFOLIO_KEY, "") or "") == old:
+        s.setValue(IBKR_SYNC_PORTFOLIO_KEY, new or "")
+    if str(s.value(TRADING_KEY, "") or "") == old:
+        s.setValue(TRADING_KEY, new or "")
+    try:
+        profile = json.loads(s.value(PROFILE_KEY, "", type=str) or "{}")
+    except (TypeError, ValueError):
+        profile = {}
+    if profile.get("portfolio") == old:
+        profile["portfolio"] = new or ""
+        s.setValue(PROFILE_KEY, json.dumps(profile))
+    s.sync()
+
+
 class PortfolioPanel(QWidget):
     # A sync at startup changed a portfolio (its name) - the window refreshes
     # the tabs that value the book.
@@ -3192,6 +3221,22 @@ class PortfolioPanel(QWidget):
         self._ibkr_worker = None
         self._chart_worker = None
         layout = QVBoxLayout(self)
+
+        # --- Portfolios by name: one per account (REER, CELI...) ---
+        prow = QHBoxLayout()
+        prow.addWidget(QLabel("Portfolio:"))
+        self.portfolio_pick = QComboBox(); self.portfolio_pick.setMinimumWidth(150)
+        self.portfolio_pick.setToolTip("Add Position puts the position here.")
+        prow.addWidget(self.portfolio_pick)
+        for text, slot in (("Add…", self.add_portfolio), ("Rename…", self.rename_portfolio),
+                           ("Remove…", self.remove_portfolio)):
+            btn = QPushButton(text); btn.clicked.connect(lambda _c=False, f=slot: f())
+            prow.addWidget(btn)
+        prow.addWidget(_hint("One portfolio per account. Renaming carries its positions, cash, "
+                             "target mix and startup sync along."))
+        prow.addStretch()
+        layout.addLayout(prow)
+
         row = QHBoxLayout()
         self.sym = QLineEdit(); self.sym.setPlaceholderText("Symbol")
         self.shares = QDoubleSpinBox(); self.shares.setRange(0, 1_000_000); self.shares.setValue(100)
@@ -3536,8 +3581,14 @@ class PortfolioPanel(QWidget):
         self.cash_table.resizeColumnsToContents()
         # Offer the portfolios that exist, keeping whatever is being typed. An
         # import defaults to "IBKR", the name it has always used.
-        names = sorted(({str(p.get("portfolio") or "") for p in (positions or self.db.positions())}
-                        | {c["portfolio"] for c in cash}) - {""})
+        names = self.db.portfolio_names()
+        picked = self.portfolio_pick.currentText()
+        self.portfolio_pick.blockSignals(True)
+        self.portfolio_pick.clear()
+        self.portfolio_pick.addItems(names)
+        if picked in names:
+            self.portfolio_pick.setCurrentText(picked)
+        self.portfolio_pick.blockSignals(False)
         for combo, choices, fallback in (
                 (self.cash_portfolio, names, names[0] if names else ""),
                 (self.import_portfolio, sorted(set(names) | {"IBKR"}), "IBKR")):
@@ -3573,10 +3624,75 @@ class PortfolioPanel(QWidget):
         self._refresh_cash()
         self.status.setText(("Removed cash: " + ", ".join(removed) + ".") if removed
                             else "Select a cash row to remove.")
+    # -- portfolios by name --
+    def add_portfolio(self, name=None):
+        if name is None:
+            name, ok = QInputDialog.getText(self, "Add a portfolio",
+                                            "Name (one per account, e.g. CELI IBKR):")
+            if not ok:
+                return
+        try:
+            self.db.add_portfolio(name)
+        except ValueError as exc:
+            flag_problem(self.status, str(exc))
+            return
+        self.portfolio_pick.addItem(name.strip())
+        self.refresh()
+        self.portfolio_pick.setCurrentText(name.strip())
+        self.status.setText(f"Added {name.strip()}. Set its target mix in the Plan tab or the Guide.")
+        self.synced.emit(name.strip())
+
+    def rename_portfolio(self, new=None):
+        old = self.portfolio_pick.currentText().strip()
+        if not old:
+            flag_problem(self.status, "Pick the portfolio to rename first.")
+            return
+        if new is None:
+            new, ok = QInputDialog.getText(self, "Rename a portfolio", f"New name for {old}:",
+                                           text=old)
+            if not ok:
+                return
+        try:
+            self.db.rename_portfolio(old, new)
+        except ValueError as exc:
+            flag_problem(self.status, str(exc))
+            return
+        carry_portfolio_settings(old, new.strip())
+        self.refresh()
+        self.portfolio_pick.setCurrentText(new.strip())
+        self.status.setText(f"Renamed {old} to {new.strip()}, with its positions, cash, target "
+                            "mix and startup sync.")
+        self.synced.emit(new.strip())
+
+    def remove_portfolio(self, confirm=True):
+        name = self.portfolio_pick.currentText().strip()
+        if not name:
+            flag_problem(self.status, "Pick the portfolio to remove first.")
+            return
+        held = self.db.portfolio_contents(name)
+        if confirm:
+            what = [f"{held['positions']} position(s)" if held["positions"] else "",
+                    f"{held['cash']} cash balance(s)" if held["cash"] else "",
+                    "its target mix" if held["target"] else ""]
+            what = ", ".join(w for w in what if w) or "nothing - it is empty"
+            answer = QMessageBox.question(
+                self, "Remove a portfolio",
+                f"Remove {name}? This deletes {what}. A backup from the Settings tab can bring "
+                f"it back.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                return
+        self.db.remove_portfolio(name)
+        carry_portfolio_settings(name, None)
+        self.refresh()
+        self.status.setText(f"Removed {name}.")
+        self.synced.emit(name)
+
     def add(self):
         sym = self.sym.text().strip().upper()
         if sym:
-            self.db.add_position(sym, self.shares.value(), self.entry.value()); self.sym.clear(); self.refresh()
+            self.db.add_position(sym, self.shares.value(), self.entry.value(),
+                                 portfolio=self.portfolio_pick.currentText().strip() or "Swing")
+            self.sym.clear(); self.refresh()
     def delete(self):
         rows = sorted({idx.row() for idx in self.table.selectionModel().selectedRows()}, reverse=True)
         for row in rows:

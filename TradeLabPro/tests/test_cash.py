@@ -62,6 +62,7 @@ def test_a_database_from_before_cash_gains_the_table(tmp_path):
     old.conn.execute("ALTER TABLE retirement_people DROP COLUMN born")       # v11
     old.conn.execute("DROP TABLE plan_targets")                              # v12
     old.conn.execute("DROP TABLE asset_classes")
+    old.conn.execute("DROP TABLE portfolios")                                # v13
     old.conn.execute("DELETE FROM schema_version WHERE version >= 8")
     old.conn.commit()
     old.conn.close()

@@ -24,7 +24,7 @@ CAP_KEY = "Plan/tradingCapPct"
 REVIEW_KEY = "Plan/lastReview"
 BUDGET_KEY = "RetirementSim/last_budget"
 NOTIFIED_KEY = "Plan/lastNotified"
-CLASS_CHOICES = ["auto", "stocks", "bonds", "cash", "other"]
+CLASS_CHOICES = ["auto", "stocks", "bonds", "cash", "other", ap.TRADING]
 
 
 class _PlanWorker(QThread):
@@ -121,9 +121,12 @@ class PlanPanel(QWidget):
         row.addWidget(self.trading)
         row.addWidget(QLabel("may be at most"))
         self.cap = QDoubleSpinBox(); self.cap.setRange(0, 100); self.cap.setDecimals(0)
-        self.cap.setSuffix(" % of everything")
+        self.cap.setSuffix(" %")
         self.cap.setValue(float(self._settings.value(CAP_KEY, 10)))
+        self.cap.setToolTip("A trading portfolio: at most this share of everything. Holdings set "
+                            "to \"trading\" inside a portfolio: at most this share of that portfolio.")
         row.addWidget(self.cap)
+        row.addWidget(QLabel("of everything - or of each portfolio, for holdings set to \"trading\""))
         self.trading.currentIndexChanged.connect(lambda _i: self._save_trading())
         self.cap.valueChanged.connect(lambda _v: self._save_trading())
         tv.addLayout(row)
@@ -136,7 +139,8 @@ class PlanPanel(QWidget):
         layout.addLayout(rev)
 
         layout.addWidget(QLabel("What each portfolio holds, by class (set a class by hand if "
-                                "the automatic one is wrong)"))
+                                "the automatic one is wrong, or \"trading\" for a swing trade - "
+                                "it then stays out of the mix and counts against the trading cap)"))
         self.hold_table = QTableWidget(0, 4)
         self.hold_table.setHorizontalHeaderLabels(["Portfolio", "Symbol", "Value (CAD)", "Class"])
         self.hold_table.verticalHeader().setVisible(False)
@@ -186,10 +190,7 @@ class PlanPanel(QWidget):
 
     # --- inputs --------------------------------------------------------------
     def portfolios(self) -> list:
-        names = {str(p.get("portfolio") or "") for p in self.db.positions()}
-        names |= {str(c.get("portfolio") or "") for c in self.db.cash()}
-        names |= set(self.db.plan_targets())
-        return sorted(n for n in names if n)
+        return self.db.portfolio_names()
 
     def _load_targets(self):
         saved = self.db.plan_targets()
@@ -362,11 +363,19 @@ class PlanPanel(QWidget):
         names = sorted({h["portfolio"] for h in self.holdings} | set(self.cash_by_portfolio)
                        | set(targets))
         items, table_rows = [], []
-        totals = {}
+        totals, trades = {}, {}
         for name in names:
-            mix = ap.current_mix([h for h in self.holdings if h["portfolio"] == name],
-                                 self.cash_by_portfolio.get(name, 0.0))
-            totals[name] = sum(mix.values())
+            held = [h for h in self.holdings if h["portfolio"] == name]
+            mix = ap.current_mix(held, self.cash_by_portfolio.get(name, 0.0))
+            trades[name] = ap.trading_in(held)
+            totals[name] = sum(mix.values()) + trades[name]
+            if trades[name]:
+                t = ap.trading_check(trades[name], totals[name], self.cap.value())
+                verdict = (f"above its {t['cap_pct']:.0f}% cap by ${-t['room']:,.0f}" if t["over"]
+                           else f"inside its {t['cap_pct']:.0f}% cap (${t['room']:,.0f} of room)")
+                items.append(("warn" if t["over"] else "ok",
+                              f"{name}: swing trades ${trades[name]:,.0f} are {t['share_pct']:.1f}% "
+                              f"of the portfolio, {verdict}."))
             target = targets.get(name)
             if not target:
                 if totals[name]:
@@ -404,8 +413,9 @@ class PlanPanel(QWidget):
             else:
                 items.append(("ok", f"Trading ({trading}) is {t['share_pct']:.1f}% of everything, "
                               f"inside its {t['cap_pct']:.0f}% cap (${t['room']:,.0f} of room)."))
-        elif whole:
-            items.append(("info", "No trading portfolio chosen - pick one to keep it capped."))
+        elif whole and not any(trades.values()):
+            items.append(("info", "No trading portfolio chosen and no holding set to \"trading\" - "
+                                  "do one or the other to keep trading capped."))
         items.append(self._budget_item())
         due = ap.review_due(self._last_review())
         items.append(("warn", "Review due: go through this list, then Mark reviewed today.")

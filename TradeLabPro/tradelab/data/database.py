@@ -229,9 +229,19 @@ CREATE TABLE IF NOT EXISTS asset_classes (
 );
 """
 
+# v13: portfolios by name, so one can exist before it holds anything (a CELI
+# opened but not yet funded) - until then a portfolio only existed through its
+# positions, cash or target mix.
+SCHEMA_V13 = """
+CREATE TABLE IF NOT EXISTS portfolios (
+    name TEXT PRIMARY KEY,
+    created_at TEXT
+);
+"""
+
 MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
                          SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10,
-                         SCHEMA_V11, SCHEMA_V12]
+                         SCHEMA_V11, SCHEMA_V12, SCHEMA_V13]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
 SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
@@ -410,6 +420,62 @@ class Database:
                                   (symbol, str(cls)))
             else:
                 self.conn.execute("DELETE FROM asset_classes WHERE symbol=?", (symbol,))
+
+    # --- portfolios by name ---------------------------------------------------
+    def portfolio_names(self) -> list:
+        """Every portfolio: the ones added by name, and any that holds
+        positions, cash or a target mix."""
+        names = {r["name"] for r in self.conn.execute("SELECT name FROM portfolios")}
+        for table in ("portfolio_positions", "portfolio_cash", "plan_targets"):
+            names |= {r["portfolio"] for r in
+                      self.conn.execute(f"SELECT DISTINCT portfolio FROM {table}")}
+        return sorted(n for n in (str(x or "").strip() for x in names) if n)
+
+    def add_portfolio(self, name: str) -> None:
+        name = str(name or "").strip()
+        if not name:
+            raise ValueError("A portfolio needs a name.")
+        if name in self.portfolio_names():
+            raise ValueError(f"There is already a portfolio named {name}.")
+        with self.conn:
+            self.conn.execute("INSERT INTO portfolios(name, created_at) VALUES (?,?)",
+                              (name, _now_iso()))
+
+    def rename_portfolio(self, old: str, new: str) -> None:
+        """Carry everything of `old` - positions, cash, target mix - to `new`,
+        in one transaction. Refuses a name already in use, rather than merge
+        two books by accident."""
+        old, new = str(old or "").strip(), str(new or "").strip()
+        if not new:
+            raise ValueError("The new name is empty.")
+        if old not in self.portfolio_names():
+            raise ValueError(f"There is no portfolio named {old}.")
+        if new == old:
+            return
+        if new in self.portfolio_names():
+            raise ValueError(f"There is already a portfolio named {new}.")
+        with self.conn:
+            self.conn.execute("DELETE FROM portfolios WHERE name=?", (old,))
+            self.conn.execute("INSERT INTO portfolios(name, created_at) VALUES (?,?)",
+                              (new, _now_iso()))
+            for table in ("portfolio_positions", "portfolio_cash", "plan_targets"):
+                self.conn.execute(f"UPDATE {table} SET portfolio=? WHERE portfolio=?", (new, old))
+
+    def portfolio_contents(self, name: str) -> dict:
+        """How much a portfolio holds - what removing it would delete."""
+        name = str(name or "").strip()
+        count = lambda table: self.conn.execute(  # noqa: E731
+            f"SELECT COUNT(*) FROM {table} WHERE portfolio=?", (name,)).fetchone()[0]
+        return {"positions": count("portfolio_positions"), "cash": count("portfolio_cash"),
+                "target": count("plan_targets") > 0}
+
+    def remove_portfolio(self, name: str) -> None:
+        """Delete a portfolio with its positions, cash and target mix."""
+        name = str(name or "").strip()
+        with self.conn:
+            self.conn.execute("DELETE FROM portfolios WHERE name=?", (name,))
+            for table in ("portfolio_positions", "portfolio_cash", "plan_targets"):
+                self.conn.execute(f"DELETE FROM {table} WHERE portfolio=?", (name,))
 
     def record_value(self, snapshot: dict) -> None:
         """Keep the day's account value (core.home.snapshot_of); a later

@@ -453,12 +453,7 @@ class GuidePanel(QWidget):
         self.choice.setText(text)
 
     def _fill_portfolios(self):
-        names = []
-        if self.db is not None:
-            found = {str(p.get("portfolio") or "").strip() for p in self.db.positions()}
-            found |= {str(c.get("portfolio") or "").strip() for c in self.db.cash()}
-            found |= set(self.db.plan_targets())
-            names = sorted(n for n in found if n)
+        names = self.db.portfolio_names() if self.db is not None else []
         current = self.portfolio.currentText()
         self.portfolio.clear(); self.portfolio.addItems(names)
         if current:

@@ -659,6 +659,19 @@ or track live orders. Your portfolio also feeds the
 **Heatmap** (Portfolio map) and the **Risk** tab's sector-exposure view. For
 simulated order entry and P&L, use **Paper Trading** (section 17).
 
+**Portfolios by name.** The **Portfolio** row at the top lists them — one per
+account, such as *REER IBKR* and *CELI IBKR*:
+
+- **Add…** creates one, even empty (a CELI opened but not funded yet), so you
+  can give it a target mix in the Plan tab or the Guide right away.
+- **Rename…** carries everything along: positions, cash, target mix, its
+  startup sync, and the Plan tab's and the Guide's choices that name it. A name
+  already in use is refused, so two books are never merged by accident.
+- **Remove…** asks first and says what it would delete (positions, cash,
+  target mix); a backup from the Settings tab can bring it back.
+
+**Add Position** puts the position in the portfolio picked there.
+
 ### Import your positions from IBKR (read-only)
 
 Instead of typing holdings in, you can pull your current open positions straight
@@ -1152,6 +1165,13 @@ Every decision in it is yours; TradeLab only measures against them.
 - **Trading portfolio and its cap.** Pick the portfolio you trade from and the
   most it may be of everything (10% unless you change it); the checklist says
   whether it is inside.
+- **Swing trades inside a long-term portfolio.** When you trade inside your
+  REER or CELI instead of a separate account, set each swing trade's class to
+  **trading** in the holdings table. It then stays out of that portfolio's
+  mix — so a trade does not look like drift — and the checklist holds it to the
+  same cap, as a share of *that* portfolio (for example, trades worth $1,500
+  in a $10,000 REER are 15%, over a 10% cap by $500). The class is set per
+  symbol, so it applies wherever you hold that symbol.
 - **Safe budget** — the last result of Retirement Sim's **Safe budget**, against
   the spending it was checked with.
 - **Review.** About every quarter the checklist says a review is due; go

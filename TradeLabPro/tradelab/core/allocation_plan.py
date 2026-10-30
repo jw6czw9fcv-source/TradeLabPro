@@ -18,6 +18,10 @@ import datetime as dt
 
 CLASSES = ("stocks", "bonds", "cash", "other")
 TARGET_CLASSES = ("stocks", "bonds", "cash")
+# A holding set to "trading" by hand is a swing trade kept inside a long-term
+# account: it stays out of that account's mix and is held to the trading cap
+# within the account instead.
+TRADING = "trading"
 DRIFT_PP = 5.0            # percentage points off target that counts as drift
 REVIEW_EVERY_DAYS = 91    # about a quarter
 
@@ -49,7 +53,7 @@ def split_of(symbol: str, etf_rows: list, override: str | None = None,
              meta: dict | None = None) -> dict:
     """{class: share} for one holding. A class set by hand wins; then a fund's
     published composition from the ETF Screener; then a guess."""
-    if override in CLASSES:
+    if override in CLASSES or override == TRADING:
         return {override: 1.0}
     sym = str(symbol or "").upper()
     for row in etf_rows or []:
@@ -68,14 +72,23 @@ def split_of(symbol: str, etf_rows: list, override: str | None = None,
 
 def current_mix(holdings: list, cash_value: float = 0.0) -> dict:
     """Dollars per class for one account. `holdings` are dicts with `value`
-    and `split` ({class: share}); recorded cash counts as cash."""
+    and `split` ({class: share}); recorded cash counts as cash. Swing trades
+    (class "trading") are left out - see trading_in."""
     mix = {c: 0.0 for c in CLASSES}
     for h in holdings or []:
         value = float(h.get("value") or 0.0)
         for cls, share in (h.get("split") or {}).items():
+            if cls == TRADING:
+                continue
             mix[cls] = mix.get(cls, 0.0) + value * float(share)
     mix["cash"] += float(cash_value or 0.0)
     return mix
+
+
+def trading_in(holdings: list) -> float:
+    """Dollars of an account's holdings set to "trading"."""
+    return sum(float(h.get("value") or 0.0) * float((h.get("split") or {}).get(TRADING, 0.0))
+               for h in holdings or [])
 
 
 def check_target(target: dict) -> str | None:
