@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.64.0 - Guided, step by step - a Guide tab takes a beginner from a few questions to a level of risk measured on real returns and falls, then to the ETFs that could hold it; portfolios can be added, renamed and removed, and swing trades inside a REER or CELI are capped there
+
 2.63.0 - Morningstar, in the shortlist - AI Assist imports a Morningstar screener export, filters out leveraged, inverse and crypto products, and checks the funds you pick with their star and medalist ratings
 
 2.62.0 - A shortlist, side by side - AI Assist checks several funds or stocks at once, orders them by your own criteria and explains what stands out, on the current Claude models

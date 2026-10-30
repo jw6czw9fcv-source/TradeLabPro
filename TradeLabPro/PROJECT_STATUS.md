@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.63.0
+Current version: 2.64.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.64.0 (Guided, step by step)
+- **Guide tab** (`core/guide.py`, `ui/panels/guide.py`), first tab, opens first until a level is saved (`Guide/profile`). Step 1 questions (horizon, drop tolerance, accounts, amounts, emergency fund, debt). Step 2: six `LEVELS` measured by `measure()` on XIU / SPY / EFA / EEM (US-listed at `CAD=X`, unhedged) + XBB + cash 2.4%, monthly rebalanced, since 2003-10 and over `WINDOWS` (10 / 3 / 1 years, each with its own falls); FP Canada / IQPF 2026 guidelines as the cautious basis (`expected_return`, verified 2026-10-28 on fpcanada.ca); `recommend()` = min(horizon cap, highest level whose since-2003 worst fall fits the drop); "Use this level" -> `set_plan_target`. Step 3: `ONE_FUND` per level and `BLOCKS` (38 Canadian-listed ETFs checked on Yahoo 2026-10-28) through `candidate.gather` / `facts`, Morningstar ratings when imported.
+- **Portfolios by name:** schema v13 `portfolios`; `portfolio_names` / `add_portfolio` / `rename_portfolio` (positions, cash, target; refuses a name in use) / `portfolio_contents` / `remove_portfolio`; `carry_portfolio_settings` (sync targets, trading portfolio, Guide profile). Portfolio tab row Add / Rename / Remove; Add Position goes to the picked portfolio.
+- **Swing trades inside a portfolio:** class `allocation_plan.TRADING` set by hand; `current_mix` leaves it out, `trading_in` sums it; Plan checklist caps it per portfolio with the same cap %.
 
 ## Completed in 2.63.0 (Morningstar, in the shortlist)
 - **Morningstar import:** `core/morningstar.py` - `read_export` (xlsx via zipfile/ElementTree, no openpyxl; CSV sniffed; French or English headers, "9,92 $ US" / "1,12 G $" / "19 oct. 2018"; symbol column required; duplicates dropped), `yahoo_symbol` (CAD -> .TO, ZSP.U -> ZSP-U.TO), `pick` (speculative categories hidden, min stars, max MER), `by_symbol`. "Rendement sur 12 mois" is a yield (`yield12`).

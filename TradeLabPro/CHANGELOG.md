@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.64.0 - Guided, step by step
+
+### Added
+- **Guide tab**, first in the row, for someone new to investing. **Step 1** asks when the money is needed, the biggest drop you could live through without selling, your accounts, the amounts, and two checks that come first (an emergency fund, no expensive debt). **Step 2** shows six levels from *Capital first* to *All stocks*, each with what it really returned and lost in CAD - since 2003, or over the last 10, 3 or 1 years, the falls following the period - beside the FP Canada / IQPF 2026 planning guidelines, and what your money would grow to. The level your answers point to is marked, judged on the worst fall since 2003 (2008 included); **Use this level** makes it a portfolio's target mix in the Plan tab. **Step 3** compares the ETFs that could hold it on real prices: one all-in-one fund for the level, or building blocks (cash, bonds, Canadian, dividend, US, international and global stocks) from iShares, Vanguard and BMO. It never picks.
+- **Portfolios by name** (Portfolio tab): **Add** one even before it holds anything, **Rename** it with its positions, cash, target mix and startup sync, **Remove** it after a confirmation that says what goes. Add Position puts the position in the portfolio picked.
+- **Swing trades inside a REER or CELI** (Plan tab): set a holding's class to **trading** and it stays out of that portfolio's mix and is held to the trading cap as a share of that portfolio.
+
+### Verified
+- Full pytest suite passes (1647), including 18 new tests: the guideline returns, projections, the levels' records by period in CAD, the level the answers point to, step 3's candidates and checks, portfolios added, renamed and removed with their settings, and swing trades kept out of the mix and capped. Checked on real prices since 2003.
+
 ## 2.63.0 - Morningstar, in the shortlist
 
 ### Added
