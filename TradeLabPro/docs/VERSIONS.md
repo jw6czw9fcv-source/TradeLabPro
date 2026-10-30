@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.65.0** | *unreleased* | What to buy, in shares |
+| **2.65.0** | 2026-10-29 | What to buy, in shares |
 | **2.64.0** | 2026-10-29 | Guided, step by step |
 | **2.63.0** | 2026-10-26 | Morningstar, in the shortlist |
 | **2.62.0** | 2026-10-26 | A shortlist, side by side |
