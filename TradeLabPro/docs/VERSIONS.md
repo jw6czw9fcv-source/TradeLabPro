@@ -10,6 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
+| **2.66.0** | *unreleased* | Simple, or everything |
 | **2.65.0** | 2026-10-29 | What to buy, in shares |
 | **2.64.0** | 2026-10-29 | Guided, step by step |
 | **2.63.0** | 2026-10-26 | Morningstar, in the shortlist |
@@ -100,7 +101,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 | **2.2.0** | *no tag of its own* | Chart Engine Phase 1 (PyQtGraph rewrite) |
 | **2.1.11** | *no tag of its own* | Exchange UI Cleanup |
 
-89 releases. Two kinds of row carry no date, and they are not the same
+90 releases. Two kinds of row carry no date, and they are not the same
 thing: **unreleased** is newer than every tag — built and committed, not yet
 tagged (the convention is to tag after pushing: `git tag -a vX.Y.Z -m "…"`).
 **no tag of its own** is older than the newest tag: it shipped inside a later

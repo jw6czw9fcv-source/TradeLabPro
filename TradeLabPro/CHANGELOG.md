@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.66.0 - Simple, or everything
+
+### Added
+- **Simple and Advanced mode.** Simple shows only the tabs needed to invest calmly - Guide, Home, Portfolio, Retirement Sim, Plan, Settings and Help; Advanced shows every tab, trading and research included. Switch with the button at the end of the tab row or View → Advanced mode (Ctrl+Shift+A). A hidden tab keeps its data and comes back as it was. A new install starts in Simple, one that already has portfolios in Advanced, and the choice is remembered.
+
+### Verified
+- Full pytest suite passes (1652), including 2 new tests: the first-run default and the remembered choice, and the switch hiding and showing tabs from the button and the menu.
+
 ## 2.65.0 - What to buy, in shares
 
 ### Added

@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.65.0
+Current version: 2.66.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.66.0 (Simple, or everything)
+- **Simple / Advanced mode:** `SIMPLE_TABS` (Guide, Home, Plan, Portfolio, Retirement Sim, Settings, Help), `UI_MODE_KEY` "UI/mode", `ui_mode(db, settings)` (last choice; first run Simple unless the install has portfolios). `MultiRowTabs.setTabVisible` / `isTabVisible` / `addCornerWidget`; `FlowLayout` skips hidden widgets. `MainWindow.apply_mode` / `toggle_mode`, a button at the end of the tab row and View → Advanced mode (Ctrl+Shift+A); a hidden current tab gives way to the first.
 
 ## Completed in 2.65.0 (What to buy, in shares)
 - **Guide step 4:** step 3's "My funds" (`picks` [[symbol, class]], class `guide.ALL` for a one-fund pick; saved in `Guide/profile` `funds`, which no longer counts as a chosen level - `has_profile` reads `level`). `guide.default_weights(level, picks)` (class share split evenly, one-fund picks take what blocks leave, `uncovered` named) and `guide.purchases(weights, prices, held, cash)` (money to the funds furthest below their share first, never selling, whole shares, leftover buys single shares of the fund furthest behind; weights under 100% leave cash). `_PriceWorker` (last close, `CAD=X` for US listings); held shares from the portfolio counted; Share % editable per fund; "Use its recorded cash"; "Copy the list" to the clipboard.
