@@ -204,7 +204,30 @@ that suits it, and its Morningstar rating when you have imported an export.
 **Also check** adds other symbols to the comparison; **Order by** sorts by fees,
 worst fall, risk, returns or ratings. The candidates are broad index ETFs from
 iShares, Vanguard and BMO — TradeLab orders them by what you choose and never
-picks one.
+picks one. Select the ones you choose and click **Add selected to my funds**:
+they go to **My funds**, the list step 4 buys (**Remove from my funds** takes
+one out). My funds is saved with your level.
+
+**Step 4 — Your purchases.** Your money turned into whole shares, for the
+portfolio picked in step 2:
+
+- **Invest now** starts at the amount from step 1; **Use its recorded cash**
+  takes the cash the Portfolio tab has for that portfolio. **Then each month**
+  is the monthly amount.
+- **Share %** — each fund's part of the money, from your level: a one-fund pick
+  takes it all; building blocks share their class (two stock funds in Balanced
+  get 30% each). Change any share by hand; the rest of 100% stays as cash, and
+  a class with no fund picked is named so you can add one.
+- **Buy now / Cost / Then each month** — whole shares at the last close. A fund
+  below its share gets the money first, so nothing is ever sold; what the
+  portfolio already holds of a fund counts, and what is left buys single shares
+  of the fund furthest behind. A US-listed fund is priced in CAD at today's
+  exchange rate.
+- **Copy the list** puts the orders on the clipboard, to keep beside your
+  broker's order screen.
+
+You place the orders yourself (a limit order near the price shown keeps a
+surprise out); TradeLab never trades.
 
 There is no level with a high return and no risk: the more a level may earn,
 the further it has fallen in bad years. The Guide shows both side by side so

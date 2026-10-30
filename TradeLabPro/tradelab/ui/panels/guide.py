@@ -6,14 +6,15 @@ import datetime as dt
 import json
 import re
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QFormLayout,
-                               QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-                               QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDoubleSpinBox,
+                               QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QPushButton, QStackedWidget,
+                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from tradelab.core import guide as g
+from tradelab.core.candidate import is_us_listed
 from tradelab.core.logging_config import get_logger
 from tradelab.settings import app_settings
 from tradelab.ui import theme
@@ -63,6 +64,34 @@ class _FundsWorker(QThread):
             pass
 
 
+class _PriceWorker(QThread):
+    """The last close of each fund, and USD/CAD when a US listing needs it."""
+    done = Signal(object, object, object)   # {symbol: price}, fx | None, [errors]
+
+    def __init__(self, symbols, need_fx):
+        super().__init__()
+        self.symbols, self.need_fx = list(symbols), bool(need_fx)
+
+    def run(self):
+        from tradelab.core.etf_metrics import get_prices
+        prices, errors, fx = {}, [], None
+        for symbol in self.symbols + ([g.FX] if self.need_fx else []):
+            try:
+                series = get_prices(symbol, "1mo")
+                if series is None or not len(series):
+                    raise ValueError("no price")
+                if symbol == g.FX:
+                    fx = float(series.iloc[-1])
+                else:
+                    prices[symbol] = float(series.iloc[-1])
+            except Exception as exc:
+                errors.append(f"{symbol}: {exc}")
+        try:
+            self.done.emit(prices, fx, errors)
+        except RuntimeError:
+            pass
+
+
 def _money(v):
     return f"${v:,.0f}"
 
@@ -87,6 +116,12 @@ class GuidePanel(QWidget):
         self._funds_pending = False
         self._fund_facts = GuidePanel._facts_cache   # {symbol: candidate facts row}
         self._fund_symbols = []
+        self.picks = []              # [[symbol, class]] - My funds
+        self.weights_pct = {}        # {symbol: %} set by hand in step 4
+        self._prices, self._fx = {}, None
+        self._price_worker = None
+        self._buy_touched = False
+        self._saved_level = None
         layout = QVBoxLayout(self)
         layout.addWidget(_hint(
             "New to investing? This guide takes you through it one step at a time: a few "
@@ -99,13 +134,14 @@ class GuidePanel(QWidget):
         self.pages.addWidget(self._about_you_page())
         self.pages.addWidget(self._level_page())
         self.pages.addWidget(self._funds_page())
+        self.pages.addWidget(self._purchases_page())
         layout.addWidget(self.pages, 1)
         self._load_profile()
 
     # -- step 1 --
     def _about_you_page(self):
         page = QWidget(); v = QVBoxLayout(page)
-        title = QLabel("Step 1 of 3 - About you"); title.setFont(QFont(title.font().family(), 13, QFont.Bold))
+        title = QLabel("Step 1 of 4 - About you"); title.setFont(QFont(title.font().family(), 13, QFont.Bold))
         v.addWidget(title)
         form = QFormLayout()
         self.horizon = QComboBox(); self.horizon.addItems([h[0] for h in g.HORIZONS])
@@ -139,7 +175,7 @@ class GuidePanel(QWidget):
     # -- step 2 --
     def _level_page(self):
         page = QWidget(); v = QVBoxLayout(page)
-        title = QLabel("Step 2 of 3 - Your level"); title.setFont(QFont(title.font().family(), 13, QFont.Bold))
+        title = QLabel("Step 2 of 4 - Your level"); title.setFont(QFont(title.font().family(), 13, QFont.Bold))
         v.addWidget(title)
         self.why = QLabel(""); self.why.setWordWrap(True)
         self.why.setStyleSheet("font-weight:bold;")
@@ -202,7 +238,7 @@ class GuidePanel(QWidget):
     def _funds_page(self):
         from tradelab.core.candidate import SORTS
         page = QWidget(); v = QVBoxLayout(page)
-        title = QLabel("Step 3 of 3 - Your funds"); title.setFont(QFont(title.font().family(), 13, QFont.Bold))
+        title = QLabel("Step 3 of 4 - Your funds"); title.setFont(QFont(title.font().family(), 13, QFont.Bold))
         v.addWidget(title)
         self.funds_intro = QLabel(""); self.funds_intro.setWordWrap(True)
         self.funds_intro.setStyleSheet("font-weight:bold;")
@@ -234,7 +270,18 @@ class GuidePanel(QWidget):
         self.fund_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.fund_table.verticalHeader().setVisible(False)
         self.fund_table.setMinimumHeight(170)
+        self.fund_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.fund_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         v.addWidget(self.fund_table)
+        prow = QHBoxLayout()
+        pick = QPushButton("Add selected to my funds  ↓"); pick.clicked.connect(self.pick_funds)
+        unpick = QPushButton("Remove from my funds"); unpick.clicked.connect(self.unpick_funds)
+        prow.addWidget(pick); prow.addWidget(unpick); prow.addStretch()
+        v.addLayout(prow)
+        v.addWidget(QLabel("My funds - what step 4 buys"))
+        self.picks_list = QListWidget(); self.picks_list.setMaximumHeight(110)
+        self.picks_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        v.addWidget(self.picks_list)
         v.addWidget(_hint(
             "One fund for your level holds stocks and bonds in that mix and rebalances itself - "
             "the least work, and the fewest ways to go wrong. Building blocks are one fund per "
@@ -246,11 +293,280 @@ class GuidePanel(QWidget):
         row = QHBoxLayout()
         back = QPushButton("←  Back"); back.clicked.connect(lambda: self.pages.setCurrentIndex(1))
         row.addWidget(back); row.addStretch()
+        nxt = QPushButton("Next: your purchases  →"); nxt.clicked.connect(self.show_purchases)
+        row.addWidget(nxt)
         v.addLayout(row)
         return page
 
+    def pick_funds(self):
+        i = self.fund_set.currentIndex()
+        cls = g.ALL if i <= 0 else g.BLOCKS[i - 1][1]
+        rows = sorted({idx.row() for idx in self.fund_table.selectionModel().selectedRows()})
+        symbols = [self.fund_table.item(r, 0).text() for r in rows if self.fund_table.item(r, 0)]
+        if not symbols:
+            flag_problem(self.fund_status, "Select one or more funds in the table first.")
+            return
+        have = {s for s, _c in self.picks}
+        self.picks += [[s, cls] for s in symbols if s not in have]
+        self._picks_changed()
+
+    def unpick_funds(self):
+        gone = {self.picks_list.item(i.row()).data(Qt.UserRole)
+                for i in self.picks_list.selectedIndexes()}
+        if not gone:
+            flag_problem(self.fund_status, "Select funds in My funds to remove.")
+            return
+        self.picks = [p for p in self.picks if p[0] not in gone]
+        self._picks_changed()
+
+    def _picks_changed(self):
+        self.weights_pct = {}          # back to the level's shares
+        self._show_picks()
+        self._save_funds()
+
+    def _show_picks(self):
+        kinds = {g.ALL: "the whole level", "stocks": "stocks", "bonds": "bonds", "cash": "cash"}
+        self.picks_list.clear()
+        for symbol, cls in self.picks:
+            item = QListWidgetItem(f"{symbol}  -  {kinds.get(cls, cls)}")
+            item.setData(Qt.UserRole, symbol)
+            self.picks_list.addItem(item)
+
+    # -- step 4 --
+    def _purchases_page(self):
+        page = QWidget(); v = QVBoxLayout(page)
+        title = QLabel("Step 4 of 4 - Your purchases"); title.setFont(QFont(title.font().family(), 13, QFont.Bold))
+        v.addWidget(title)
+        form = QHBoxLayout()
+        self.buy_portfolio = QLabel("")
+        form.addWidget(self.buy_portfolio)
+        form.addWidget(QLabel("Invest now"))
+        self.buy_now = QDoubleSpinBox(); self.buy_now.setRange(0, 100_000_000); self.buy_now.setDecimals(0)
+        self.buy_now.setSingleStep(1000); self.buy_now.setPrefix("$ "); self.buy_now.setGroupSeparatorShown(True)
+        form.addWidget(self.buy_now)
+        use_cash = QPushButton("Use its recorded cash"); use_cash.clicked.connect(self.use_recorded_cash)
+        form.addWidget(use_cash)
+        form.addWidget(QLabel("then each month"))
+        self.buy_monthly = QDoubleSpinBox(); self.buy_monthly.setRange(0, 1_000_000); self.buy_monthly.setDecimals(0)
+        self.buy_monthly.setSingleStep(50); self.buy_monthly.setPrefix("$ "); self.buy_monthly.setGroupSeparatorShown(True)
+        form.addWidget(self.buy_monthly)
+        form.addStretch()
+        v.addLayout(form)
+        self.buy_now.valueChanged.connect(lambda _v: self._show_purchases())
+        self.buy_monthly.valueChanged.connect(lambda _v: self._show_purchases())
+        self.buy_note = QLabel(""); self.buy_note.setWordWrap(True); self.buy_note.setStyleSheet("color:#c9a227;")
+        v.addWidget(self.buy_note)
+        self.buy_status = StatusLabel(); self.buy_status.setStyleSheet("color:#8a9099;")
+        v.addWidget(self.buy_status)
+        self.buy_table = QTableWidget(0, 8)
+        self.buy_table.setHorizontalHeaderLabels(
+            ["Fund", "For", "Share %", "Price", "Held now", "Buy now", "Cost", "Then each month"])
+        self.buy_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.buy_table.verticalHeader().setVisible(False)
+        self.buy_table.setMinimumHeight(170)
+        v.addWidget(self.buy_table)
+        self.buy_summary = QLabel(""); self.buy_summary.setWordWrap(True)
+        self.buy_summary.setStyleSheet("font-weight:bold;")
+        v.addWidget(self.buy_summary)
+        brow = QHBoxLayout()
+        copy = QPushButton("Copy the list"); copy.clicked.connect(self.copy_purchases)
+        brow.addWidget(copy); brow.addStretch()
+        v.addLayout(brow)
+        v.addWidget(_hint(
+            "Whole shares only, at the last closing price - the price will have moved a little "
+            "when you buy. Each fund below its share gets the money first, so nothing has to be "
+            "sold; what is left stays as cash. Place the orders yourself at your broker (a limit "
+            "order near the price shown keeps a surprise out); TradeLab never trades. The "
+            "monthly line assumes today's purchase is made. A fund listed in the US is priced in "
+            "CAD at today's exchange rate. " + theme.NOT_ADVICE))
+        row = QHBoxLayout()
+        back = QPushButton("←  Back"); back.clicked.connect(lambda: self.pages.setCurrentIndex(2))
+        row.addWidget(back); row.addStretch()
+        v.addLayout(row)
+        return page
+
+    def _target_portfolio(self) -> str:
+        return self.portfolio.currentText().strip()
+
+    def show_purchases(self):
+        if not self.picks:
+            flag_problem(self.fund_status, "Add at least one fund to My funds first (select it "
+                                           "in the table, then Add selected to my funds).")
+            return
+        self.pages.setCurrentIndex(3)
+        portfolio = self._target_portfolio()
+        self.buy_portfolio.setText(f"For {portfolio}:" if portfolio else "For your account:")
+        if not self.buy_now.value() and not self._buy_touched:
+            self.buy_now.setValue(self.lump.value())
+        if not self.buy_monthly.value() and not self._buy_touched:
+            self.buy_monthly.setValue(self.monthly.value())
+        self._buy_touched = True
+        missing = [s for s, _c in self.picks if s not in self._prices]
+        need_fx = any(is_us_listed(s) for s, _c in self.picks) and self._fx is None
+        held = self._held_symbols()
+        missing += [s for s in held if s not in self._prices and s not in missing]
+        self._show_purchases()
+        if (missing or need_fx) and (self._price_worker is None or not self._price_worker.isRunning()):
+            self.buy_status.setText("Getting the last prices…")
+            self._price_worker = _PriceWorker(missing, need_fx)
+            self._price_worker.done.connect(self._on_prices)
+            self._price_worker.start()
+
+    def _on_prices(self, prices, fx, errors):
+        self._prices.update(prices)
+        if fx:
+            self._fx = fx
+        self._show_purchases()
+        if errors:
+            flag_problem(self.buy_status, "No price for: " + "; ".join(errors))
+        else:
+            self.buy_status.setText("Prices are the last close.")
+
+    def _cad(self, symbol):
+        p = self._prices.get(symbol)
+        if p is None:
+            return None
+        if is_us_listed(symbol):
+            return p * self._fx if self._fx else None
+        return p
+
+    def _held_symbols(self) -> dict:
+        """{symbol: shares} the portfolio already holds."""
+        portfolio = self._target_portfolio()
+        if self.db is None or not portfolio:
+            return {}
+        out = {}
+        for p in self.db.positions():
+            if str(p.get("portfolio") or "").strip() == portfolio:
+                s = str(p["symbol"]).upper()
+                out[s] = out.get(s, 0.0) + float(p.get("shares") or 0)
+        return out
+
+    def use_recorded_cash(self):
+        portfolio = self._target_portfolio()
+        if self.db is None or not portfolio:
+            flag_problem(self.buy_status, "Pick the portfolio in step 2 first.")
+            return
+        total = 0.0
+        for c in self.db.cash():
+            if c["portfolio"] == portfolio:
+                if c["currency"] == "CAD":
+                    total += float(c["amount"])
+                elif c["currency"] == "USD" and self._fx:
+                    total += float(c["amount"]) * self._fx
+        if not total:
+            flag_problem(self.buy_status, f"No cash recorded for {portfolio} (Portfolio tab).")
+            return
+        self.buy_now.setValue(max(0.0, total))
+
+    def _weights(self) -> dict:
+        d = g.default_weights(self._level(), [tuple(p) for p in self.picks])
+        weights = {s: self.weights_pct.get(s, w * 100.0) / 100.0 for s, w in d["weights"].items()}
+        return {"weights": weights, "uncovered": d["uncovered"]}
+
+    def _show_purchases(self):
+        if not hasattr(self, "buy_table"):
+            return
+        d = self._weights()
+        weights = d["weights"]
+        prices = {s: self._cad(s) for s in weights}
+        priced = {s: p for s, p in prices.items() if p}
+        held_shares = self._held_symbols()
+        held = {s: held_shares.get(s, 0.0) * (self._cad(s) or 0.0) for s in weights}
+        other = sum(sh * (self._cad(s) or 0.0) for s, sh in held_shares.items() if s not in weights)
+        now = g.purchases(weights, priced, held, self.buy_now.value())
+        after = {s: held[s] + next(r["cost"] for r in now["rows"] if r["symbol"] == s) for s in weights}
+        month = g.purchases(weights, priced, after, self.buy_monthly.value()) \
+            if self.buy_monthly.value() else None
+        kinds = {g.ALL: "whole level", "stocks": "stocks", "bonds": "bonds", "cash": "cash"}
+        cls_of = dict((s, c) for s, c in self.picks)
+        self.buy_table.setRowCount(len(now["rows"]))
+        for r, row in enumerate(now["rows"]):
+            s = row["symbol"]
+            self.buy_table.setItem(r, 0, QTableWidgetItem(s))
+            self.buy_table.setItem(r, 1, QTableWidgetItem(kinds.get(cls_of.get(s), "")))
+            spin = QDoubleSpinBox(); spin.setRange(0, 100); spin.setDecimals(1); spin.setSuffix(" %")
+            spin.setValue(weights[s] * 100.0)
+            spin.valueChanged.connect(lambda v, sym=s: self._set_weight(sym, v))
+            self.buy_table.setCellWidget(r, 2, spin)
+            price = prices.get(s)
+            m = next((x for x in (month or {}).get("rows", []) if x["symbol"] == s), None)
+            cells = {3: "…" if price is None else f"${price:,.2f}",
+                     4: f"{held_shares.get(s, 0):g} sh" if held_shares.get(s) else "—",
+                     5: f"{row['shares']} sh" if price else "…",
+                     6: _money(row["cost"]) if price else "…",
+                     7: (f"{m['shares']} sh ({_money(m['cost'])})" if m else "—")}
+            for c, text in cells.items():
+                self.buy_table.setItem(r, c, QTableWidgetItem(text))
+        self.buy_table.resizeColumnsToContents()
+        notes = []
+        total_w = sum(weights.values())
+        if abs(total_w - 1.0) > 0.005:
+            notes.append(f"The shares add up to {total_w:.0%}: the other {max(0, 1 - total_w):.0%} "
+                         f"stays as cash." if total_w < 1 else
+                         f"The shares add up to {total_w:.0%} - more than the money.")
+        if d["uncovered"]:
+            notes.append("No fund picked yet for " + ", ".join(
+                f"{c} ({v:.0%} of {g.LEVELS[self._level()][0]})" for c, v in d["uncovered"].items())
+                         + " - add one in step 3, or that part stays as cash.")
+        if other:
+            notes.append(f"The portfolio also holds {_money(other)} in other holdings; they are "
+                         "left alone here (the Plan tab weighs the whole account).")
+        self.buy_note.setText(" ".join(notes))
+        self.buy_note.setVisible(bool(notes))
+        summary = (f"Now: buy for {_money(now['spent'])}, {_money(now['left'])} left as cash.")
+        if month:
+            summary += (f" Each month after: buy for {_money(month['spent'])}; "
+                        f"{_money(month['left'])} carried to the next month.")
+        self.buy_summary.setText(summary)
+        self._last_purchase = (now, month)
+
+    def _set_weight(self, symbol, pct):
+        self.weights_pct[symbol] = pct
+        self._save_funds()
+        # Not from inside the spin box's own signal: redrawing replaces it.
+        QTimer.singleShot(0, self._show_purchases)
+
+    def purchase_text(self) -> str:
+        now, month = getattr(self, "_last_purchase", (None, None))
+        if not now:
+            return ""
+        portfolio = self._target_portfolio() or "your account"
+        lines = [f"TradeLab Guide - purchases for {portfolio}, {dt.date.today():%Y-%m-%d}"]
+        for r in now["rows"]:
+            if r["shares"]:
+                lines.append(f"  Buy {r['shares']} {r['symbol']} (about ${r['price']:,.2f} each, "
+                             f"{_money(r['cost'])})")
+        lines.append(f"  Left as cash: {_money(now['left'])}")
+        if month:
+            lines.append("Each month after:")
+            lines += [f"  Buy {r['shares']} {r['symbol']}" for r in month["rows"] if r["shares"]]
+        lines.append("Prices are the last close. Calculations, not advice - you place the orders.")
+        return "\n".join(lines)
+
+    def copy_purchases(self):
+        text = self.purchase_text()
+        if not text:
+            flag_problem(self.buy_status, "Nothing to copy yet.")
+            return
+        QApplication.clipboard().setText(text)
+        self.buy_status.setText("Copied - paste it in a note, or keep it beside your broker's "
+                                "order screen.")
+
+    def _save_funds(self):
+        try:
+            saved = json.loads(self._settings.value(PROFILE_KEY, "", type=str) or "{}")
+        except (ValueError, TypeError):
+            saved = {}
+        saved["funds"] = [{"symbol": s, "cls": c, "weight": self.weights_pct.get(s)}
+                          for s, c in self.picks]
+        self._settings.setValue(PROFILE_KEY, json.dumps(saved))
+
     def _level(self) -> int:
-        return self._picked() if self.recommended is not None else 0
+        """The level picked in step 2 - or the one saved, before step 2 is shown."""
+        if self.recommended is not None:
+            return self._picked()
+        return self._saved_level if self._saved_level is not None else 0
 
     def show_funds(self):
         level = self._level()
@@ -470,6 +786,7 @@ class GuidePanel(QWidget):
         self._settings.setValue(PROFILE_KEY, json.dumps(
             {"answers": self.answers(), "level": level, "portfolio": portfolio,
              "saved": dt.date.today().isoformat()}))
+        self._save_funds()
         self._load_profile()
         where = (f" It is now {portfolio}'s target mix in the Plan tab, which shows what it "
                  f"would take to get there." if portfolio and self.db is not None else
@@ -493,7 +810,13 @@ class GuidePanel(QWidget):
         self.monthly.setValue(float(a.get("monthly") or 0))
         if saved.get("portfolio"):
             self.portfolio.setCurrentText(saved["portfolio"])
+        funds = [f for f in saved.get("funds") or [] if isinstance(f, dict) and f.get("symbol")]
+        self.picks = [[f["symbol"], f.get("cls") or g.ALL] for f in funds]
+        self.weights_pct = {f["symbol"]: float(f["weight"]) for f in funds
+                            if isinstance(f.get("weight"), (int, float))}
+        self._show_picks()
         level = saved.get("level")
+        self._saved_level = level if isinstance(level, int) and 0 <= level < len(g.LEVELS) else None
         if isinstance(level, int) and 0 <= level < len(g.LEVELS):
             self.saved_line.setText(
                 f"Your level: {g.LEVELS[level][0]} (chosen {saved.get('saved', '')}"
@@ -504,10 +827,15 @@ class GuidePanel(QWidget):
         self.saved_line.setVisible(bool(self.saved_line.text()))
 
     def has_profile(self) -> bool:
-        return bool(self._settings.value(PROFILE_KEY, "", type=str))
+        """A level has been chosen (funds picked alone do not count)."""
+        try:
+            saved = json.loads(self._settings.value(PROFILE_KEY, "", type=str) or "{}")
+        except (ValueError, TypeError):
+            return False
+        return isinstance(saved.get("level"), int)
 
     def shutdown(self):
-        for worker in (self._worker, self._funds_worker):
+        for worker in (self._worker, self._funds_worker, self._price_worker):
             if worker is not None and worker.isRunning():
                 try:
                     worker.done.disconnect()

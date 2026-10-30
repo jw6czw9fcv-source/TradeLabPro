@@ -116,6 +116,78 @@ def block_amounts(level: int, amount: float) -> dict:
     return {"stocks": amount * st, "bonds": amount * bo, "cash": amount * ca}
 
 
+# Step 4 - the purchases. A pick is (symbol, class): "all" for a fund that
+# holds the whole level (step 3's one fund), else the block's class.
+ALL = "all"
+
+
+def default_weights(level: int, picks: list) -> dict:
+    """Each picked fund's share of the money, from the level's mix: a class's
+    share split evenly between the funds picked for it; one-fund picks share
+    whatever the blocks do not cover. Returns {weights: {symbol: fraction},
+    uncovered: {class: share}} - the part of the level no pick covers, which
+    stays as cash until a fund is picked for it."""
+    _name, *shares = LEVELS[level]
+    share = dict(zip(("stocks", "bonds", "cash"), shares))
+    by_class = {}
+    for symbol, cls in picks:
+        by_class.setdefault(cls, []).append(symbol)
+    weights = {}
+    covered = 0.0
+    for cls in ("stocks", "bonds", "cash"):
+        funds = by_class.get(cls) or []
+        if funds and share[cls]:
+            covered += share[cls]
+            for s in funds:
+                weights[s] = weights.get(s, 0.0) + share[cls] / len(funds)
+    alls = by_class.get(ALL) or []
+    rest = max(0.0, 1.0 - covered)
+    for s in alls:
+        weights[s] = weights.get(s, 0.0) + rest / len(alls)
+    uncovered = {} if alls else {c: v for c, v in share.items()
+                                 if v and not by_class.get(c)}
+    return {"weights": weights, "uncovered": uncovered}
+
+
+def purchases(weights: dict, prices: dict, held: dict | None, cash: float) -> dict:
+    """Whole shares to buy with `cash` so the funds move toward their shares
+    (`weights`, fractions of the account) without selling: each fund below
+    its share gets money in proportion to how far below it is, any rest goes
+    by the shares, then what is left buys single shares of the fund furthest
+    behind while it can. `prices` and `held` are in the same currency as the
+    cash. Returns {rows: [{symbol, weight, price, shares, cost}], spent, left}."""
+    held = {s: float((held or {}).get(s) or 0.0) for s in weights}
+    priced = {s: w for s, w in weights.items() if w > 0 and (prices.get(s) or 0) > 0}
+    total = sum(held.values()) + cash
+    target = {s: w * total for s, w in priced.items()}
+    short = {s: max(0.0, target[s] - held[s]) for s in priced}
+    need = sum(short.values())
+    if need >= cash and need > 0:
+        dollars = {s: cash * short[s] / need for s in priced}
+    else:
+        wsum = sum(priced.values())
+        dollars = {s: short[s] + (cash - need) * (w / wsum if wsum else 0.0)
+                   for s, w in priced.items()}
+        # Weights under 100% leave the rest as cash on purpose.
+        dollars = {s: min(d, max(0.0, target[s] - held[s]) if wsum < 0.999 else d)
+                   for s, d in dollars.items()}
+    shares = {s: int(dollars[s] // prices[s]) for s in priced}
+    left = cash - sum(shares[s] * prices[s] for s in priced)
+    for _ in range(10_000):
+        gaps = {s: target[s] - held[s] - shares[s] * prices[s] for s in priced
+                if prices[s] <= left + 1e-9 and target[s] - held[s] - shares[s] * prices[s] > 0}
+        if not gaps:
+            break
+        s = max(gaps, key=gaps.get)
+        shares[s] += 1
+        left -= prices[s]
+    rows = [{"symbol": s, "weight": weights[s], "price": prices.get(s),
+             "shares": shares.get(s, 0), "cost": shares.get(s, 0) * (prices.get(s) or 0.0)}
+            for s in weights]
+    spent = sum(r["cost"] for r in rows)
+    return {"rows": rows, "spent": spent, "left": cash - spent}
+
+
 def expected_return(stocks: float, bonds: float, cash: float, fee: float = INDEX_FEE) -> float:
     """A year's return from the guidelines, after the fee."""
     stock_r = sum(w * r for w, r in STOCK_MIX.values())

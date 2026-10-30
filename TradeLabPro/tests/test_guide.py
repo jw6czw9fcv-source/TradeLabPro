@@ -161,6 +161,36 @@ def test_the_guide_tab_sets_the_plan(tmp_path, prices):
     db.conn.close()
 
 
+def test_default_weights_follow_the_level():
+    balanced = 3                                                  # 60 / 40 / 0
+    assert g.default_weights(balanced, [("ONE", g.ALL)]) == {"weights": {"ONE": 1.0}, "uncovered": {}}
+    d = g.default_weights(balanced, [("CA", "stocks"), ("US", "stocks"), ("BND", "bonds")])
+    assert d["weights"] == pytest.approx({"CA": 0.3, "US": 0.3, "BND": 0.4})
+    assert d["uncovered"] == {}
+    d = g.default_weights(balanced, [("US", "stocks")])
+    assert d["weights"] == pytest.approx({"US": 0.6}) and d["uncovered"] == {"bonds": 0.4}
+    # A one-fund pick takes what the blocks leave.
+    d = g.default_weights(balanced, [("ONE", g.ALL), ("BND", "bonds")])
+    assert d["weights"] == pytest.approx({"ONE": 0.6, "BND": 0.4})
+
+
+def test_purchases_buy_whole_shares_toward_the_shares():
+    p = g.purchases({"A": 0.6, "B": 0.4}, {"A": 30.0, "B": 20.0}, {}, 1000)
+    by = {r["symbol"]: r for r in p["rows"]}
+    assert by["A"]["shares"] == 20 and by["B"]["shares"] == 20 and p["left"] == pytest.approx(0)
+    # What is held already: the fund behind gets the money first, nothing is sold.
+    p = g.purchases({"A": 0.5, "B": 0.5}, {"A": 10.0, "B": 10.0}, {"A": 1000}, 1000)
+    by = {r["symbol"]: r for r in p["rows"]}
+    assert by["A"]["shares"] == 0 and by["B"]["shares"] == 100
+    # Leftover buys single shares of the fund furthest behind while it can.
+    p = g.purchases({"A": 0.5, "B": 0.5}, {"A": 40.0, "B": 7.0}, {}, 100)
+    assert p["spent"] <= 100 and p["left"] < 7
+    # Shares under 100% leave the rest as cash; an unpriced fund buys nothing.
+    p = g.purchases({"A": 0.5, "B": 0.2}, {"A": 10.0}, {}, 1000)
+    by = {r["symbol"]: r for r in p["rows"]}
+    assert by["A"]["shares"] == 50 and by["B"]["shares"] == 0 and p["left"] == pytest.approx(500)
+
+
 def test_every_level_has_one_fund_candidates_and_the_blocks_cover_each_class():
     assert set(g.ONE_FUND) == set(range(len(g.LEVELS)))
     assert all(s.endswith(".TO") for syms in g.ONE_FUND.values() for s in syms)
@@ -216,5 +246,58 @@ def test_step_3_checks_the_funds_side_by_side(tmp_path, prices, monkeypatch):
     panel.fund_extra.setText("vfv.to")
     panel.check_funds()
     assert started[-1][-1] == "VFV.TO"
+    settings.remove(guide_panel.PROFILE_KEY)
+    db.conn.close()
+
+
+def test_step_4_turns_the_money_into_shares(tmp_path, prices, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from tradelab.data.database import Database
+    from tradelab.settings import app_settings
+    from tradelab.ui.panels import guide as guide_panel
+    QApplication.instance() or QApplication([])
+    asked = []
+
+    class NoNetwork:
+        def __init__(self, symbols, need_fx):
+            asked.append((list(symbols), need_fx))
+            self.done = type("S", (), {"connect": lambda *_a: None})()
+
+        def start(self):
+            pass
+
+        def isRunning(self):
+            return False
+
+    monkeypatch.setattr(guide_panel, "_PriceWorker", NoNetwork)
+    settings = app_settings(); settings.remove(guide_panel.PROFILE_KEY)
+    db = Database(path=tmp_path / "b.db")
+    db.add_portfolio("CELI B")
+    db.set_cash("CELI B", "CAD", 10_000)
+    panel = guide_panel.GuidePanel(db, settings=settings)
+    assert not panel.has_profile()
+    panel.measured = g.measure(prices)
+    panel.horizon.setCurrentIndex(5); panel.drop.setCurrentIndex(5)     # all stocks
+    panel.lump.setValue(5_000); panel.monthly.setValue(500)
+    panel.show_levels()
+    panel.portfolio.setCurrentText("CELI B")
+    panel.show_purchases()                                              # nothing picked yet
+    assert panel.pages.currentIndex() != 3
+    panel.picks = [["XEQT.TO", g.ALL]]
+    panel._picks_changed()
+    assert not panel.has_profile()                                      # funds alone are not a level
+    panel.show_purchases()
+    assert panel.pages.currentIndex() == 3 and asked[-1] == (["XEQT.TO"], False)
+    assert panel.buy_now.value() == 5_000 and panel.buy_monthly.value() == 500
+    panel._on_prices({"XEQT.TO": 40.0}, None, [])
+    assert panel.buy_table.item(0, 5).text() == "125 sh"                # $5,000 / $40
+    assert "Now: buy for $5,000" in panel.buy_summary.text()
+    assert "12 sh" in panel.buy_table.item(0, 7).text()                 # $500 a month
+    panel.use_recorded_cash()
+    assert panel.buy_now.value() == 10_000
+    assert "Buy 250 XEQT.TO" in panel.purchase_text()
+    # Picks are saved with the profile and come back.
+    again = guide_panel.GuidePanel(db, settings=settings)
+    assert again.picks == [["XEQT.TO", g.ALL]]
     settings.remove(guide_panel.PROFILE_KEY)
     db.conn.close()
