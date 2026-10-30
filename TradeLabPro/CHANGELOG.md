@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.65.0 - What to buy, in shares
+
+### Added
+- **Guide step 4 - Your purchases.** In step 3, add the funds you choose to **My funds** (saved with your level). Step 4 turns the money - the amount from step 1, or the cash recorded for the portfolio - into **whole shares** of each fund at the last close, then what each month's amount buys after that. Each fund's share comes from your level (one all-in-one fund takes it all; building blocks split their class) and can be changed by hand. A fund below its share gets the money first, so nothing is ever sold, and what the portfolio already holds counts. **Copy the list** puts the orders on the clipboard; you place them yourself.
+
+### Verified
+- Full pytest suite passes (1650), including 3 new tests: the shares from the level and the picks, whole-share purchases toward the shares without selling (with holdings, leftover and cash left on purpose), and step 4 end to end - prices, the monthly line, the recorded cash, the copied list and the saved funds.
+
 ## 2.64.0 - Guided, step by step
 
 ### Added

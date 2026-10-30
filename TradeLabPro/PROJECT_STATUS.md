@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.64.0
+Current version: 2.65.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.65.0 (What to buy, in shares)
+- **Guide step 4:** step 3's "My funds" (`picks` [[symbol, class]], class `guide.ALL` for a one-fund pick; saved in `Guide/profile` `funds`, which no longer counts as a chosen level - `has_profile` reads `level`). `guide.default_weights(level, picks)` (class share split evenly, one-fund picks take what blocks leave, `uncovered` named) and `guide.purchases(weights, prices, held, cash)` (money to the funds furthest below their share first, never selling, whole shares, leftover buys single shares of the fund furthest behind; weights under 100% leave cash). `_PriceWorker` (last close, `CAD=X` for US listings); held shares from the portfolio counted; Share % editable per fund; "Use its recorded cash"; "Copy the list" to the clipboard.
 
 ## Completed in 2.64.0 (Guided, step by step)
 - **Guide tab** (`core/guide.py`, `ui/panels/guide.py`), first tab, opens first until a level is saved (`Guide/profile`). Step 1 questions (horizon, drop tolerance, accounts, amounts, emergency fund, debt). Step 2: six `LEVELS` measured by `measure()` on XIU / SPY / EFA / EEM (US-listed at `CAD=X`, unhedged) + XBB + cash 2.4%, monthly rebalanced, since 2003-10 and over `WINDOWS` (10 / 3 / 1 years, each with its own falls); FP Canada / IQPF 2026 guidelines as the cautious basis (`expected_return`, verified 2026-10-28 on fpcanada.ca); `recommend()` = min(horizon cap, highest level whose since-2003 worst fall fits the drop); "Use this level" -> `set_plan_target`. Step 3: `ONE_FUND` per level and `BLOCKS` (38 Canadian-listed ETFs checked on Yahoo 2026-10-28) through `candidate.gather` / `facts`, Morningstar ratings when imported.
