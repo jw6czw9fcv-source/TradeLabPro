@@ -101,6 +101,14 @@ Drag the divider between the two halves to rebalance the space. Each tab scrolls
 internally if it needs more room than the window height, so the bottom of a tab
 is always reachable on any screen size.
 
+**Simple or Advanced mode.** *Simple* shows only the tabs needed to invest
+calmly — **Guide, Home, Portfolio, Retirement Sim, Plan, Settings, Help**;
+*Advanced* shows every tab, trading and research included. Switch with the
+button at the end of the tab row, or **View → Advanced mode** (Ctrl+Shift+A).
+Nothing is lost either way: a hidden tab keeps its data and comes back as it
+was. A new install starts in Simple; an install that already has portfolios
+starts in Advanced. The choice is remembered.
+
 **When something goes wrong, a pop-up says so.** A chart that finds no data, an
 import that fails, a refresh that cannot reach the market or a link that will
 not open each shows a Windows pop-up, as well as the line under its tab -

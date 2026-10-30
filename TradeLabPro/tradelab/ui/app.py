@@ -4619,6 +4619,26 @@ def _scroll_tab(widget):
     return sa
 
 
+# Simple mode: the tabs needed to invest calmly. Advanced shows every tab;
+# hidden tabs keep their data and come back as they were.
+SIMPLE_TABS = ("Guide", "Home", "Plan", "Portfolio", "Retirement Sim", "Settings", "Help")
+UI_MODE_KEY = "UI/mode"
+
+
+def ui_mode(db=None, settings=None) -> str:
+    """The mode chosen last; on a first run, Simple for a new install and
+    Advanced for someone who already has portfolios in TradeLab."""
+    s = settings or app_settings()
+    mode = str(s.value(UI_MODE_KEY, "") or "")
+    if mode in ("simple", "advanced"):
+        return mode
+    try:
+        used = bool(db is not None and db.portfolio_names())
+    except Exception:
+        used = False
+    return "advanced" if used else "simple"
+
+
 class MultiRowTabs(QWidget):
     """A drop-in-ish replacement for QTabWidget whose tab bar **wraps to
     multiple rows** (via FlowLayout), so all tabs stay visible with no overflow
@@ -4692,6 +4712,18 @@ class MultiRowTabs(QWidget):
 
     def tabText(self, index):
         return self._buttons[index].text() if 0 <= index < len(self._buttons) else ""
+
+    def setTabVisible(self, index, visible):
+        if 0 <= index < len(self._buttons):
+            self._buttons[index].setVisible(bool(visible))
+            self._bar.updateGeometry()
+
+    def isTabVisible(self, index):
+        return 0 <= index < len(self._buttons) and not self._buttons[index].isHidden()
+
+    def addCornerWidget(self, widget):
+        """A widget at the end of the tab row (after the last tab)."""
+        self._flow.addWidget(widget)
 
 
 class BacktestPanel(QWidget):
@@ -7033,12 +7065,46 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"{APP_NAME} {APP_VERSION} ready")
         self._route_status_to_status_bar()
         self._build_menus()
+        self.mode_button = QToolButton()
+        self.mode_button.setCursor(Qt.PointingHandCursor)
+        self.mode_button.setToolTip("Simple shows the tabs needed to invest calmly; Advanced "
+                                    "shows every tab. Nothing is lost either way.")
+        self.mode_button.clicked.connect(self.toggle_mode)
+        tabs.addCornerWidget(self.mode_button)
+        self.apply_mode(ui_mode(self.db))
         self.restore_window_state()
+
+    # -- Simple / Advanced ------------------------------------------------------
+    def apply_mode(self, mode):
+        """Show the Simple tabs only, or every tab; remember the choice."""
+        simple = mode == "simple"
+        for i in range(self.tabs.count()):
+            self.tabs.setTabVisible(i, not simple or self.tabs.tabText(i) in SIMPLE_TABS)
+        if not self.tabs.isTabVisible(self.tabs.currentIndex()):
+            self.tabs.setCurrentWidget(self.tabs.widget(0))
+        self.mode = "simple" if simple else "advanced"
+        self.mode_button.setText("Simple mode ▸ show all tabs" if simple
+                                 else "Advanced mode ▸ show fewer tabs")
+        self.advanced_action.setChecked(not simple)
+        s = app_settings()
+        s.setValue(UI_MODE_KEY, self.mode)
+        s.sync()
+
+    def toggle_mode(self):
+        self.apply_mode("advanced" if self.mode == "simple" else "simple")
 
     def _build_menus(self):
         """Menu bar with a Help section: an in-app User Manual viewer and a
         Version / About dialog. References are held on self so PySide6 doesn't
         garbage-collect the underlying C++ menu/actions."""
+        self.view_menu = self.menuBar().addMenu("&View")
+        self.advanced_action = QAction("Advanced mode - all tabs", self)
+        self.advanced_action.setCheckable(True)
+        self.advanced_action.setShortcut("Ctrl+Shift+A")
+        self.advanced_action.triggered.connect(
+            lambda on: self.apply_mode("advanced" if on else "simple"))
+        self.view_menu.addAction(self.advanced_action)
+
         self.help_menu = self.menuBar().addMenu("&Help")
 
         self.manual_action = QAction("User Manual", self)

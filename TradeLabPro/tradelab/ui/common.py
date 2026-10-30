@@ -643,6 +643,9 @@ class FlowLayout(QLayout):
     def _do_layout(self, rect, test_only):
         x, y, line_height = rect.x(), rect.y(), 0
         for item in self._items:
+            widget = item.widget()
+            if widget is not None and widget.isHidden():
+                continue        # a hidden tab leaves no gap
             hint = item.sizeHint()
             next_x = x + hint.width() + self._hspace
             if next_x - self._hspace > rect.right() and line_height > 0:
