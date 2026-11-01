@@ -8,21 +8,23 @@ import re
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDoubleSpinBox,
-                               QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QPushButton, QStackedWidget,
-                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
+                               QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+                               QLineEdit, QListWidget, QListWidgetItem, QPushButton, QSpinBox,
+                               QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from tradelab.core import guide as g
 from tradelab.core.candidate import is_us_listed
 from tradelab.core.logging_config import get_logger
 from tradelab.settings import app_settings
 from tradelab.ui import theme
-from tradelab.ui.common import StatusLabel, _hint, flag_problem
+from tradelab.ui.common import StatusLabel, _hint, flag_problem, notify
 
 log = get_logger(__name__)
 
 PROFILE_KEY = "Guide/profile"
+REMINDER_KEY = "Guide/lastReminder"   # the day the monthly reminder was last shown
 
 
 class _GuideWorker(QThread):
@@ -122,6 +124,8 @@ class GuidePanel(QWidget):
         self._price_worker = None
         self._buy_touched = False
         self._saved_level = None
+        self._reminder_timer = None
+        self._loading = False
         layout = QVBoxLayout(self)
         layout.addWidget(_hint(
             "New to investing? This guide takes you through it one step at a time: a few "
@@ -370,7 +374,15 @@ class GuidePanel(QWidget):
         v.addWidget(self.buy_summary)
         brow = QHBoxLayout()
         copy = QPushButton("Copy the list"); copy.clicked.connect(self.copy_purchases)
-        brow.addWidget(copy); brow.addStretch()
+        brow.addWidget(copy)
+        self.remind = QCheckBox("Remind me each month on day")
+        self.remind_day = QSpinBox(); self.remind_day.setRange(1, 28); self.remind_day.setValue(1)
+        self.remind.setToolTip("A Windows notification with this month's purchase, when TradeLab "
+                               "is open on or after that day - once a month.")
+        self.remind.toggled.connect(lambda _c: self._save_reminder())
+        self.remind_day.valueChanged.connect(lambda _v: self._save_reminder())
+        brow.addSpacing(20); brow.addWidget(self.remind); brow.addWidget(self.remind_day)
+        brow.addStretch()
         v.addLayout(brow)
         v.addWidget(_hint(
             "Whole shares only, at the last closing price - the price will have moved a little "
@@ -552,6 +564,48 @@ class GuidePanel(QWidget):
         QApplication.clipboard().setText(text)
         self.buy_status.setText("Copied - paste it in a note, or keep it beside your broker's "
                                 "order screen.")
+
+    # -- the monthly reminder --
+    def _save_reminder(self):
+        if self._loading:
+            return
+        try:
+            saved = json.loads(self._settings.value(PROFILE_KEY, "", type=str) or "{}")
+        except (ValueError, TypeError):
+            saved = {}
+        saved["reminder_day"] = self.remind_day.value() if self.remind.isChecked() else 0
+        self._settings.setValue(PROFILE_KEY, json.dumps(saved))
+        self._settings.sync()
+
+    def startup_reminder(self, today=None):
+        """At launch, and every few hours while open: this month's purchase in
+        a Windows notification, once a month, from the day chosen. True when
+        shown."""
+        if self._reminder_timer is None:
+            self._reminder_timer = QTimer(self)
+            self._reminder_timer.setInterval(6 * 3600 * 1000)
+            self._reminder_timer.timeout.connect(lambda: self.startup_reminder())
+            self._reminder_timer.start()
+        try:
+            saved = json.loads(self._settings.value(PROFILE_KEY, "", type=str) or "{}")
+        except (ValueError, TypeError):
+            return False
+        day = int(saved.get("reminder_day") or 0)
+        if not day or not self.picks:
+            return False
+        today = today or dt.date.today()
+        try:
+            last = dt.date.fromisoformat(str(self._settings.value(REMINDER_KEY, "") or ""))
+        except ValueError:
+            last = None
+        if not g.reminder_due(day, last, today):
+            return False
+        text = g.reminder_text(self._weights()["weights"], self.monthly.value())
+        if notify("TradeLab - your monthly purchase", text):
+            self._settings.setValue(REMINDER_KEY, today.isoformat())
+            self._settings.sync()
+            return True
+        return False
 
     def _save_funds(self):
         try:
@@ -772,9 +826,13 @@ class GuidePanel(QWidget):
             self.db.set_plan_target(portfolio, st * 100, bo * 100, ca * 100)
             if self.on_plan_changed:
                 self.on_plan_changed()
-        self._settings.setValue(PROFILE_KEY, json.dumps(
-            {"answers": self.answers(), "level": level, "portfolio": portfolio,
-             "saved": dt.date.today().isoformat()}))
+        try:
+            saved = json.loads(self._settings.value(PROFILE_KEY, "", type=str) or "{}")
+        except (ValueError, TypeError):
+            saved = {}
+        saved.update({"answers": self.answers(), "level": level, "portfolio": portfolio,
+                      "saved": dt.date.today().isoformat()})
+        self._settings.setValue(PROFILE_KEY, json.dumps(saved))
         self._save_funds()
         self._load_profile()
         where = (f" It is now {portfolio}'s target mix in the Plan tab, which shows what it "
@@ -804,6 +862,12 @@ class GuidePanel(QWidget):
         self.weights_pct = {f["symbol"]: float(f["weight"]) for f in funds
                             if isinstance(f.get("weight"), (int, float))}
         self._show_picks()
+        self._loading = True
+        day = int(saved.get("reminder_day") or 0)
+        self.remind.setChecked(bool(day))
+        if day:
+            self.remind_day.setValue(day)
+        self._loading = False
         level = saved.get("level")
         self._saved_level = level if isinstance(level, int) and 0 <= level < len(g.LEVELS) else None
         if isinstance(level, int) and 0 <= level < len(g.LEVELS):

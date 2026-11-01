@@ -116,6 +116,28 @@ def block_amounts(level: int, amount: float) -> dict:
     return {"stocks": amount * st, "bonds": amount * bo, "cash": amount * ca}
 
 
+def reminder_due(day: int, last, today) -> bool:
+    """Whether the monthly purchase reminder is due: on or after `day` of the
+    month (the month's last day when it is shorter), once a month. `last` is
+    the date it was last shown, or None."""
+    import calendar
+    if not day:
+        return False
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    if today.day < min(int(day), last_day):
+        return False
+    return last is None or (last.year, last.month) != (today.year, today.month)
+
+
+def reminder_text(weights: dict, monthly: float) -> str:
+    """What the reminder says: each fund's part of the month's amount."""
+    parts = [f"${monthly * w:,.0f} {s}" for s, w in weights.items() if w > 0 and monthly * w >= 1]
+    if monthly and parts:
+        return (f"Time for this month's purchase: ${monthly:,.0f} - " + ", ".join(parts)
+                + ". The Guide's step 4 has the share counts.")
+    return "Time for this month's purchase - the Guide's step 4 has the share counts."
+
+
 # Step 4 - the purchases. A pick is (symbol, class): "all" for a fund that
 # holds the whole level (step 3's one fund), else the block's class.
 ALL = "all"

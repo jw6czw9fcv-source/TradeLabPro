@@ -7323,6 +7323,11 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(9000, self.plan_panel.startup_check)
         except Exception:
             log.exception("Could not schedule the plan check")
+        # The Guide's monthly purchase reminder, when one is set.
+        try:
+            QTimer.singleShot(12000, self.guide_panel.startup_reminder)
+        except Exception:
+            log.exception("Could not schedule the monthly reminder")
 
     def _on_ibkr_synced(self, _portfolio):
         """A sync replaced a portfolio: re-value what shows the book."""

@@ -233,6 +233,9 @@ portfolio picked in step 2:
   exchange rate.
 - **Copy the list** puts the orders on the clipboard, to keep beside your
   broker's order screen.
+- **Remind me each month on day N** — a Windows notification with the month's
+  purchase (each fund's part of the monthly amount), once a month, the first
+  time TradeLab is open on or after that day.
 
 You place the orders yourself (a limit order near the price shown keeps a
 surprise out); TradeLab never trades.

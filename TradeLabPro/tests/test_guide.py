@@ -191,6 +191,20 @@ def test_purchases_buy_whole_shares_toward_the_shares():
     assert by["A"]["shares"] == 50 and by["B"]["shares"] == 0 and p["left"] == pytest.approx(500)
 
 
+def test_the_monthly_reminder_is_due_once_a_month_from_its_day():
+    import datetime as dt
+    d = dt.date
+    assert not g.reminder_due(0, None, d(2026, 11, 20))                 # off
+    assert not g.reminder_due(15, None, d(2026, 11, 14))
+    assert g.reminder_due(15, None, d(2026, 11, 15))
+    assert g.reminder_due(15, d(2026, 10, 15), d(2026, 11, 20))         # missed day: still due
+    assert not g.reminder_due(15, d(2026, 11, 16), d(2026, 11, 30))     # shown this month
+    assert g.reminder_due(28, None, d(2027, 2, 28))
+    text = g.reminder_text({"XEQT.TO": 0.6, "XBB.TO": 0.4}, 500)
+    assert "$500" in text and "$300 XEQT.TO" in text and "$200 XBB.TO" in text
+    assert "step 4" in g.reminder_text({}, 0)
+
+
 def test_every_level_has_one_fund_candidates_and_the_blocks_cover_each_class():
     assert set(g.ONE_FUND) == set(range(len(g.LEVELS)))
     assert all(s.endswith(".TO") for syms in g.ONE_FUND.values() for s in syms)
@@ -299,5 +313,20 @@ def test_step_4_turns_the_money_into_shares(tmp_path, prices, monkeypatch):
     # Picks are saved with the profile and come back.
     again = guide_panel.GuidePanel(db, settings=settings)
     assert again.picks == [["XEQT.TO", g.ALL]]
+
+    # The monthly reminder: set on step 4, shown once a month from its day.
+    import datetime as dt
+    shown = []
+    monkeypatch.setattr(guide_panel, "notify", lambda title, text: shown.append(text) or True)
+    settings.remove(guide_panel.REMINDER_KEY)
+    panel.remind_day.setValue(10); panel.remind.setChecked(True)
+    panel.use_level()                                                    # keeps the reminder
+    assert json.loads(settings.value(guide_panel.PROFILE_KEY))["reminder_day"] == 10
+    assert not panel.startup_reminder(today=dt.date(2026, 11, 9))
+    assert panel.startup_reminder(today=dt.date(2026, 11, 12))
+    assert "$500 XEQT.TO" in shown[-1]
+    assert not panel.startup_reminder(today=dt.date(2026, 11, 20))       # once a month
+    assert guide_panel.GuidePanel(db, settings=settings).remind.isChecked()
     settings.remove(guide_panel.PROFILE_KEY)
+    settings.remove(guide_panel.REMINDER_KEY)
     db.conn.close()
