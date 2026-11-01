@@ -63,6 +63,8 @@ log = get_logger(__name__)
 # on Windows, so the override is explicit - and matches how TRADELAB_DATA_DIR
 # and TRADELAB_LOG_DIR already keep the suite out of real data and logs.
 from tradelab.settings import SETTINGS_FILE_ENV, app_settings  # noqa: E402,F401
+from tradelab import i18n  # noqa: E402
+from tradelab.i18n import tr  # noqa: E402
 from tradelab.ui.common import (  # noqa: E402,F401
     StatusLabel,
     NO_POPUPS_ENV,
@@ -4666,12 +4668,14 @@ class MultiRowTabs(QWidget):
         self._stack = QStackedWidget()
         outer.addWidget(self._stack, 1)
         self._buttons = []
+        self._labels = []           # the English names - what tabText() answers
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
 
     def addTab(self, widget, label):
         index = self._stack.count()
         self._stack.addWidget(widget)
+        self._labels.append(label)
         btn = QToolButton()
         btn.setText(label)
         btn.setCheckable(True)
@@ -4711,7 +4715,8 @@ class MultiRowTabs(QWidget):
         return self._stack.widget(index)
 
     def tabText(self, index):
-        return self._buttons[index].text() if 0 <= index < len(self._buttons) else ""
+        """The tab's English name, whatever language the button shows."""
+        return self._labels[index] if 0 <= index < len(self._labels) else ""
 
     def setTabVisible(self, index, visible):
         if 0 <= index < len(self._buttons):
@@ -6948,7 +6953,27 @@ class MainWindow(QMainWindow):
         self.mode_button.clicked.connect(self.toggle_mode)
         tabs.addCornerWidget(self.mode_button)
         self.apply_mode(ui_mode(self.db))
+        i18n.translate_tree(self)        # French on screen, when chosen
         self.restore_window_state()
+
+    # -- language -----------------------------------------------------------------
+    def set_language(self, lang, ask=True):
+        """Remember the language; it applies at the next start (offered now)."""
+        s = app_settings()
+        s.setValue(i18n.LANG_KEY, lang)
+        s.sync()
+        for code, action in self.language_actions.items():
+            action.setChecked(code == lang)
+        if not ask:
+            return
+        answer = QMessageBox.question(
+            self, "TradeLab",
+            "Restart TradeLab now to change the language?\n"
+            "Redémarrer TradeLab maintenant pour changer la langue?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer == QMessageBox.Yes:
+            from tradelab.ui.panels.settings import restart_app
+            restart_app()
 
     # -- Simple / Advanced ------------------------------------------------------
     def apply_mode(self, mode):
@@ -6959,8 +6984,8 @@ class MainWindow(QMainWindow):
         if not self.tabs.isTabVisible(self.tabs.currentIndex()):
             self.tabs.setCurrentWidget(self.tabs.widget(0))
         self.mode = "simple" if simple else "advanced"
-        self.mode_button.setText("Simple mode ▸ show all tabs" if simple
-                                 else "Advanced mode ▸ show fewer tabs")
+        self.mode_button.setText(tr("Simple mode ▸ show all tabs") if simple
+                                 else tr("Advanced mode ▸ show fewer tabs"))
         self.advanced_action.setChecked(not simple)
         s = app_settings()
         s.setValue(UI_MODE_KEY, self.mode)
@@ -6980,6 +7005,16 @@ class MainWindow(QMainWindow):
         self.advanced_action.triggered.connect(
             lambda on: self.apply_mode("advanced" if on else "simple"))
         self.view_menu.addAction(self.advanced_action)
+        lang_menu = self.view_menu.addMenu("Language")
+        self.language_actions = {}
+        chosen = i18n.language()
+        for code, name in i18n.LANGUAGES:
+            action = QAction(name, self)
+            action.setCheckable(True)
+            action.setChecked(code == chosen)
+            action.triggered.connect(lambda _on=False, c=code: self.set_language(c))
+            lang_menu.addAction(action)
+            self.language_actions[code] = action
 
         self.help_menu = self.menuBar().addMenu("&Help")
 

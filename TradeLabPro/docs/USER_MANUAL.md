@@ -109,6 +109,12 @@ Nothing is lost either way: a hidden tab keeps its data and comes back as it
 was. A new install starts in Simple; an install that already has portfolios
 starts in Advanced. The choice is remembered.
 
+**English or French.** **View → Language → Français** shows TradeLab in
+French; it asks to restart, since the language applies when TradeLab starts.
+The tab names, the menus and the tabs of Simple mode — Guide, Home, Plan,
+Portfolio — are in French so far; the other tabs, some messages and this
+manual are still in English and follow over the next versions.
+
 **When something goes wrong, a pop-up says so.** A chart that finds no data, an
 import that fails, a refresh that cannot reach the market or a link that will
 not open each shows a Windows pop-up, as well as the line under its tab -

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
 from tradelab.core import guide as g
 from tradelab.core.candidate import is_us_listed
 from tradelab.core.logging_config import get_logger
+from tradelab.i18n import mark, tr
 from tradelab.settings import app_settings
 from tradelab.ui import theme
 from tradelab.ui.common import StatusLabel, _hint, flag_problem, notify
@@ -203,6 +204,7 @@ class GuidePanel(QWidget):
         self.monthly.setSingleStep(50); self.monthly.setPrefix("$ "); self.monthly.setGroupSeparatorShown(True)
         self.emergency = QComboBox(); self.emergency.addItems(g.YES_NO)
         self.debt = QComboBox(); self.debt.addItems(g.YES_NO); self.debt.setCurrentIndex(1)
+        mark(self.horizon, self.drop, self.accounts, self.emergency, self.debt)   # read by position
         form.addRow("When will you need this money?", self.horizon)
         form.addRow("How big a drop could you live through without selling?", self.drop)
         form.addRow("", _hint("A 20% drop turns $10,000 into $8,000 for a while - months, "
@@ -235,7 +237,7 @@ class GuidePanel(QWidget):
         v.addWidget(self.status)
         brow = QHBoxLayout()
         brow.addWidget(QLabel("Period"))
-        self.basis = QComboBox(); self.basis.addItems(g.BASES)
+        self.basis = QComboBox(); self.basis.addItems(g.BASES); mark(self.basis)
         self.basis.currentIndexChanged.connect(lambda _i: self._show())
         brow.addWidget(self.basis)
         self.period_note = QLabel(""); self.period_note.setWordWrap(True)
@@ -300,6 +302,7 @@ class GuidePanel(QWidget):
         row.addWidget(self.fund_set)
         row.addWidget(QLabel("Order by"))
         self.fund_sort = QComboBox(); self.fund_sort.addItems([s[0] for s in SORTS])
+        mark(self.fund_sort)
         self.fund_sort.currentIndexChanged.connect(lambda _i: self._show_funds())
         row.addWidget(self.fund_sort)
         row.addStretch()
@@ -730,9 +733,9 @@ class GuidePanel(QWidget):
                                  f"fund per part - compare them below.")
         self.fund_set.blockSignals(True)
         self.fund_set.clear()
-        self.fund_set.addItem(f"One fund for {name}")
+        self.fund_set.addItem(tr("One fund for {name}").format(name=tr(name)))
         for block in g.BLOCKS:
-            self.fund_set.addItem(f"Building block: {block[0]}")
+            self.fund_set.addItem(tr("Building block: {name}").format(name=tr(block[0])))
         self.fund_set.blockSignals(False)
         self._go(2)
         self.check_funds()
@@ -792,9 +795,9 @@ class GuidePanel(QWidget):
             self.check_funds()
 
     def _show_funds(self):
-        from tradelab.core.candidate import rank
+        from tradelab.core.candidate import SORTS, rank
         rows = rank([self._fund_facts[s] for s in self._fund_symbols if s in self._fund_facts],
-                    self.fund_sort.currentText())
+                    SORTS[max(0, self.fund_sort.currentIndex())][0])
 
         def pct(v, d=1):
             return "—" if v is None else f"{v * 100:.{d}f}%"
@@ -831,10 +834,12 @@ class GuidePanel(QWidget):
         self._show()
 
     def answers(self) -> dict:
+        # By position, so the answers stay the same in either language.
         return {"horizon": self.horizon.currentIndex(), "drop": self.drop.currentIndex(),
-                "accounts": self.accounts.currentText(), "lump": self.lump.value(),
-                "monthly": self.monthly.value(), "emergency": self.emergency.currentText(),
-                "debt": self.debt.currentText(),
+                "accounts": g.ACCOUNTS[max(0, self.accounts.currentIndex())],
+                "lump": self.lump.value(), "monthly": self.monthly.value(),
+                "emergency": g.YES_NO[max(0, self.emergency.currentIndex())],
+                "debt": g.YES_NO[max(0, self.debt.currentIndex())],
                 "basis": self.basis.currentIndex() if hasattr(self, "basis") else 0}
 
     def _show(self):
@@ -857,9 +862,11 @@ class GuidePanel(QWidget):
         else:
             self.period_note.setText("The returns, the falls and your money below all follow it.")
             self.period_note.setStyleSheet("color:#8a9099;")
-        for col, text in ((2, f"Did a year, {window}"), (4, f"Your money in {years} years"),
-                          (5, f"Worst fall, {window} (when)"), (6, "Worst 12 months"),
-                          (7, "Worst 5 years, a year")):
+        window = tr(window)
+        for col, text in ((2, tr("Did a year, {window}").format(window=window)),
+                          (4, tr("Your money in {years} years").format(years=years)),
+                          (5, tr("Worst fall, {window} (when)").format(window=window)),
+                          (6, tr("Worst 12 months")), (7, tr("Worst 5 years, a year"))):
             self.table.setHorizontalHeaderItem(col, QTableWidgetItem(text))
         invested = a["lump"] + a["monthly"] * 12 * years
 
@@ -869,7 +876,7 @@ class GuidePanel(QWidget):
             w = g.window_record(r, a["basis"], self.measured)
             rate = g.rate_for(r, a["basis"], self.measured)
             fv = g.future_value(a["lump"], a["monthly"], years, rate)
-            cells = [("★ " if r == rec["level"] else "") + name,
+            cells = [("★ " if r == rec["level"] else "") + tr(name),
                      f"{st:.0%} / {bo:.0%} / {ca:.0%}",
                      f"{w['cagr']:.1%}" if w else "…",
                      f"{g.expected_return(st, bo, ca):.1%}",
@@ -945,10 +952,11 @@ class GuidePanel(QWidget):
         for combo, key in ((self.horizon, "horizon"), (self.drop, "drop"), (self.basis, "basis")):
             if isinstance(a.get(key), int):
                 combo.setCurrentIndex(a[key])
-        for combo, key in ((self.accounts, "accounts"), (self.emergency, "emergency"),
-                           (self.debt, "debt")):
-            if a.get(key):
-                combo.setCurrentText(a[key])
+        for combo, key, choices in ((self.accounts, "accounts", g.ACCOUNTS),
+                                    (self.emergency, "emergency", g.YES_NO),
+                                    (self.debt, "debt", g.YES_NO)):
+            if a.get(key) in choices:
+                combo.setCurrentIndex(choices.index(a[key]))
         self.lump.setValue(float(a.get("lump") or 0))
         self.monthly.setValue(float(a.get("monthly") or 0))
         if saved.get("portfolio"):

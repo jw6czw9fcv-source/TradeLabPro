@@ -134,6 +134,7 @@ class HomePanel(AutoRefresh, QWidget):
         top.addStretch()
         self.currency = QComboBox(); self.currency.addItems(["CAD", "USD", "Native (mixed)"])
         self.chart_mode = QComboBox(); self.chart_mode.addItems(self.CHART_MODES)
+        self.chart_mode.setProperty("i18n", True)       # read by position
         self.chart_mode.setToolTip(
             "Estimated: today's share counts valued back through the year. Recorded: what "
             "the account was really worth each day TradeLab priced it - deposits, trades "
@@ -529,11 +530,12 @@ class HomePanel(AutoRefresh, QWidget):
             self.plan_line.hide()
             return
         colour = {"green": theme.UP, "yellow": theme.WARN, "red": theme.DOWN}[light]
+        from tradelab.i18n import tr
         self.plan_line.setText(
             f"<span style='color:{colour}; font-size:16px;'>●</span> "
-            f"<b>Your plan:</b> {html.escape(text)}"
+            f"<b>{tr('Your plan:')}</b> {html.escape(tr(text))}"
             + (f" &nbsp;<span style='color:{theme.MUTED};'>{html.escape(extra)}</span>" if extra else "")
-            + " &nbsp;<a href='plan'>Open the Plan tab</a>")
+            + f" &nbsp;<a href='plan'>{tr('Open the Plan tab')}</a>")
         self.plan_light = light
         self.plan_line.show()
 

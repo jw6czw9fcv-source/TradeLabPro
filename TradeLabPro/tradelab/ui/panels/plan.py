@@ -267,6 +267,7 @@ class PlanPanel(QWidget):
         self.flow_day.setDisplayFormat("yyyy-MM-dd"); self.flow_day.setDate(QDate.currentDate())
         self.flow_account = QComboBox(); self.flow_account.addItems(room.ACCOUNTS)
         self.flow_kind = QComboBox(); self.flow_kind.addItems(["Deposit", "Withdrawal"])
+        self.flow_kind.setProperty("i18n", True)         # read by position
         self.flow_amount = QDoubleSpinBox(); self.flow_amount.setRange(0, 10_000_000)
         self.flow_amount.setDecimals(2); self.flow_amount.setPrefix("$ ")
         self.flow_amount.setGroupSeparatorShown(True)
@@ -327,7 +328,7 @@ class PlanPanel(QWidget):
         if amount <= 0:
             flag_problem(self.status, "Type the amount of the deposit or withdrawal.")
             return False
-        deposit = self.flow_kind.currentText() == "Deposit"
+        deposit = self.flow_kind.currentIndex() == 0      # Deposit, Withdrawal
         day = self.flow_day.date().toString("yyyy-MM-dd")
         if deposit:
             current = next((s for s in self.room_statuses() if s["account"] == account), None)
