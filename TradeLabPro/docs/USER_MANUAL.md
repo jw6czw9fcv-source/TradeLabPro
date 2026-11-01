@@ -33,7 +33,7 @@ to explain what you're looking at.
 
 1. [Installation & launching](#1-installation--launching)
 2. [The main window](#2-the-main-window)
-3. [A five-minute tour](#3-a-five-minute-tour)
+3. [Quick start](#3-quick-start)
 4. [Home](#4-home)
 5. [Scanner](#5-scanner)
 6. [Charts](#6-charts)
@@ -121,7 +121,50 @@ to paste into the browser.
 
 ---
 
-## 3. A five-minute tour
+## 3. Quick start
+
+Two ways in: **investing calmly** for a REER or a CELI (start here if you are
+new), or **trading** with the research tools. Both use the same data.
+
+### Investing calmly — start here (about 15 minutes)
+
+1. **Install and open.** Run the installer. TradeLab opens on the **Guide**
+   tab. A new install starts in **Simple mode**: only the tabs you need (the
+   button at the end of the tab row shows all of them).
+2. **Add your accounts.** **Portfolio** tab → **Add…** one portfolio per
+   account, for example *REER IBKR* and *CELI IBKR*. Bring in what each holds:
+   the IBKR import into that name (tick **Sync this portfolio when TradeLab
+   starts** to keep it current), and **Set cash** for the cash it holds.
+3. **Guide, step 1 — About you.** Answer honestly, especially *the biggest drop
+   you could live through without selling*: it decides more than anything else.
+4. **Step 2 — Your level.** Read the table across: what each level returned
+   *and* how far it fell in bad years. The ★ level is the one your answers
+   point to. Pick the account in **For portfolio**, click **Use this level** —
+   it becomes that account's target mix in the Plan tab. Do it for each
+   account.
+5. **Step 3 — Your funds.** **Show: One fund for your level** is the simplest
+   choice (one all-in-one ETF that rebalances itself). Order by **Lowest
+   fees**, select the one you choose, **Add selected to my funds**.
+6. **Step 4 — Your purchases.** **Use its recorded cash** turns the account's
+   cash into whole shares; **Copy the list** and place the orders yourself at
+   IBKR (a limit order near the price shown). Tick **Remind me each month on
+   day N** if you add money monthly.
+7. **Then just look at Home.** The **plan light** under the title: 🟢 on track,
+   🟡 or 🔴 something wants a look — **Open the Plan tab** says what, in dollars.
+   About once a quarter, read the Plan tab's checklist and click **Mark
+   reviewed today**.
+8. **When the market falls,** TradeLab says so at 10%, 20% and 30%, beside your
+   level's own record of how far it fell and how long it took to come back.
+   That is the moment not to sell.
+
+Optional: **Retirement Sim** shows how long the money lasts and the most you
+can safely spend a year. If you swing-trade inside your REER or CELI, set those
+holdings' class to **trading** in the Plan tab, so they stay out of the mix and
+under the trading cap.
+
+### For trading — a five-minute tour
+
+Switch to **Advanced mode** first (the button at the end of the tab row).
 
 1. **Look at Home.** It's already loaded — your book's value, today's move,
    unrealized P&L and annual income, anything that needs attention, and how the
