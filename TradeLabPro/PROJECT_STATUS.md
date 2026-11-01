@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.69.0
+Current version: 2.70.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.70.0 (En français)
+- **French on screen, phase 1:** `tradelab/i18n.py` - `LANG_KEY` "UI/language", `language()`, `tr()`, the `FR` dictionary (English key -> French), `translate_tree(root)` run at the end of `MainWindow.__init__` (labels, buttons, group titles, headers, placeholders, tooltips, menus through their QMenu objects - `QAction.menu()` hands a menu to Python, which deletes it); combo items only when `mark()`ed, since some are read back by text. `MultiRowTabs.tabText` returns the English name (`_labels`). View → Language (English / Français) with a restart offer. Guide answers stored by position (`g.ACCOUNTS`, `g.YES_NO`), step 3's sort by index, Plan's deposit kind by index. Covered: tab row, menus, mode button, Guide, Home, Plan, Portfolio. Still English: Retirement Sim, Settings, the Advanced tabs, dynamic sentences, the manual.
 
 ## Completed in 2.69.0 (Room to save, and the real return)
 - **Contribution room:** schema v14 `contribution_room` (account, room, as_of) and `contributions` (account, day, amount + / -, note); `core/room.py` - `status` (CELI: deposits since the room date, withdrawals back on the next January 1, `TFSA_LIMIT` {2026: 7000} added on its January 1, later years flagged `unknown_years`; REER: no room back, `RRSP_BUFFER` 2000 before the excess), `check_items`, `would_exceed`. Rules read on canada.ca 2026-11-01. Plan tab box (room + date per account, Record / Remove, a confirmation before a deposit past the room); the room items join the checklist (and so Home's light).

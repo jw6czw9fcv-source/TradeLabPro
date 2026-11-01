@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.70.0 - En français
+
+### Added
+- **French interface** (View → Language → Français, applied at the next start, with a restart offered): the tab names, the menus, the Simple / Advanced button, and the Simple tabs a beginner uses - the Guide's four steps, Home, Plan (contribution room included) and Portfolio. Retirement Sim, Settings, the Advanced tabs, some messages built on the fly and the manual are still in English and follow later. Your answers and settings are stored the same in either language.
+
+### Verified
+- Full pytest suite passes (1667), including 5 new tests: tr() only in French, every template keeping its fields, the language setting, the window in French with its logic intact (tab names, the Guide's stored answers, lists read by text), and English untouched.
+
 ## 2.69.0 - Room to save, and the real return
 
 ### Added
