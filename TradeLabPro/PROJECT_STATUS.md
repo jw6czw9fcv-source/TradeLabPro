@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.70.0
+Current version: 2.70.1
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.70.1 (One restart, not a hundred)
+- **Restart as a separate program:** `settings.restart_environment()` - the system environment with `PYINSTALLER_RESET_ENVIRONMENT=1` and the `_PYI_*` / `_MEIPASS2` markers dropped; `restart_app` starts through a `QProcess` with it (`startDetached()` returns a bool in PySide6). Inherited markers made a restart of the one-file .exe reuse a folder being deleted and relaunch itself in a loop (2.70.0, the language switch). Release check on the real exe: `TRADELAB_SELFTEST_RESTART=1` restarts once after launch (not inherited).
 
 ## Completed in 2.70.0 (En français)
 - **French on screen, phase 1:** `tradelab/i18n.py` - `LANG_KEY` "UI/language", `language()`, `tr()`, the `FR` dictionary (English key -> French), `translate_tree(root)` run at the end of `MainWindow.__init__` (labels, buttons, group titles, headers, placeholders, tooltips, menus through their QMenu objects - `QAction.menu()` hands a menu to Python, which deletes it); combo items only when `mark()`ed, since some are read back by text. `MultiRowTabs.tabText` returns the English name (`_labels`). View → Language (English / Français) with a restart offer. Guide answers stored by position (`g.ACCOUNTS`, `g.YES_NO`), step 3's sort by index, Plan's deposit kind by index. Covered: tab row, menus, mode button, Guide, Home, Plan, Portfolio. Still English: Retirement Sim, Settings, the Advanced tabs, dynamic sentences, the manual.

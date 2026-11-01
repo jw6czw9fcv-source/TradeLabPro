@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.70.1 - One restart, not a hundred
+
+### Fixed
+- **Restarting TradeLab relaunched it in a loop** - after the language switch, or an update - and showed "Failed to remove temporary directory": the new copy took itself for a part of the old one and used its temporary folder as it was being deleted. A restart now starts one separate, fresh copy.
+
+### Verified
+- Full pytest suite passes (1668), including 1 new test: the restart's environment is a fresh one. Checked on the built program: it restarted once, the old copy closed, and no copy multiplied.
+
 ## 2.70.0 - En français
 
 ### Added
