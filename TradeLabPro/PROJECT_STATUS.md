@@ -1,7 +1,11 @@
 # TradeLab Pro Project Status
 
-Current version: 2.68.1
+Current version: 2.69.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.69.0 (Room to save, and the real return)
+- **Contribution room:** schema v14 `contribution_room` (account, room, as_of) and `contributions` (account, day, amount + / -, note); `core/room.py` - `status` (CELI: deposits since the room date, withdrawals back on the next January 1, `TFSA_LIMIT` {2026: 7000} added on its January 1, later years flagged `unknown_years`; REER: no room back, `RRSP_BUFFER` 2000 before the excess), `check_items`, `would_exceed`. Rules read on canada.ca 2026-11-01. Plan tab box (room + date per account, Record / Remove, a confirmation before a deposit past the room); the room items join the checklist (and so Home's light).
+- **Return against the level:** `room.modified_dietz` (flows weighted by time invested) and `annualized`; `guide.level_growth(prices, level, start, end)` (daily closes, US-listed in CAD, held from the first day, cash at 2.4%); Plan tab `compare_return` after each pricing (first and last CAD rows of `value_history`, the recorded contributions as flows, the Guide's level) through `_ReturnWorker`; `return_text` per year from a year on, "too short to judge" before.
 
 ## Completed in 2.68.1 (Each step from the left)
 - **Guide layout:** every step change goes through `GuidePanel._go` (focus on the page, then `_scroll_home` puts the enclosing tab's scroll area back at the top left - the focused Next button at the right used to scroll a wide step sideways); step 3's controls split over two rows.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.69.0 - Room to save, and the real return
+
+### Added
+- **CELI and REER contribution room** (Plan tab): type the room CRA shows with its date, record each deposit and withdrawal, and the checklist shows the room left. A CELI withdrawal comes back as room on January 1 of the next year; the 2026 CELI limit of $7,000 is added on its January 1, and a later year asks for the room from CRA again. A deposit past the room asks first - an excess is taxed 1% a month (for the REER, beyond a $2,000 allowance), as canada.ca sets out.
+- **Your return against your level** (Plan tab): what the book really did since TradeLab started recording its value, your recorded deposits and withdrawals left out, beside what the Guide's level did over the same days - "too short to judge" under a year, per year after.
+
+### Verified
+- Full pytest suite passes (1662), including 8 new tests: CELI room with withdrawals coming back and the 2026 limit, over the room and the REER allowance, the return with deposits left out, a level's growth between two days, the return's wording, and the Plan tab's room and comparison end to end.
+
 ## 2.68.1 - Each step from the left
 
 ### Fixed
