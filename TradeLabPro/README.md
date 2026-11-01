@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.67.0 - A reminder, and a clean close - a monthly purchase reminder from the Guide, a closed TradeLab that always ends its process so the installer is never blocked, and the Morningstar import removed
+
 2.66.0 - Simple, or everything - a Simple mode shows only the tabs needed to invest calmly, and Advanced every tab, switched in one click
 
 2.65.0 - What to buy, in shares - the Guide's fourth step turns the money into whole shares of the funds you picked, now and each month, toward your level without selling anything

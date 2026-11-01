@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.66.0
+Current version: 2.67.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.67.0 (A reminder, and a clean close)
+- **Monthly purchase reminder:** `guide.reminder_due(day, last, today)` (on or after the day, the month's last day when shorter, once a month) and `guide.reminder_text(weights, monthly)`; Guide step 4 "Remind me each month on day N" (`reminder_day` in `Guide/profile`, last shown in `Guide/lastReminder`); `GuidePanel.startup_reminder` 12 s after launch and every 6 hours. `use_level` now merges into the saved profile instead of replacing it.
+- **Clean close:** `run_app` logs "TradeLab Pro closed", syncs the settings and ends with `os._exit` once the window is closed, so a library's download thread cannot keep a windowless process holding the .exe. The installer's `PrepareToInstall` closes running copies (`taskkill`, then `/F` after 4 s).
+- **Morningstar import removed** (`core/morningstar.py`, its AI Assist list, the stars / medalist sorts and columns, the Guide's ratings); the saved `Morningstar/export` setting is cleared.
 
 ## Completed in 2.66.0 (Simple, or everything)
 - **Simple / Advanced mode:** `SIMPLE_TABS` (Guide, Home, Plan, Portfolio, Retirement Sim, Settings, Help), `UI_MODE_KEY` "UI/mode", `ui_mode(db, settings)` (last choice; first run Simple unless the install has portfolios). `MultiRowTabs.setTabVisible` / `isTabVisible` / `addCornerWidget`; `FlowLayout` skips hidden widgets. `MainWindow.apply_mode` / `toggle_mode`, a button at the end of the tab row and View → Advanced mode (Ctrl+Shift+A); a hidden current tab gives way to the first.

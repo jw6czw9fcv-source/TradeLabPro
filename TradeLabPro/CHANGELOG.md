@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.67.0 - A reminder, and a clean close
+
+### Added
+- **Monthly purchase reminder** (Guide, step 4): tick **Remind me each month on day N** and a Windows notification lists the month's purchase - each fund's part of your monthly amount - once a month, the first time TradeLab is open on or after that day.
+
+### Fixed
+- **A closed TradeLab could stay running with no window**, holding the installed program so the next installer stalled. Closing the window now always ends the process, and the installer closes any running copy itself before installing.
+
+### Removed
+- **The Morningstar import** (AI Assist) and the Morningstar ratings in the shortlist and the Guide: exports from a paid account were too slow to gather. The saved import is cleared.
+
+### Verified
+- Full pytest suite passes (1647): 1 new test for the reminder's timing and text, step 4's reminder end to end, and the 6 Morningstar tests removed with the feature.
+
 ## 2.66.0 - Simple, or everything
 
 ### Added
