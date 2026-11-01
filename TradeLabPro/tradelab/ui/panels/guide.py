@@ -169,6 +169,23 @@ class GuidePanel(QWidget):
         layout.addWidget(self.pages, 1)
         self._load_profile()
 
+    def _go(self, index):
+        """Show a step from its top left. The tab scrolls itself to keep the
+        focused button in view - the Next button sits at the right, so a wide
+        step used to open scrolled sideways."""
+        self.pages.setCurrentIndex(index)
+        self.pages.currentWidget().setFocus()
+        QTimer.singleShot(0, self._scroll_home)
+
+    def _scroll_home(self):
+        from PySide6.QtWidgets import QScrollArea
+        parent = self.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if parent is not None:
+            parent.horizontalScrollBar().setValue(0)
+            parent.verticalScrollBar().setValue(0)
+
     # -- step 1 --
     def _about_you_page(self):
         page = QWidget(); v = QVBoxLayout(page)
@@ -258,7 +275,7 @@ class GuidePanel(QWidget):
             "always judged on the worst fall since 2003, 2008 included, because one like it can "
             "come again. The past is no promise. " + theme.NOT_ADVICE))
         row = QHBoxLayout()
-        back = QPushButton("←  Back"); back.clicked.connect(lambda: self.pages.setCurrentIndex(0))
+        back = QPushButton("←  Back"); back.clicked.connect(lambda: self._go(0))
         row.addWidget(back); row.addStretch()
         nxt = QPushButton("Next: your funds  →"); nxt.clicked.connect(self.show_funds)
         row.addWidget(nxt)
@@ -274,19 +291,24 @@ class GuidePanel(QWidget):
         self.funds_intro = QLabel(""); self.funds_intro.setWordWrap(True)
         self.funds_intro.setStyleSheet("font-weight:bold;")
         v.addWidget(self.funds_intro)
+        # Two short rows rather than one long one: a row wider than the tab
+        # pushes the page sideways.
         row = QHBoxLayout()
         row.addWidget(QLabel("Show"))
         self.fund_set = QComboBox(); self.fund_set.setMinimumWidth(240)
         self.fund_set.currentIndexChanged.connect(lambda _i: self.check_funds())
         row.addWidget(self.fund_set)
-        row.addWidget(QLabel("Also check"))
-        self.fund_extra = QLineEdit(); self.fund_extra.setPlaceholderText("other symbols, e.g. VDY.TO")
-        self.fund_extra.returnPressed.connect(self.check_funds)
-        row.addWidget(self.fund_extra, 1)
         row.addWidget(QLabel("Order by"))
         self.fund_sort = QComboBox(); self.fund_sort.addItems([s[0] for s in SORTS])
         self.fund_sort.currentIndexChanged.connect(lambda _i: self._show_funds())
         row.addWidget(self.fund_sort)
+        row.addStretch()
+        v.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Also check"))
+        self.fund_extra = QLineEdit(); self.fund_extra.setPlaceholderText("other symbols, e.g. VDY.TO")
+        self.fund_extra.returnPressed.connect(self.check_funds)
+        row.addWidget(self.fund_extra, 1)
         check = QPushButton("Check"); check.clicked.connect(self.check_funds)
         row.addWidget(check)
         v.addLayout(row)
@@ -322,7 +344,7 @@ class GuidePanel(QWidget):
             "Account: \"REER\" when a US-listed fund's dividends would lose 15% to US tax in a "
             "CELI. TradeLab orders them by what you choose and never picks. " + theme.NOT_ADVICE))
         row = QHBoxLayout()
-        back = QPushButton("←  Back"); back.clicked.connect(lambda: self.pages.setCurrentIndex(1))
+        back = QPushButton("←  Back"); back.clicked.connect(lambda: self._go(1))
         row.addWidget(back); row.addStretch()
         nxt = QPushButton("Next: your purchases  →"); nxt.clicked.connect(self.show_purchases)
         row.addWidget(nxt)
@@ -419,7 +441,7 @@ class GuidePanel(QWidget):
             "monthly line assumes today's purchase is made. A fund listed in the US is priced in "
             "CAD at today's exchange rate. " + theme.NOT_ADVICE))
         row = QHBoxLayout()
-        back = QPushButton("←  Back"); back.clicked.connect(lambda: self.pages.setCurrentIndex(2))
+        back = QPushButton("←  Back"); back.clicked.connect(lambda: self._go(2))
         row.addWidget(back); row.addStretch()
         v.addLayout(row)
         return page
@@ -432,7 +454,7 @@ class GuidePanel(QWidget):
             flag_problem(self.fund_status, "Add at least one fund to My funds first (select it "
                                            "in the table, then Add selected to my funds).")
             return
-        self.pages.setCurrentIndex(3)
+        self._go(3)
         portfolio = self._target_portfolio()
         self.buy_portfolio.setText(f"For {portfolio}:" if portfolio else "For your account:")
         if not self.buy_now.value() and not self._buy_touched:
@@ -712,7 +734,7 @@ class GuidePanel(QWidget):
         for block in g.BLOCKS:
             self.fund_set.addItem(f"Building block: {block[0]}")
         self.fund_set.blockSignals(False)
-        self.pages.setCurrentIndex(2)
+        self._go(2)
         self.check_funds()
 
     def _fund_choice(self):
@@ -790,7 +812,7 @@ class GuidePanel(QWidget):
 
     def show_levels(self):
         self._user_picked = False
-        self.pages.setCurrentIndex(1)
+        self._go(1)
         self._fill_portfolios()
         self._show()
         if self.measured is None and (self._worker is None or not self._worker.isRunning()):

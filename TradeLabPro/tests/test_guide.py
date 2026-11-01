@@ -205,6 +205,27 @@ def test_the_monthly_reminder_is_due_once_a_month_from_its_day():
     assert "step 4" in g.reminder_text({}, 0)
 
 
+def test_each_step_opens_at_its_top_left(tmp_path, prices):
+    """A step wider than the tab used to open scrolled toward its Next button."""
+    from PySide6.QtWidgets import QApplication, QScrollArea
+    from tradelab.settings import app_settings
+    from tradelab.ui.panels.guide import PROFILE_KEY, GuidePanel
+    app = QApplication.instance() or QApplication([])
+    settings = app_settings(); settings.remove(PROFILE_KEY)
+    panel = GuidePanel(None, settings=settings)
+    area = QScrollArea(); area.setWidgetResizable(True); area.setWidget(panel)
+    area.resize(300, 300); area.show()
+    panel.measured = g.measure(prices)
+    panel.show_levels()
+    area.horizontalScrollBar().setValue(area.horizontalScrollBar().maximum())
+    area.verticalScrollBar().setValue(area.verticalScrollBar().maximum())
+    panel._go(1)
+    for _ in range(5):
+        app.processEvents()
+    assert area.horizontalScrollBar().value() == 0 and area.verticalScrollBar().value() == 0
+    area.close()
+
+
 def test_every_level_has_one_fund_candidates_and_the_blocks_cover_each_class():
     assert set(g.ONE_FUND) == set(range(len(g.LEVELS)))
     assert all(s.endswith(".TO") for syms in g.ONE_FUND.values() for s in syms)
