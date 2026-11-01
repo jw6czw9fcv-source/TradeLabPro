@@ -263,10 +263,10 @@ class GuidePanel(QWidget):
         v.addWidget(self.fund_note)
         self.fund_status = StatusLabel(); self.fund_status.setStyleSheet("color:#8a9099;")
         v.addWidget(self.fund_status)
-        self.fund_table = QTableWidget(0, 10)
+        self.fund_table = QTableWidget(0, 9)
         self.fund_table.setHorizontalHeaderLabels(
             ["Symbol", "Name", "Fees/yr", "Risk (CSA)", "Worst fall (when)", "1 yr", "5 yr, a year",
-             "10 yr, a year", "Account", "Morningstar"])
+             "10 yr, a year", "Account"])
         self.fund_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.fund_table.verticalHeader().setVisible(False)
         self.fund_table.setMinimumHeight(170)
@@ -619,30 +619,19 @@ class GuidePanel(QWidget):
 
     def _on_funds(self, gathered, errors):
         from tradelab.core.candidate import facts
-        from tradelab.core.morningstar import by_symbol
         etfs = self.db.etf_list() if self.db is not None else []
-        try:
-            ms = by_symbol(json.loads(self._settings.value("Morningstar/export", "", type=str)
-                                      or "{}").get("rows") or [])
-        except (ValueError, TypeError):
-            ms = {}
         for symbol, info in gathered.items():
             meta = info.get("meta") or {}
-            m = ms.get(symbol) or {}
             screener = next((r for r in etfs if symbol in {str(r.get("ticker") or "").upper(),
                                                              str(r.get("yahoo") or "").upper()}), None)
             if screener and screener.get("mer") is not None:
                 mer, source = screener["mer"], "ETF Screener"
-            elif m.get("mer") is not None:
-                mer, source = m["mer"], "Morningstar"
             elif meta.get("expense_ratio") is not None:
                 mer, source = meta["expense_ratio"], "Yahoo"
             else:
                 mer, source = None, ""
-            row = facts(symbol, info.get("prices"), meta, mer=mer, mer_source=source,
-                        dividend_yield=info.get("yield"))
-            row.update({k: m.get(k) for k in ("stars", "medalist", "medal_rank")})
-            self._fund_facts[symbol] = row
+            self._fund_facts[symbol] = facts(symbol, info.get("prices"), meta, mer=mer,
+                                             mer_source=source, dividend_yield=info.get("yield"))
         self._show_funds()
         if errors:
             flag_problem(self.fund_status, "Could not check: " + "; ".join(errors))
@@ -653,7 +642,7 @@ class GuidePanel(QWidget):
             self.check_funds()
 
     def _show_funds(self):
-        from tradelab.core.candidate import morningstar_text, rank
+        from tradelab.core.candidate import rank
         rows = rank([self._fund_facts[s] for s in self._fund_symbols if s in self._fund_facts],
                     self.fund_sort.currentText())
 
@@ -666,7 +655,7 @@ class GuidePanel(QWidget):
                      f"{pct(row['stdev'])} {row['band'] or ''}".strip(),
                      f"{pct(row['worst_fall'], 0)} {row['worst_when']}".strip(),
                      pct(row["ret1"]), pct(row["ret5"]), pct(row["ret10"]),
-                     row["suits"], morningstar_text(row) or "—"]
+                     row["suits"]]
             for c, text in enumerate(cells):
                 self.fund_table.setItem(r, c, QTableWidgetItem(text))
         self.fund_table.resizeColumnsToContents()
