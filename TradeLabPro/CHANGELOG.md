@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.68.0 - At a glance, and calm in a fall
+
+### Added
+- **Your plan in one light** (Home): under the title, 🟢 on track, 🟡 one or two things to look at, 🔴 three or more or spending above the safe budget - with the first of them, the date of the next monthly purchase, and a link to the Plan tab.
+- **Calm in a fall:** at startup and every six hours, TradeLab compares global stocks (XEQT, in CAD) with their high of the last year. At 10%, 20% and 30% down, a Windows notification says so once per step, beside your level's own record - how far it fell at worst since 2003 and how many months it took to be back at its high - and that selling after a fall makes it a loss for good.
+- **Quick start** (manual, section 3): investing calmly in eight steps - accounts, the Guide's four steps, the Home light, what to do in a fall - then the trading tour.
+
+### Verified
+- Full pytest suite passes (1654), including 7 new tests: the light, the next purchase date, the fall from the high and each step told once, the message, a level's recovery, Home's light and link, and the notification end to end.
+
 ## 2.67.0 - A reminder, and a clean close
 
 ### Added

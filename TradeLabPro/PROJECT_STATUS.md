@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.67.0
+Current version: 2.68.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.68.0 (At a glance, and calm in a fall)
+- **Plan light on Home:** `allocation_plan.status_light(items)` (green / yellow 1-2 warnings / red 3+ or above the safe budget); `PlanPanel.checked` signal -> `MainWindow._on_plan_checked` -> `HomePanel.show_plan(items, extra)` with the Guide's `next_purchase_text` (`guide.next_reminder`); the link opens the Plan tab (`MainWindow.open_tab`).
+- **Calm in a fall:** `guide.drop_from_high` (XEQT.TO, last year's high), `drop_alert` (10 / 20 / 30% steps told once, reset under 5%), `calm_text` with the level's record; `stats` gains `recovered` / `recovery_months`. `_DropWorker` (measures the levels only when a step is new and they are not cached); `GuidePanel.startup_checks` at launch and every 6 h (reminder + fall); state in `Guide/dropStep`.
+- **Manual:** section 3 is now **Quick start** - investing calmly in 8 steps, then the trading tour.
 
 ## Completed in 2.67.0 (A reminder, and a clean close)
 - **Monthly purchase reminder:** `guide.reminder_due(day, last, today)` (on or after the day, the month's last day when shorter, once a month) and `guide.reminder_text(weights, monthly)`; Guide step 4 "Remind me each month on day N" (`reminder_day` in `Guide/profile`, last shown in `Guide/lastReminder`); `GuidePanel.startup_reminder` 12 s after launch and every 6 hours. `use_level` now merges into the saved profile instead of replacing it.
