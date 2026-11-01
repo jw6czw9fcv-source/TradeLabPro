@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.68.0
+Current version: 2.68.1
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.68.1 (Each step from the left)
+- **Guide layout:** every step change goes through `GuidePanel._go` (focus on the page, then `_scroll_home` puts the enclosing tab's scroll area back at the top left - the focused Next button at the right used to scroll a wide step sideways); step 3's controls split over two rows.
 
 ## Completed in 2.68.0 (At a glance, and calm in a fall)
 - **Plan light on Home:** `allocation_plan.status_light(items)` (green / yellow 1-2 warnings / red 3+ or above the safe budget); `PlanPanel.checked` signal -> `MainWindow._on_plan_checked` -> `HomePanel.show_plan(items, extra)` with the Guide's `next_purchase_text` (`guide.next_reminder`); the link opens the Plan tab (`MainWindow.open_tab`).

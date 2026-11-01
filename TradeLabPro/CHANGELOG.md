@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.68.1 - Each step from the left
+
+### Fixed
+- **The Guide's step 3 opened scrolled sideways**, its left part out of view: the page was wider than the tab and the view followed the Next button at the right. Its controls now sit on two rows, and every step of the Guide opens at its top left, like the others.
+
+### Verified
+- Full pytest suite passes (1655), including 1 new test: a step opened in a narrow, scrolled tab starts at its top left.
+
 ## 2.68.0 - At a glance, and calm in a fall
 
 ### Added
