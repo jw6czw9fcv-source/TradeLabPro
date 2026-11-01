@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.68.0** | *unreleased* | At a glance, and calm in a fall |
+| **2.68.0** | 2026-10-31 | At a glance, and calm in a fall |
 | **2.67.0** | 2026-10-31 | A reminder, and a clean close |
 | **2.66.0** | 2026-10-29 | Simple, or everything |
 | **2.65.0** | 2026-10-29 | What to buy, in shares |
