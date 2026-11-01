@@ -239,9 +239,27 @@ CREATE TABLE IF NOT EXISTS portfolios (
 );
 """
 
+# v14: CELI / REER contribution room - the room CRA gave on a date, and the
+# deposits and withdrawals made since (amount + for a deposit, - for a
+# withdrawal), which also let a return leave the money put in out.
+SCHEMA_V14 = """
+CREATE TABLE IF NOT EXISTS contribution_room (
+    account TEXT PRIMARY KEY,
+    room REAL NOT NULL DEFAULT 0,
+    as_of TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS contributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account TEXT NOT NULL,
+    day TEXT NOT NULL,
+    amount REAL NOT NULL,
+    note TEXT
+);
+"""
+
 MIGRATIONS: list[str] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
                          SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10,
-                         SCHEMA_V11, SCHEMA_V12, SCHEMA_V13]
+                         SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14]
 
 # Kept for backward compatibility with any external code importing SCHEMA directly.
 SCHEMA = SCHEMA_V1 + SCHEMA_V2 + SCHEMA_V3 + SCHEMA_V4 + SCHEMA_V5 + SCHEMA_V6
@@ -476,6 +494,35 @@ class Database:
             self.conn.execute("DELETE FROM portfolios WHERE name=?", (name,))
             for table in ("portfolio_positions", "portfolio_cash", "plan_targets"):
                 self.conn.execute(f"DELETE FROM {table} WHERE portfolio=?", (name,))
+
+    # --- CELI / REER contribution room ---------------------------------------
+    def contribution_room(self) -> dict:
+        """{account: {room, as_of}} - the room CRA gave on a date."""
+        return {r["account"]: {"room": r["room"], "as_of": r["as_of"]}
+                for r in self.conn.execute("SELECT * FROM contribution_room").fetchall()}
+
+    def set_contribution_room(self, account: str, room: float, as_of: str) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO contribution_room(account, room, as_of) VALUES (?,?,?) "
+                "ON CONFLICT(account) DO UPDATE SET room=excluded.room, as_of=excluded.as_of",
+                (str(account), float(room), str(as_of)[:10]))
+
+    def contributions(self) -> list:
+        """Deposits (+) and withdrawals (-), oldest first."""
+        return [dict(r) for r in self.conn.execute(
+            "SELECT id, account, day, amount, note FROM contributions ORDER BY day, id").fetchall()]
+
+    def add_contribution(self, account: str, day: str, amount: float, note: str = "") -> None:
+        if not float(amount):
+            raise ValueError("An amount of zero is not a deposit or a withdrawal.")
+        with self.conn:
+            self.conn.execute("INSERT INTO contributions(account, day, amount, note) VALUES (?,?,?,?)",
+                              (str(account), str(day)[:10], float(amount), str(note or "")))
+
+    def delete_contribution(self, contribution_id: int) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM contributions WHERE id=?", (int(contribution_id),))
 
     def record_value(self, snapshot: dict) -> None:
         """Keep the day's account value (core.home.snapshot_of); a later

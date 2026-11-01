@@ -355,6 +355,39 @@ def measure(prices: dict) -> list | None:
     return out
 
 
+def level_growth(prices: dict, level: int, start, end) -> float | None:
+    """What a level's mix did between two days, on daily closes (US-listed
+    funds in CAD at each day's rate), held from the first day; cash at the
+    steady short-term rate. None without prices on both days."""
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    fx = pd.to_numeric(pd.Series(prices.get(FX)), errors="coerce").dropna() \
+        if prices.get(FX) is not None else None
+
+    def ratio(sym):
+        s = prices.get(sym)
+        if s is None:
+            return None
+        p = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        p.index = pd.to_datetime(p.index)
+        if sym in USD_PROXIES:
+            if fx is None or fx.empty:
+                return None
+            f = fx.copy(); f.index = pd.to_datetime(f.index)
+            p = (p * f.reindex(p.index, method="ffill")).dropna()
+        a, b = p[p.index <= start], p[p.index <= end]
+        if a.empty or b.empty:
+            return None
+        return float(b.iloc[-1] / a.iloc[-1])
+    _name, st, bo, ca = LEVELS[level]
+    stocks = [(ratio(s), w) for s, w in STOCK_PROXIES.items()]
+    bond = ratio(BOND_PROXY)
+    if (st and any(r is None for r, _w in stocks)) or (bo and bond is None):
+        return None
+    stock_r = sum((r or 0) * w for r, w in stocks) / sum(STOCK_PROXIES.values())
+    cash_r = (1 + SHORT_TERM) ** ((end - start).days / 365.0)
+    return st * stock_r + bo * (bond or 0) + ca * cash_r - 1.0
+
+
 def rate_for(level: int, basis: int, measured: list | None) -> float:
     """The yearly return the projection uses: what the level really did over
     the chosen stretch, or the guidelines - the guidelines too when there is

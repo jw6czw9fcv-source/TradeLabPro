@@ -1270,6 +1270,21 @@ Every decision in it is yours; TradeLab only measures against them.
   the spending it was checked with.
 - **Review.** About every quarter the checklist says a review is due; go
   through it, then click **Mark reviewed today**.
+- **Contribution room — CELI and REER.** Type the room CRA shows (My Account;
+  for the REER, the deduction limit on your latest Notice of Assessment) with
+  its date, then **Record** each deposit and withdrawal you make — in every
+  CELI or REER you have, group plans included. The checklist shows the room
+  left. A CELI withdrawal comes back as room on January 1 of the next year (the
+  checklist says how much is waiting); the 2026 CELI limit of $7,000 is added
+  on its January 1, and when a later year begins the checklist asks you to
+  type the room again from CRA. A deposit past your room asks first: an excess
+  is taxed 1% a month — for the REER, on what is beyond a $2,000 allowance
+  (canada.ca).
+- **Your return against your level.** Under the checklist: what your book
+  really did since TradeLab started recording its value, **your deposits and
+  withdrawals left out** (the ones recorded above), beside what the level you
+  chose in the Guide did over the same days. Under a year it says so — too
+  short to judge; from a year on, both are per year.
 - **Notifications.** A few seconds after TradeLab starts, it checks the plan;
   if anything is marked ⚠ (a review due, a drift, the trading side over its
   cap), a Windows notification says so in the corner of the screen — at most

@@ -4,13 +4,15 @@ import datetime as dt
 import json
 import time
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QDate, Qt, QThread, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QGroupBox,
-                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QDoubleSpinBox,
+                               QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMessageBox, QPushButton, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 
 from tradelab.core import allocation_plan as ap
+from tradelab.core import room
 from tradelab.core.logging_config import get_logger
 from tradelab.data.database import Database
 from tradelab.settings import app_settings
@@ -25,6 +27,47 @@ REVIEW_KEY = "Plan/lastReview"
 BUDGET_KEY = "RetirementSim/last_budget"
 NOTIFIED_KEY = "Plan/lastNotified"
 CLASS_CHOICES = ["auto", "stocks", "bonds", "cash", "other", ap.TRADING]
+
+
+def return_text(mine, theirs, level_name, start, end) -> str:
+    """The book's return, deposits left out, beside the level's over the same
+    days - per year from a year on, as it was before that."""
+    days = (end - start).days
+    if mine is None:
+        return "Your return: not enough recorded to measure yet."
+    since = f"Since {start:%b} {start.day}, {start.year} ({days} days)"
+    if days >= 365:
+        text = (f"{since}: your book did {room.annualized(mine, days):+.1%} a year, your "
+                f"deposits left out")
+        if theirs is not None:
+            text += f"; {level_name} did {room.annualized(theirs, days):+.1%} a year."
+        return text + " The past is no promise."
+    text = f"{since}: your book {mine:+.1%}, your deposits left out"
+    if theirs is not None:
+        text += f"; {level_name} {theirs:+.1%} over the same days"
+    return text + ". Too short to judge - compare after a year."
+
+
+class _ReturnWorker(QThread):
+    """The level's index funds over the recorded stretch, off the UI thread."""
+    done = Signal(object)   # {symbol: prices} | None
+
+    def __init__(self, period):
+        super().__init__()
+        self.period = period
+
+    def run(self):
+        out = None
+        try:
+            from tradelab.core import guide as g
+            from tradelab.core.etf_metrics import get_prices
+            out = {s: get_prices(s, self.period) for s in g.PROXIES}
+        except Exception:
+            log.debug("Return comparison prices failed", exc_info=True)
+        try:
+            self.done.emit(out)
+        except RuntimeError:
+            pass
 
 
 class _PlanWorker(QThread):
@@ -107,6 +150,9 @@ class PlanPanel(QWidget):
 
         self.checklist = QListWidget(); self.checklist.setMaximumHeight(150)
         box = QGroupBox("Checklist"); v = QVBoxLayout(box); v.addWidget(self.checklist)
+        # What the book really did, your deposits left out, beside your level.
+        self.return_line = QLabel(""); self.return_line.setWordWrap(True)
+        v.addWidget(self.return_line)
         layout.addWidget(box)
 
         targets = QGroupBox("Target mix per portfolio (your choice, %)")
@@ -140,6 +186,8 @@ class PlanPanel(QWidget):
         reviewed = QPushButton("Mark reviewed today"); reviewed.clicked.connect(self.mark_reviewed)
         rev.addWidget(self.review_line, 1); rev.addWidget(reviewed)
         layout.addLayout(rev)
+
+        layout.addWidget(self._room_box())
 
         layout.addWidget(QLabel("What each portfolio holds, by class (set a class by hand if "
                                 "the automatic one is wrong, or \"trading\" for a swing trade - "
@@ -179,12 +227,174 @@ class PlanPanel(QWidget):
                            "basis, not a verdict. ⚠ marks something worth a second look."))
         layout.addWidget(cand)
         self._cand_worker = None
+        self._return_worker = None
+        self._return_args = None
 
         self.status = StatusLabel("Click Refresh to price your portfolios.")
         layout.addWidget(self.status)
         layout.addWidget(_hint(theme.NOT_ADVICE))
         self._load_targets()
         self._show_review()
+        self._load_room()
+
+    # --- CELI / REER room ----------------------------------------------------
+    def _room_box(self):
+        box = QGroupBox("Contribution room - CELI and REER")
+        v = QVBoxLayout(box)
+        v.addWidget(_hint(
+            "Type the room CRA shows (My Account; for the REER, the deduction limit on your "
+            "latest Notice of Assessment) and its date, then record each deposit and withdrawal "
+            "you make - in every CELI or REER you have, group plans included. A CELI withdrawal "
+            "comes back as room on January 1; the 2026 CELI limit of $7,000 is added on its "
+            "January 1. An excess is taxed 1% a month (for the REER, beyond a $2,000 "
+            "allowance) - canada.ca. The deposits also let the return above leave your own "
+            "money out."))
+        self.room_edits = {}
+        for account in room.ACCOUNTS:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(f"{account} room"))
+            amount = QDoubleSpinBox(); amount.setRange(0, 10_000_000); amount.setDecimals(0)
+            amount.setPrefix("$ "); amount.setGroupSeparatorShown(True)
+            day = QDateEdit(); day.setCalendarPopup(True); day.setDisplayFormat("yyyy-MM-dd")
+            day.setDate(QDate.currentDate())
+            save = QPushButton("Save"); save.clicked.connect(lambda _c=False, a=account: self.save_room(a))
+            row.addWidget(amount); row.addWidget(QLabel("as of")); row.addWidget(day)
+            row.addWidget(save); row.addStretch()
+            v.addLayout(row)
+            self.room_edits[account] = (amount, day)
+        row = QHBoxLayout()
+        self.flow_day = QDateEdit(); self.flow_day.setCalendarPopup(True)
+        self.flow_day.setDisplayFormat("yyyy-MM-dd"); self.flow_day.setDate(QDate.currentDate())
+        self.flow_account = QComboBox(); self.flow_account.addItems(room.ACCOUNTS)
+        self.flow_kind = QComboBox(); self.flow_kind.addItems(["Deposit", "Withdrawal"])
+        self.flow_amount = QDoubleSpinBox(); self.flow_amount.setRange(0, 10_000_000)
+        self.flow_amount.setDecimals(2); self.flow_amount.setPrefix("$ ")
+        self.flow_amount.setGroupSeparatorShown(True)
+        self.flow_note = QLineEdit(); self.flow_note.setPlaceholderText("note (optional)")
+        record = QPushButton("Record"); record.clicked.connect(lambda: self.record_flow())
+        for w in (self.flow_day, self.flow_account, self.flow_kind, self.flow_amount):
+            row.addWidget(w)
+        row.addWidget(self.flow_note, 1); row.addWidget(record)
+        v.addLayout(row)
+        self.flow_table = QTableWidget(0, 5)
+        self.flow_table.setHorizontalHeaderLabels(["Date", "Account", "Kind", "Amount", "Note"])
+        self.flow_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.flow_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.flow_table.verticalHeader().setVisible(False)
+        self.flow_table.setMaximumHeight(130)
+        v.addWidget(self.flow_table)
+        row = QHBoxLayout()
+        remove = QPushButton("Remove selected"); remove.clicked.connect(self.remove_flows)
+        self.room_line = QLabel(""); self.room_line.setWordWrap(True)
+        row.addWidget(self.room_line, 1); row.addWidget(remove)
+        v.addLayout(row)
+        return box
+
+    def room_statuses(self, today=None):
+        rooms = self.db.contribution_room()
+        flows = self.db.contributions()
+        return [room.status(a, rooms[a]["room"], rooms[a]["as_of"], flows, today)
+                for a in room.ACCOUNTS if a in rooms]
+
+    def _load_room(self):
+        rooms = self.db.contribution_room()
+        for account, (amount, day) in self.room_edits.items():
+            if account in rooms:
+                amount.setValue(float(rooms[account]["room"]))
+                day.setDate(QDate.fromString(rooms[account]["as_of"], "yyyy-MM-dd"))
+        flows = self.db.contributions()
+        self.flow_table.setRowCount(len(flows))
+        for r, f in enumerate(flows):
+            cells = [f["day"], f["account"], "Deposit" if f["amount"] > 0 else "Withdrawal",
+                     f"{abs(f['amount']):,.2f}", f.get("note") or ""]
+            for c, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setData(Qt.UserRole, f["id"])
+                self.flow_table.setItem(r, c, item)
+        self.flow_table.resizeColumnsToContents()
+        lines = [t for _k, t in room.check_items(self.room_statuses())]
+        self.room_line.setText("  ".join(lines) if lines else "No room typed yet.")
+
+    def save_room(self, account):
+        amount, day = self.room_edits[account]
+        self.db.set_contribution_room(account, amount.value(), day.date().toString("yyyy-MM-dd"))
+        self._load_room()
+        self.recompute()
+
+    def record_flow(self, confirm=True):
+        account = self.flow_account.currentText()
+        amount = self.flow_amount.value()
+        if amount <= 0:
+            flag_problem(self.status, "Type the amount of the deposit or withdrawal.")
+            return False
+        deposit = self.flow_kind.currentText() == "Deposit"
+        day = self.flow_day.date().toString("yyyy-MM-dd")
+        if deposit:
+            current = next((s for s in self.room_statuses() if s["account"] == account), None)
+            over = room.would_exceed(current, amount) if current else 0.0
+            if over and confirm:
+                taxed = ("taxed 1% a month while it stays" if account == room.CELI else
+                         "taxed 1% a month on whatever is beyond the $2,000 allowance")
+                answer = QMessageBox.question(
+                    self, "Over your room",
+                    f"This deposit goes ${over:,.0f} past your {account} room - {taxed}. "
+                    f"Record it anyway?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if answer != QMessageBox.Yes:
+                    return False
+        self.db.add_contribution(account, day, amount if deposit else -amount,
+                                 self.flow_note.text().strip())
+        self.flow_amount.setValue(0); self.flow_note.clear()
+        self._load_room()
+        self.recompute()
+        return True
+
+    def remove_flows(self):
+        rows = {i.row() for i in self.flow_table.selectionModel().selectedRows()}
+        if not rows:
+            flag_problem(self.status, "Select the deposits or withdrawals to remove.")
+            return
+        for r in rows:
+            self.db.delete_contribution(self.flow_table.item(r, 0).data(Qt.UserRole))
+        self._load_room()
+        self.recompute()
+
+    # --- your return against your level ---------------------------------------
+    def _guide_level(self):
+        from tradelab.ui.panels.guide import PROFILE_KEY
+        try:
+            level = json.loads(self._settings.value(PROFILE_KEY, "", type=str) or "{}").get("level")
+        except (ValueError, TypeError):
+            return None
+        return level if isinstance(level, int) else None
+
+    def compare_return(self):
+        """Start the comparison: the recorded book against the Guide's level."""
+        history = [h for h in self.db.value_history("CAD") if h.get("value")]
+        level = self._guide_level()
+        if len(history) < 2:
+            self.return_line.setText("Your return: TradeLab needs a few days of recorded values "
+                                     "first (Home records one each day it prices your book).")
+            return
+        if level is None:
+            self.return_line.setText("Your return: choose a level in the Guide to compare it with.")
+            return
+        if self._return_worker is not None and self._return_worker.isRunning():
+            return
+        start, end = history[0]["day"], history[-1]["day"]
+        self._return_args = (history[0], history[-1], level)
+        days = (dt.date.fromisoformat(end) - dt.date.fromisoformat(start)).days
+        self._return_worker = _ReturnWorker("2y" if days < 700 else "max")
+        self._return_worker.done.connect(self._on_return)
+        self._return_worker.start()
+
+    def _on_return(self, prices):
+        from tradelab.core import guide as g
+        first, last, level = self._return_args
+        start, end = dt.date.fromisoformat(first["day"]), dt.date.fromisoformat(last["day"])
+        flows = [(f["day"], f["amount"]) for f in self.db.contributions()]
+        mine = room.modified_dietz(first["value"], last["value"], flows, start, end)
+        theirs = g.level_growth(prices or {}, level, start, end) if prices else None
+        self.return_line.setText(return_text(mine, theirs, g.LEVELS[level][0], start, end))
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -331,6 +541,7 @@ class PlanPanel(QWidget):
                                       "plan check: " + ", ".join(sorted(set(missing))))
         self._fill_holdings()
         self.recompute()
+        self.compare_return()
 
     def _fill_holdings(self):
         self.hold_table.setRowCount(len(self.holdings))
@@ -419,6 +630,10 @@ class PlanPanel(QWidget):
         elif whole and not any(trades.values()):
             items.append(("info", "No trading portfolio chosen and no holding set to \"trading\" - "
                                   "do one or the other to keep trading capped."))
+        try:
+            items += room.check_items(self.room_statuses())
+        except Exception:
+            log.exception("The contribution room could not be checked")
         items.append(self._budget_item())
         due = ap.review_due(self._last_review())
         items.append(("warn", "Review due: go through this list, then Mark reviewed today.")
@@ -554,6 +769,6 @@ class PlanPanel(QWidget):
         self.status.setText(f"Checked {symbol} at {time.strftime('%H:%M')}. Facts, not advice.")
 
     def shutdown(self):
-        for worker in (self._worker, self._cand_worker):
+        for worker in (self._worker, self._cand_worker, self._return_worker):
             if worker is not None and worker.isRunning():
                 worker.wait(5000)
