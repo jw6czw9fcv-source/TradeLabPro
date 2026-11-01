@@ -69,6 +69,21 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{a
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+// A TradeLab still running holds the .exe, and Setup cannot replace it - one
+// with no window (left waiting on a download) once stalled an install. Ask
+// every running copy to close, as clicking X would, then end any that did not.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#AppExe}', '', SW_HIDE,
+       ewWaitUntilTerminated, Code);
+  Sleep(4000);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#AppExe}', '', SW_HIDE,
+       ewWaitUntilTerminated, Code);
+  Result := '';
+end;
+
 // Windows 10/11 blocks programmatic taskbar pinning outright - Microsoft
 // removed the API precisely so installers could not do it. Rather than pretend
 // otherwise (or ship one of the undocumented hacks that break on every

@@ -7488,7 +7488,19 @@ def run_app():
     # Deliberately after the window is up: the fetch runs on a worker thread,
     # but scheduling it late keeps the very first paint instant.
     QTimer.singleShot(400, win.refresh_on_startup)
-    sys.exit(app.exec())
+    code = app.exec()
+    # The window is closed and every panel has stopped its workers. A download
+    # thread a library started on its own can still be waiting on the network,
+    # and Python would wait for it - a TradeLab with no window, holding the
+    # installed .exe so the next installer cannot replace it. Write what is
+    # pending, then end the process outright.
+    log.info("TradeLab Pro closed (exit code %s)", code)
+    try:
+        app_settings().sync()
+    except Exception:
+        pass
+    logging.shutdown()
+    os._exit(code)
 
 
 if __name__ == "__main__":
