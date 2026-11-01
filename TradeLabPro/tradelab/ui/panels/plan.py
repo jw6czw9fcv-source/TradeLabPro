@@ -81,6 +81,9 @@ class PlanPanel(QWidget):
     against its cap, the spending against the safe budget, the next review.
     It measures and shows; every choice in it is yours."""
 
+    # The checklist just computed - Home shows it as one light.
+    checked = Signal(object)
+
     def __init__(self, db: Database, settings=None):
         super().__init__()
         self.db = db
@@ -458,6 +461,7 @@ class PlanPanel(QWidget):
     def _show(self, items, table_rows):
         self._maybe_notify(items)
         self.check_items = items
+        self.checked.emit(list(items))
         self.checklist.clear()
         marks = {"ok": ("✓", theme.UP), "warn": ("⚠", theme.WARN), "info": ("•", theme.MUTED)}
         for kind, text in items:

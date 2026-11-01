@@ -116,6 +116,51 @@ def block_amounts(level: int, amount: float) -> dict:
     return {"stocks": amount * st, "bonds": amount * bo, "cash": amount * ca}
 
 
+# Calm in a fall: global stocks (an all-in-one equity ETF, in CAD) watched for
+# a fall from their high of the last year; each step is said once, and the
+# count starts over when the fall is back under 5%.
+MARKET_PROXY = "XEQT.TO"
+DROP_STEPS = (0.10, 0.20, 0.30)
+DROP_RESET = 0.05
+
+
+def drop_from_high(prices) -> tuple | None:
+    """(fall from the last year's high as a negative fraction, the high's
+    date) - None without prices."""
+    p = pd.to_numeric(pd.Series(prices), errors="coerce").dropna() if prices is not None else None
+    if p is None or p.empty:
+        return None
+    p.index = pd.to_datetime(p.index)
+    p = p[p.index >= p.index[-1] - pd.Timedelta(days=365)]
+    high = p.idxmax()
+    return float(p.iloc[-1] / p.loc[high] - 1), high
+
+
+def drop_alert(fall: float, last_step: float) -> tuple:
+    """(step to tell now or None, step to remember): a step deeper than the
+    last told is told once; back above -5% the count starts over."""
+    if fall > -DROP_RESET:
+        return None, 0.0
+    step = max([s for s in DROP_STEPS if -fall >= s], default=0.0)
+    if step > (last_step or 0.0):
+        return step, step
+    return None, last_step or 0.0
+
+
+def calm_text(fall: float, high, level_name: str, record: dict | None) -> str:
+    """What the notification says in a fall - the plan's own record beside it."""
+    text = (f"Global stocks are {-fall:.0%} below their high of {high:%b} {high.day}. "
+            f"Falls like this are part of investing, and of your plan.")
+    if record and record.get("worst_fall"):
+        text += (f" {level_name} fell {-record['worst_fall']:.0%} at worst since 2003 "
+                 f"({record['worst_when']})")
+        if record.get("recovered"):
+            text += (f" and was back to its high by {record['recovered']}, "
+                     f"{record['recovery_months']} months later")
+        text += "."
+    return text + " Selling after a fall turns it into a loss for good; your plan has not changed."
+
+
 def reminder_due(day: int, last, today) -> bool:
     """Whether the monthly purchase reminder is due: on or after `day` of the
     month (the month's last day when it is shorter), once a month. `last` is
@@ -127,6 +172,25 @@ def reminder_due(day: int, last, today) -> bool:
     if today.day < min(int(day), last_day):
         return False
     return last is None or (last.year, last.month) != (today.year, today.month)
+
+
+def next_reminder(day: int, last, today):
+    """The date of the next monthly purchase: this month's day if it is still
+    to come or not yet shown, else next month's - None when off."""
+    import calendar
+    import datetime as _dt
+    if not day:
+        return None
+
+    def on(year, month):
+        return _dt.date(year, month, min(int(day), calendar.monthrange(year, month)[1]))
+    if reminder_due(day, last, today):
+        return today                      # due now, not yet shown this month
+    this = on(today.year, today.month)
+    if today < this:
+        return this
+    year, month = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
+    return on(year, month)
 
 
 def reminder_text(weights: dict, monthly: float) -> str:
@@ -260,9 +324,15 @@ def stats(r: pd.Series) -> dict:
     peak = growth.loc[:trough].idxmax()
     y1 = (growth / growth.shift(12) - 1).dropna()
     y5 = ((growth / growth.shift(60)) ** (1 / 5) - 1).dropna()
+    back = growth.loc[trough:]
+    back = back[back >= growth.loc[peak]]
+    recovered = back.index[0] if dd.min() < 0 and len(back) else None
     return {"cagr": float(growth.iloc[-1] ** (1 / years) - 1),
             "worst_fall": float(min(dd.min(), 0.0)),
             "worst_when": f"{peak:%b %Y}-{trough:%b %Y}" if dd.min() < 0 else "",
+            "recovered": f"{recovered:%b %Y}" if recovered is not None else "",
+            "recovery_months": ((recovered.year - trough.year) * 12 + recovered.month - trough.month)
+            if recovered is not None else None,
             "worst_12m": float(y1.min()) if len(y1) else None,
             "best_12m": float(y1.max()) if len(y1) else None,
             "worst_5y": float(y5.min()) if len(y5) else None,

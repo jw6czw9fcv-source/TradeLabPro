@@ -25,6 +25,7 @@ log = get_logger(__name__)
 
 PROFILE_KEY = "Guide/profile"
 REMINDER_KEY = "Guide/lastReminder"   # the day the monthly reminder was last shown
+DROP_KEY = "Guide/dropStep"           # the deepest market fall already told (0.1, 0.2...)
 
 
 class _GuideWorker(QThread):
@@ -94,6 +95,31 @@ class _PriceWorker(QThread):
             pass
 
 
+class _DropWorker(QThread):
+    """How far global stocks are below their high of the last year - and,
+    only when that is news and they are not measured yet, the levels' records
+    to put it in context."""
+    done = Signal(object, object)   # (fall, high date) | None, measured levels | None
+
+    def __init__(self, last_step, need_records):
+        super().__init__()
+        self.last_step, self.need_records = last_step, need_records
+
+    def run(self):
+        drop, measured = None, None
+        try:
+            from tradelab.core.etf_metrics import get_prices
+            drop = g.drop_from_high(get_prices(g.MARKET_PROXY, "1y"))
+            if drop and self.need_records and g.drop_alert(drop[0], self.last_step)[0]:
+                measured = g.measure({s: get_prices(s, "max") for s in g.PROXIES})
+        except Exception:
+            log.debug("Market fall check failed", exc_info=True)
+        try:
+            self.done.emit(drop, measured)
+        except RuntimeError:
+            pass
+
+
 def _money(v):
     return f"${v:,.0f}"
 
@@ -125,6 +151,7 @@ class GuidePanel(QWidget):
         self._buy_touched = False
         self._saved_level = None
         self._reminder_timer = None
+        self._drop_worker = None
         self._loading = False
         layout = QVBoxLayout(self)
         layout.addWidget(_hint(
@@ -577,15 +604,62 @@ class GuidePanel(QWidget):
         self._settings.setValue(PROFILE_KEY, json.dumps(saved))
         self._settings.sync()
 
-    def startup_reminder(self, today=None):
-        """At launch, and every few hours while open: this month's purchase in
-        a Windows notification, once a month, from the day chosen. True when
-        shown."""
+    def next_purchase_text(self, today=None) -> str:
+        """ "Next purchase: Nov 10" when a monthly reminder is set, else ""."""
+        try:
+            saved = json.loads(self._settings.value(PROFILE_KEY, "", type=str) or "{}")
+        except (ValueError, TypeError):
+            saved = {}
+        try:
+            last = dt.date.fromisoformat(str(self._settings.value(REMINDER_KEY, "") or ""))
+        except ValueError:
+            last = None
+        when = g.next_reminder(int(saved.get("reminder_day") or 0), last,
+                               today or dt.date.today())
+        return f"Next purchase: {when:%b} {when.day}." if when and self.picks else ""
+
+    def startup_checks(self):
+        """At launch, then every six hours while TradeLab is open: the monthly
+        purchase reminder, and a word of calm when the market falls."""
         if self._reminder_timer is None:
             self._reminder_timer = QTimer(self)
             self._reminder_timer.setInterval(6 * 3600 * 1000)
-            self._reminder_timer.timeout.connect(lambda: self.startup_reminder())
+            self._reminder_timer.timeout.connect(self.startup_checks)
             self._reminder_timer.start()
+        self.startup_reminder()
+        self.check_market_drop()
+
+    def check_market_drop(self):
+        if self._drop_worker is not None and self._drop_worker.isRunning():
+            return
+        last = float(self._settings.value(DROP_KEY, 0) or 0)
+        need = self.measured is None and GuidePanel._measured_cache is None
+        self._drop_worker = _DropWorker(last, need)
+        self._drop_worker.done.connect(self._on_drop)
+        self._drop_worker.start()
+
+    def _on_drop(self, drop, measured):
+        """A fall of 10, 20 or 30% from the last year's high: a notification
+        with the plan's own record, once per step."""
+        if drop is None:
+            return                         # no prices today - nothing to say
+        if measured:
+            self.measured = GuidePanel._measured_cache = measured
+        fall, high = drop
+        step, keep = g.drop_alert(fall, float(self._settings.value(DROP_KEY, 0) or 0))
+        if step:
+            records = self.measured or GuidePanel._measured_cache
+            level = self._saved_level if self._saved_level is not None else len(g.LEVELS) - 1
+            text = g.calm_text(fall, high, g.LEVELS[level][0],
+                               records[level] if records else None)
+            if not notify("TradeLab - the market has fallen", text):
+                return                     # say it next time instead
+        self._settings.setValue(DROP_KEY, keep)
+        self._settings.sync()
+
+    def startup_reminder(self, today=None):
+        """This month's purchase in a Windows notification, once a month, from
+        the day chosen. True when shown."""
         try:
             saved = json.loads(self._settings.value(PROFILE_KEY, "", type=str) or "{}")
         except (ValueError, TypeError):
@@ -888,7 +962,9 @@ class GuidePanel(QWidget):
         return isinstance(saved.get("level"), int)
 
     def shutdown(self):
-        for worker in (self._worker, self._funds_worker, self._price_worker):
+        if self._reminder_timer is not None:
+            self._reminder_timer.stop()
+        for worker in (self._worker, self._funds_worker, self._price_worker, self._drop_worker):
             if worker is not None and worker.isRunning():
                 try:
                     worker.done.disconnect()

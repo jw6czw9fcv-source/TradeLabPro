@@ -240,6 +240,15 @@ portfolio picked in step 2:
 You place the orders yourself (a limit order near the price shown keeps a
 surprise out); TradeLab never trades.
 
+**Calm in a fall.** While TradeLab is open (at startup, then every six hours)
+it watches global stocks — XEQT, an all-in-one equity ETF, in CAD — against
+their high of the last year. At a fall of 10%, then 20%, then 30%, a Windows
+notification says so once, beside your level's own record: how far it fell at
+worst since 2003 and how many months it took to be back at its high (Balanced:
+−23% in 2007–09, back by October 2010). Selling after a fall turns it into a
+loss for good; the plan has not changed. When the fall is back under 5%, the
+count starts over. Without a chosen level, the record is All stocks'.
+
 There is no level with a high return and no risk: the more a level may earn,
 the further it has fallen in bad years. The Guide shows both side by side so
 the choice is made knowing it. It never names a security or says buy or sell.
@@ -256,6 +265,14 @@ is coming up, and is anything wrong?**
 **It refreshes itself at startup.** Your portfolio loads as soon as the window
 paints; the market pass follows a few seconds later in the background. By the
 time you've looked at the window, the numbers are already there.
+
+**Your plan, in one light.** The line under the title is the Plan tab's
+checklist (section on the Plan tab) as a light: 🟢 *on track*; 🟡 one or two
+things to look at — the first is named; 🔴 three or more, or spending above the
+safe budget. Beside it, the date of your next monthly purchase when the Guide's
+reminder is set. **Open the Plan tab** goes straight to the details. It appears
+once the plan has been checked (a few seconds after startup, or when you
+refresh the Plan tab).
 
 ### The tiles
 

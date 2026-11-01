@@ -163,6 +163,21 @@ def trading_check(trading_value: float, total_value: float, cap_pct: float) -> d
             "room": room}
 
 
+def status_light(items: list) -> tuple:
+    """The plan checklist ([(kind, text)], kind ok / warn / info) as one light
+    for Home: ("green" | "yellow" | "red" | "", the line to show). Red when the
+    spending is above the safe budget or three things or more want a look;
+    yellow for one or two; green when nothing does."""
+    if not items:
+        return "", ""
+    warns = [text for kind, text in items if kind == "warn"]
+    if not warns:
+        return "green", "Your plan is on track."
+    more = f" (and {len(warns) - 1} more)" if len(warns) > 1 else ""
+    red = len(warns) >= 3 or any("safe budget" in w for w in warns)
+    return ("red" if red else "yellow"), warns[0] + more
+
+
 def review_due(last: dt.date | None, today: dt.date | None = None,
                every_days: int = REVIEW_EVERY_DAYS) -> dict:
     """When the next review is, and whether it is due."""

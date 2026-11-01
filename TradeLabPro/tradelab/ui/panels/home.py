@@ -144,6 +144,17 @@ class HomePanel(AutoRefresh, QWidget):
         top.addWidget(QLabel("Currency")); top.addWidget(self.currency); top.addWidget(refresh)
         layout.addLayout(top)
 
+        # The plan in one light (the Plan tab's checklist); the link opens it.
+        self.on_open_plan = None
+        self.plan_line = QLabel("")
+        self.plan_line.setWordWrap(True)
+        self.plan_line.setStyleSheet("font-size:13px;")
+        self.plan_line.setTextFormat(Qt.RichText)
+        self.plan_line.linkActivated.connect(
+            lambda _l: self.on_open_plan() if self.on_open_plan else None)
+        self.plan_line.hide()
+        layout.addWidget(self.plan_line)
+
         self.status = StatusLabel(); self.status.setStyleSheet(f"color:{theme.MUTED};")
         layout.addWidget(self.status)
 
@@ -507,6 +518,24 @@ class HomePanel(AutoRefresh, QWidget):
             text += (f"<br><span style='color:{theme.MUTED}'>No calendar published for "
                      + ", ".join(missing) + " — funds rarely have one.</span>")
         self.upcoming_line.setText(text)
+
+    def show_plan(self, items, extra=""):
+        """The Plan tab's checklist as one light: green on track, yellow one or
+        two things to look at, red more - with the first of them."""
+        import html
+        from tradelab.core.allocation_plan import status_light
+        light, text = status_light(items)
+        if not light:
+            self.plan_line.hide()
+            return
+        colour = {"green": theme.UP, "yellow": theme.WARN, "red": theme.DOWN}[light]
+        self.plan_line.setText(
+            f"<span style='color:{colour}; font-size:16px;'>●</span> "
+            f"<b>Your plan:</b> {html.escape(text)}"
+            + (f" &nbsp;<span style='color:{theme.MUTED};'>{html.escape(extra)}</span>" if extra else "")
+            + " &nbsp;<a href='plan'>Open the Plan tab</a>")
+        self.plan_light = light
+        self.plan_line.show()
 
     def refresh_market_line(self):
         """Show the Market tab's read for every market it has scored.

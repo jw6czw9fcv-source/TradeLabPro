@@ -6828,6 +6828,7 @@ class MainWindow(QMainWindow):
         self.retirement_sim_panel = RetirementSimPanel(self.db)
         self.plan_panel = PlanPanel(self.db)
         self.guide_panel = GuidePanel(self.db, on_plan_changed=self._on_guide_plan)
+        self.plan_panel.checked.connect(self._on_plan_checked)
         self.portfolio_panel = PortfolioPanel(self.db, self.chart, self.cfg)
         self.portfolio_panel.synced.connect(self._on_ibkr_synced)
         self.analytics_panel = PortfolioAnalyticsPanel(self.db, self.chart, self.cfg)
@@ -6845,6 +6846,7 @@ class MainWindow(QMainWindow):
         self.heatmap_panel = HeatmapPanel(self.db, self.chart, self.cfg)
         self._heatmap_page = _scroll_tab(self.heatmap_panel)
         self.home_panel = HomePanel(self.db, self.chart, self.cfg)
+        self.home_panel.on_open_plan = lambda: self.open_tab("Plan")
         self.market_panel = MarketPanel(self.chart, self.cfg)
         # Home displays the Market tab's own read rather than computing a second
         # one, and updates itself whenever that tab refreshes.
@@ -7323,11 +7325,11 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(9000, self.plan_panel.startup_check)
         except Exception:
             log.exception("Could not schedule the plan check")
-        # The Guide's monthly purchase reminder, when one is set.
+        # The Guide's monthly purchase reminder, and a word of calm in a fall.
         try:
-            QTimer.singleShot(12000, self.guide_panel.startup_reminder)
+            QTimer.singleShot(12000, self.guide_panel.startup_checks)
         except Exception:
-            log.exception("Could not schedule the monthly reminder")
+            log.exception("Could not schedule the Guide's checks")
 
     def _on_ibkr_synced(self, _portfolio):
         """A sync replaced a portfolio: re-value what shows the book."""
@@ -7337,6 +7339,20 @@ class MainWindow(QMainWindow):
                     panel.refresh()
             except Exception:
                 log.exception("Refresh after the IBKR sync failed")
+
+    def open_tab(self, name):
+        """Show the tab labelled `name`."""
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == name:
+                self.tabs.setCurrentIndex(i)
+                return
+
+    def _on_plan_checked(self, items):
+        """The Plan tab checked the plan: Home shows it as one light."""
+        try:
+            self.home_panel.show_plan(items, self.guide_panel.next_purchase_text())
+        except Exception:
+            log.exception("Showing the plan on Home failed")
 
     def _on_guide_plan(self):
         """The Guide set a portfolio's target mix: the Plan tab shows it."""
