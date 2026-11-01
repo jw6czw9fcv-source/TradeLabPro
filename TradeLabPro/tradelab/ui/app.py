@@ -7544,6 +7544,11 @@ def run_app():
     # Deliberately after the window is up: the fetch runs on a worker thread,
     # but scheduling it late keeps the very first paint instant.
     QTimer.singleShot(400, win.refresh_on_startup)
+    # The release check of a restart: set this, and the app restarts itself
+    # once (the new one does not inherit it - see restart_environment).
+    if os.environ.get("TRADELAB_SELFTEST_RESTART"):
+        from tradelab.ui.panels.settings import restart_app
+        QTimer.singleShot(8000, restart_app)
     code = app.exec()
     # The window is closed and every panel has stopped its workers. A download
     # thread a library started on its own can still be waiting on the network,

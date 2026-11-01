@@ -63,13 +63,38 @@ UPDATE_AT_START_KEY = "Updates/checkAtStartup"
 UPDATE_TOLD_KEY = "Updates/toldAbout"   # GitHub version already announced
 
 
+SELFTEST_RESTART_ENV = "TRADELAB_SELFTEST_RESTART"   # restart once after launch (release check)
+
+
+def restart_environment():
+    """The environment for a fresh TradeLab. The one-file .exe runs as a parent
+    that unpacks to a temporary folder and a child that runs from it; the
+    child's environment tells anything it starts "you are part of me - use my
+    folder". A restart started that way reused a folder being deleted, and
+    relaunched itself in a loop (2.70.0, 1 November 2026). PyInstaller's
+    PYINSTALLER_RESET_ENVIRONMENT makes the new one a separate program."""
+    from PySide6.QtCore import QProcessEnvironment
+    env = QProcessEnvironment.systemEnvironment()
+    env.insert("PYINSTALLER_RESET_ENVIRONMENT", "1")
+    for key in [k for k in env.keys() if k.startswith("_PYI_") or k == "_MEIPASS2"
+                or k == SELFTEST_RESTART_ENV]:
+        env.remove(key)
+    return env
+
+
 def restart_app():
     """Start a fresh TradeLab and close this one - the installed .exe, or the
     same script when run from source."""
     from PySide6.QtCore import QProcess
     from tradelab.core import config as _config
     args = sys.argv[1:] if _config.FROZEN else sys.argv
-    if not QProcess.startDetached(sys.executable, list(args)):
+    proc = QProcess()
+    proc.setProgram(sys.executable)
+    proc.setArguments(list(args))
+    proc.setProcessEnvironment(restart_environment())
+    started = proc.startDetached()      # a bool in PySide6 (a (bool, pid) pair in some versions)
+    ok = started[0] if isinstance(started, tuple) else bool(started)
+    if not ok:
         show_problem("TradeLab could not restart itself - close it and open it again "
                      "to finish.")
         return
