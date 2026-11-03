@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.72.0
+Current version: 2.72.1
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.72.1 (A clean exit)
+- **`app.end_process(code)`:** on Windows `TerminateProcess` on the current process; `os._exit` still ran every DLL's unload routine and one of Qt's crashed after "TradeLab Pro closed" was logged (exit code 0xC0000005 since 2.67.0, nothing lost). The release check now reads the built exe's exit code as well as the log, and runs the self-restart.
 
 ## Completed in 2.72.0 (Tout en français)
 - **French, phase 3:** the Advanced tabs' static text in `FR` (~440 strings: titles, buttons, headers, hints, tooltips, placeholders) - Market, Heatmap, News, Scanner, ETF Screener, Watchlists, Alerts, AI Assist, Risk, Paper Trading, Analytics, Dividends, Retirement, Journal, Coach, Backtest, Strategies, Replay, Seasonality, Plugins, Notes, Links, Help. Left in English on purpose: technical codes, unmarked combo items (read back by text), the status lines and counters those tabs write at run time. Manual still English (phase 4).

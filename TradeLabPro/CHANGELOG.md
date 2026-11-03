@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.72.1 - A clean exit
+
+### Fixed
+- **Closing TradeLab ended in a crash** that Windows recorded (an access violation) - after the window was closed and everything saved, so nothing was lost and nothing showed. The way the process ends since 2.67.0 still ran the Qt libraries' unload routines, and one of them failed. It now ends through Windows' own process termination; the restart after a language change works as before.
+
+### Verified
+- Full pytest suite passes (1671). On the built program: exit code 0 on close, one clean restart, no temporary folder left behind.
+
 ## 2.72.0 - Tout en français
 
 ### Added
