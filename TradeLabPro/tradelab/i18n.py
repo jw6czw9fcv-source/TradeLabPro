@@ -520,6 +520,8 @@ FR = {
         "{name} : les négociations à court terme ({amount}) font {share} du portefeuille, {verdict}.",
     "above its {cap} cap by {room}": "au-dessus de son plafond de {cap} de {room}",
     "inside its {cap} cap ({room} of room)": "sous son plafond de {cap} ({room} de marge)",
+    "{name}: empty - its target mix applies once money is in it.":
+        "{name} : vide - son mélange cible s'appliquera une fois l'argent déposé.",
     "{name}: no target mix set - type one above.":
         "{name} : aucun mélange cible - inscrivez-en un ci-dessus.",
     "{name}: {amount} of cash beyond your target cash share - by your target mix, putting it to "

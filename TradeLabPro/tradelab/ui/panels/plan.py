@@ -606,6 +606,11 @@ class PlanPanel(QWidget):
                     items.append(("info", tr("{name}: no target mix set - type one above.")
                                   .format(name=name)))
                 continue
+            if not sum(mix.values()):
+                # Nothing in it yet: nothing is off target, and there is nothing to move.
+                items.append(("info", tr("{name}: empty - its target mix applies once money is "
+                                         "in it.").format(name=name)))
+                continue
             result = ap.rebalance(mix, target)
             deploy = ap.deploy_cash(mix, target)
             if deploy["investable"] >= max(500.0, totals[name] * 0.01):

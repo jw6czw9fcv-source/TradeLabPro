@@ -104,6 +104,19 @@ def test_the_portfolio_tab_adds_renames_and_removes(db, monkeypatch):
     assert carried[-1] == ("CELI C", None)
 
 
+def test_an_empty_portfolio_is_not_off_its_target(db, tmp_path):
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+    from tradelab.ui.panels.plan import PlanPanel
+    QApplication.instance() or QApplication([])
+    db.add_portfolio("CELI B")
+    db.set_plan_target("CELI B", 40, 60, 0)
+    panel = PlanPanel(db, settings=QSettings(str(tmp_path / "e.ini"), QSettings.IniFormat))
+    panel.recompute()
+    mine = [(k, t) for k, t in panel.check_items if t.startswith("CELI B")]
+    assert mine == [("info", "CELI B: empty - its target mix applies once money is in it.")]
+
+
 def test_the_plan_tab_caps_swing_trades_inside_each_portfolio(db, tmp_path):
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
