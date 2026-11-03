@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.71.0
+Current version: 2.72.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.72.0 (Tout en français)
+- **French, phase 3:** the Advanced tabs' static text in `FR` (~440 strings: titles, buttons, headers, hints, tooltips, placeholders) - Market, Heatmap, News, Scanner, ETF Screener, Watchlists, Alerts, AI Assist, Risk, Paper Trading, Analytics, Dividends, Retirement, Journal, Coach, Backtest, Strategies, Replay, Seasonality, Plugins, Notes, Links, Help. Left in English on purpose: technical codes, unmarked combo items (read back by text), the status lines and counters those tabs write at run time. Manual still English (phase 4).
 
 ## Completed in 2.71.0 (En français, suite)
 - **French, phase 2:** Retirement Sim and Settings in `FR`; the messages built at run time go through `tr()` templates with named fields - `guide.recommend` / `first_steps` / `check_choice` / `calm_text` / `reminder_text`, `room.check_items`, the Plan checklist, `_budget_item`, review line, `return_text`, the Guide's status, intro, note, choice and purchase lines, notification titles. `test_i18n` checks every `tr("...")` in the code has its French and every template keeps its fields.

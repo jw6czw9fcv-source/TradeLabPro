@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.72.0 - Tout en français
+
+### Added
+- **The trading tabs in French:** Market, Heatmap, News, Scanner, ETF Screener, Watchlists, Alerts, AI Assist, Risk, Paper Trading, Analytics, Dividends, Retirement, Journal, Coach, Backtest, Strategies, Replay, Seasonality, Plugins, Notes, Links and Help - their titles, buttons, columns, explanations and tooltips. Technical codes (RSI, MACD, 1d…), the choices in drop-down lists the program reads back, and the status lines those tabs write as they work stay in English; the manual follows.
+
+### Verified
+- Full pytest suite passes (1671); the French window builds with every tab translated, its logic unchanged.
+
 ## 2.71.0 - En français, suite
 
 ### Added
