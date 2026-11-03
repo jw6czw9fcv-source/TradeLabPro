@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.71.0 - En français, suite
+
+### Added
+- **More of TradeLab in French:** the Retirement Sim and Settings tabs, and the messages written as it goes - the Plan checklist, the contribution room, the Guide's explanations, the purchase summary, the plan light, the monthly reminder and the notice in a market fall. Every tab of Simple mode is now in French; the trading tabs and the manual follow.
+
+### Fixed
+- **An empty portfolio showed as off its target**, with "getting back would take: ." and nothing after, and counted as something to look at. It now reads "empty - its target mix applies once money is in it".
+- Home's plan light turned red on spending above the safe budget by finding English words; it now relies on the kind of message, in any language.
+
+### Verified
+- Full pytest suite passes (1671), including 3 new tests: every message the code translates has its French, the Guide's and Plan's messages in French, and an empty portfolio not off its target.
+
 ## 2.70.1 - One restart, not a hundred
 
 ### Fixed

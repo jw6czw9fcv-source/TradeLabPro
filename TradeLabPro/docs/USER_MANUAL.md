@@ -1,6 +1,6 @@
 # TradeLab Pro — User Manual
 
-**Version 2.70.1**
+**Version 2.71.0**
 
 TradeLab Pro is a desktop trading **workstation** for the stock market: open on a
 **Home** dashboard showing your book, a chart of its year so far, the market

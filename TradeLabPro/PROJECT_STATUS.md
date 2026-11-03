@@ -1,7 +1,12 @@
 # TradeLab Pro Project Status
 
-Current version: 2.70.1
+Current version: 2.71.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.71.0 (En français, suite)
+- **French, phase 2:** Retirement Sim and Settings in `FR`; the messages built at run time go through `tr()` templates with named fields - `guide.recommend` / `first_steps` / `check_choice` / `calm_text` / `reminder_text`, `room.check_items`, the Plan checklist, `_budget_item`, review line, `return_text`, the Guide's status, intro, note, choice and purchase lines, notification titles. `test_i18n` checks every `tr("...")` in the code has its French and every template keeps its fields.
+- **Plan item kind "alert"** (spending above the safe budget): `status_light` turns red on it instead of matching English words; drawn like a warning in red.
+- **An empty portfolio is not off its target:** an info line instead of a drift with nothing to move.
 
 ## Completed in 2.70.1 (One restart, not a hundred)
 - **Restart as a separate program:** `settings.restart_environment()` - the system environment with `PYINSTALLER_RESET_ENVIRONMENT=1` and the `_PYI_*` / `_MEIPASS2` markers dropped; `restart_app` starts through a `QProcess` with it (`startDetached()` returns a bool in PySide6). Inherited markers made a restart of the one-file .exe reuse a folder being deleted and relaunch itself in a loop (2.70.0, the language switch). Release check on the real exe: `TRADELAB_SELFTEST_RESTART=1` restarts once after launch (not inherited).
