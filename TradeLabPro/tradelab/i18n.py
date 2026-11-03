@@ -755,4 +755,603 @@ FR = {
         "sauvegarde et recopiez ses fichiers dans le dossier de données.",
     "Back up now": "Sauvegarder maintenant", "Restore…": "Restaurer…",
     "Open backup folder": "Ouvrir le dossier des sauvegardes", "No backup yet.": "Aucune sauvegarde.",
+
+    # --- Phase 3: the Advanced tabs ----------------------------------------------------------
+    # Market
+    "Market Dashboard": "Tableau de bord du marché",
+    "11 GICS sectors (SPDR select-sector ETFs) vs SPY.":
+        "11 secteurs GICS (FNB sectoriels SPDR) comparés à SPY.",
+    "Refresh market dashboard": "Actualiser le tableau de bord",
+    "Click any index, regime symbol or sector below to chart it.":
+        "Cliquez un indice, un symbole de régime ou un secteur ci-dessous pour voir son graphique.",
+    "Is it a good day to trade US?": "Est-ce une bonne journée pour négocier aux États-Unis?",
+    "Refresh to compute the read.": "Actualisez pour calculer la lecture.",
+    "Market breadth — advance / decline": "Ampleur du marché — hausses / baisses",
+    "How broad the move is across individual stocks, not just the index. A durable trend has most "
+    "stocks above their 200-day average; a thin, top-heavy rally does not.":
+        "L'étendue du mouvement parmi les titres, pas seulement l'indice. Une tendance durable a la "
+        "plupart des titres au-dessus de leur moyenne de 200 jours; une hausse étroite, portée par "
+        "quelques géants, non.",
+    "of stocks above their 200-day average": "des titres au-dessus de leur moyenne de 200 jours",
+    "Global indices — which markets are favorable (in market-open order)":
+        "Indices mondiaux — quels marchés sont favorables (dans l'ordre d'ouverture)",
+    "Listed in trading-session order: Tokyo → Hong Kong → London/Frankfurt → New York/Toronto.\n"
+    "Read = position vs the 50- and 200-day averages: above both = Favorable, below both = "
+    "Caution, mixed = Neutral.":
+        "Dans l'ordre des séances : Tokyo → Hong Kong → Londres/Francfort → New York/Toronto.\n"
+        "Lecture = position par rapport aux moyennes de 50 et 200 jours : au-dessus des deux = "
+        "Favorable, sous les deux = Prudence, mixte = Neutre.",
+    "Last": "Dernier", "vs 50-day": "vs 50 jours", "vs 200-day": "vs 200 jours", "Read": "Lecture",
+    "Click a row to chart that symbol.": "Cliquez une ligne pour voir le graphique de ce symbole.",
+    "US regime symbols": "Symboles de régime américains", "Item": "Élément", "Purpose": "Rôle",
+    "US sector favorability — which sectors to trade (best → worst)":
+        "Secteurs américains favorables — lesquels négocier (du meilleur au pire)",
+    "How this is scored ▾": "Comment c'est noté ▾",
+    "How the sector score is computed": "Comment la note sectorielle est calculée",
+    "Sector": "Secteur", "RS vs SPY": "FR vs SPY", "Score / Read": "Note / Lecture",
+    "Refresh to update the dashboard. Data uses yfinance when available.":
+        "Actualisez pour mettre le tableau de bord à jour. Les données viennent de yfinance quand "
+        "c'est possible.",
+    # Heatmap
+    "A market map at a glance. Each tile is a stock/ETF, sized by market cap and coloured by its % "
+    "change over the selected Period (green up, red down), grouped by Sector, Industry or Country. "
+    "Map a preset, a Theme basket, the World, your Watchlist or Portfolio. Click a tile to chart "
+    "it, right-click for more. Scroll to zoom in on small tiles, drag to pan, double-click to fit.":
+        "Une carte du marché en un coup d'œil. Chaque tuile est un titre ou un FNB, dimensionné "
+        "selon sa capitalisation et coloré selon sa variation sur la période choisie (vert en "
+        "hausse, rouge en baisse), regroupé par secteur, industrie ou pays. Cartographiez un "
+        "préréglage, un thème, le monde, votre liste de suivi ou votre portefeuille. Cliquez une "
+        "tuile pour son graphique, clic droit pour plus. Molette pour zoomer, glisser pour "
+        "déplacer, double-clic pour ajuster.",
+    "Map a thematic basket (AI, Semiconductors, EV, …). Overrides Market while set.":
+        "Cartographier un panier thématique (IA, semi-conducteurs, VÉ, …). Remplace le marché "
+        "tant qu'il est choisi.",
+    "Performance window the tile colour represents (like Finviz): 1 Day, 1 Week … 10 Year, YTD.":
+        "Période que représente la couleur des tuiles (comme Finviz) : 1 jour, 1 semaine … 10 ans, "
+        "depuis le début de l'année.",
+    "Size by": "Taille selon", "Group": "Grouper", "Theme": "Thème", "Watchlist": "Liste de suivi",
+    "Tile area = market cap (classic) or today's traded dollar volume (faster, no cap lookup).":
+        "Surface des tuiles = capitalisation (classique) ou volume négocié en dollars aujourd'hui "
+        "(plus rapide, sans recherche de capitalisation).",
+    "Group tiles into blocks by Sector, Industry, or Country (Country suits the World map).":
+        "Regrouper les tuiles en blocs par secteur, industrie ou pays (le pays convient à la carte "
+        "du monde).",
+    "Cap the number of tiles (largest first) so the map stays fast and readable.":
+        "Limiter le nombre de tuiles (les plus grandes d'abord) pour que la carte reste rapide et "
+        "lisible.",
+    "Load map": "Charger la carte", "Auto-refresh every": "Actualiser automatiquement toutes les",
+    "Reload the map on a timer so it tracks the market during the day.":
+        "Recharger la carte à intervalle régulier pour suivre le marché pendant la journée.",
+    "Pick a market and click Load map.": "Choisissez un marché et cliquez Charger la carte.",
+    # News
+    "Recent headlines by source: a Symbol, the broad Market, a Sector, or Geopolitical news. "
+    "Macro/political stories (Fed, inflation, elections, tariffs, war, OPEC…) are flagged ⚑ — a "
+    "light stand-in for a full economic/political calendar. Double-click a headline to open it in "
+    "your browser.":
+        "Les manchettes récentes par source : un symbole, le marché, un secteur ou la géopolitique. "
+        "Les nouvelles macro et politiques (Fed, inflation, élections, tarifs, guerre, OPEP…) sont "
+        "signalées ⚑ — un substitut léger à un calendrier économique complet. Double-cliquez une "
+        "manchette pour l'ouvrir dans votre navigateur.",
+    "Macro / political only": "Macro / politique seulement", "Get news": "Obtenir les nouvelles",
+    "Time": "Heure", "Headline": "Manchette", "Tickers": "Symboles",
+    "Pick a source and click Get news.": "Choisissez une source et cliquez Obtenir les nouvelles.",
+    # Scanner
+    "New": "Nouveau", "Create a new scanner setup from default values":
+        "Créer un nouveau réglage du scanneur à partir des valeurs par défaut",
+    "Open": "Ouvrir",
+    "Open a setup file from elsewhere on disk. To switch between your saved presets, use the "
+    "Preset dropdown instead.":
+        "Ouvrir un fichier de réglage ailleurs sur le disque. Pour passer d'un préréglage "
+        "enregistré à l'autre, utilisez plutôt la liste Préréglage.",
+    "Save the current scanner setup": "Enregistrer le réglage actuel du scanneur",
+    "Save As": "Enregistrer sous", "Save the current scanner setup to a chosen file":
+        "Enregistrer le réglage actuel dans un fichier choisi",
+    "Duplicate": "Dupliquer", "Duplicate this setup name so you can save a variation":
+        "Dupliquer ce nom de réglage pour enregistrer une variante",
+    "Delete": "Supprimer", "Delete the setup file with the current setup name":
+        "Supprimer le fichier de réglage portant ce nom",
+    "Reset": "Réinitialiser", "Reset controls to the default professional swing setup":
+        "Remettre les contrôles au réglage professionnel par défaut",
+    "Hide filters": "Masquer les filtres", "Preset:": "Préréglage :",
+    "Pick a saved preset to switch instantly, or type a new name to Save/Save As under it.":
+        "Choisissez un préréglage pour l'activer aussitôt, ou tapez un nouveau nom pour "
+        "Enregistrer/Enregistrer sous.",
+    "Scanner Parameters": "Paramètres du scanneur", "General": "Général", "Scan name": "Nom du balayage",
+    "Exchange preset": "Bourses",
+    "Which universe to scan. 'Sectors — US' / 'Sectors — Canada' list that market's curated "
+    "sector, sub-sector (gold, banks, uranium…) and ETF baskets; the two are never shown together.":
+        "Quel univers balayer. « Sectors — US » / « Sectors — Canada » listent les paniers de "
+        "secteurs, sous-secteurs (or, banques, uranium…) et FNB de ce marché; les deux ne sont "
+        "jamais affichés ensemble.",
+    "Strategy": "Stratégie",
+    "Which strategy scores/signals each symbol (includes your no-code custom strategies).":
+        "Quelle stratégie note et signale chaque symbole (y compris vos stratégies sans code).",
+    "Interval": "Intervalle", "Maximum symbols (0 = all)": "Nombre maximal de symboles (0 = tous)",
+    "0 = scan all selected symbols. Use 50/100 for a fast test.":
+        "0 = balayer tous les symboles choisis. Utilisez 50 ou 100 pour un test rapide.",
+    "Price / Volume": "Prix / Volume", "Minimum price": "Prix minimal",
+    "Minimum last price. Example default: $5.00.": "Dernier prix minimal. Par défaut : 5,00 $.",
+    "Maximum price": "Prix maximal",
+    "Maximum last price. Leave high to avoid limiting expensive stocks.":
+        "Dernier prix maximal. Laissez-le élevé pour ne pas exclure les titres chers.",
+    "Minimum volume": "Volume minimal",
+    "Minimum current period volume. Use 500,000+ to avoid illiquid stocks.":
+        "Volume minimal de la période. Utilisez 500 000 ou plus pour éviter les titres peu liquides.",
+    "Minimum market cap": "Capitalisation minimale",
+    "Minimum market capitalization in billions. Example: 2 = $2B.":
+        "Capitalisation minimale en milliards. Exemple : 2 = 2 G$.",
+    "Minimum relative volume": "Volume relatif minimal",
+    "Relative volume = current volume / 20-period average volume. 0 disables this filter.":
+        "Volume relatif = volume actuel / volume moyen sur 20 périodes. 0 désactive ce filtre.",
+    "Technical": "Technique", "Minimum RSI": "RSI minimal",
+    "Minimum RSI14. 0 disables the lower bound.": "RSI14 minimal. 0 désactive la borne inférieure.",
+    "Maximum RSI": "RSI maximal",
+    "Maximum RSI14. 100 disables the upper bound.": "RSI14 maximal. 100 désactive la borne supérieure.",
+    "Minimum ATR %": "ATR % minimal",
+    "Minimum ATR as percent of price. 0 disables this filter.":
+        "ATR minimal en pourcentage du prix. 0 désactive ce filtre.",
+    "Maximum ATR %": "ATR % maximal",
+    "Maximum ATR as percent of price. 100 disables this filter.":
+        "ATR maximal en pourcentage du prix. 100 désactive ce filtre.",
+    "Signal / Score": "Signal / Note", "Minimum score": "Note minimale",
+    "Minimum scanner score from 0 to 100. Higher scores are stricter.":
+        "Note minimale du scanneur, de 0 à 100. Plus elle est haute, plus le filtre est strict.",
+    "Require EMA trend": "Exiger la tendance EMA", "EMA fast above EMA slow": "EMA rapide au-dessus de l'EMA lente",
+    "Require MACD bullish": "Exiger un MACD haussier", "MACD above signal": "MACD au-dessus du signal",
+    "Custom Filters": "Filtres personnalisés", "+ Add Filter": "+ Ajouter un filtre",
+    "Add a condition on any technical field (price, RSI, MACD, EMA, ADX, Bollinger, etc.)":
+        "Ajouter une condition sur un champ technique (prix, RSI, MACD, EMA, ADX, Bollinger, etc.)",
+    "Exchanges / My Lists": "Bourses / Mes listes", "Refresh exchanges": "Actualiser les bourses",
+    "Create My List": "Créer une liste",
+    "Select every sector / industry / ETF basket shown":
+        "Choisir tous les paniers de secteurs, d'industries et de FNB affichés",
+    "Select NYSE + NASDAQ + AMEX": "Choisir NYSE + NASDAQ + AMEX",
+    "Select TSX + TSXV + CSE": "Choisir TSX + TSXV + CSE", "All": "Tout",
+    "Select all exchanges and lists shown": "Choisir toutes les bourses et listes affichées",
+    "Clear all exchange/list selections": "Effacer tous les choix de bourses et de listes",
+    "START SCAN": "LANCER LE BALAYAGE", "STOP": "ARRÊTER",
+    "Ready. Exchange lists auto-refresh when the cache is old or after a refresh button press.":
+        "Prêt. Les listes des bourses s'actualisent seules quand le cache est vieux ou après un "
+        "clic sur Actualiser.",
+    "Scan Status": "État du balayage", "Current": "En cours", "Scanned": "Balayés",
+    "Matches": "Correspondances", "Elapsed": "Écoulé", "ETA": "Reste", "Score": "Note",
+    "Sample": "Échantillon", "Volume": "Volume", "RelVol": "VolRel", "Market Cap": "Capitalisation",
+    "Cap": "Cap.", "Add selected to Watchlist": "Ajouter la sélection à la liste de suivi",
+    "Add selected to Portfolio": "Ajouter la sélection au portefeuille",
+    "🗺 Map results": "🗺 Carte des résultats",
+    "Show the scan results as a heatmap (sized by cap, coloured by % change).":
+        "Afficher les résultats en carte thermique (taille selon la capitalisation, couleur "
+        "selon la variation).",
+    "Export results CSV": "Exporter les résultats (CSV)", "⛶ Full screen": "⛶ Plein écran",
+    "Give the whole window to this table, hiding the chart. Click again to put it back.":
+        "Donner toute la fenêtre à ce tableau en masquant le graphique. Cliquez de nouveau pour "
+        "le remettre.",
+    # ETF Screener
+    "Ticker (e.g. VFV)": "Symbole (ex. VFV)", "Yahoo symbol (e.g. VFV.TO)": "Symbole Yahoo (ex. VFV.TO)",
+    "The symbol Yahoo Finance knows it by. TSX listings end in .TO. Leave empty to reuse the ticker.":
+        "Le symbole connu de Yahoo Finance. Les titres du TSX finissent par .TO. Laissez vide pour "
+        "reprendre le symbole.",
+    "Narrow to one category, region, account or currency. Built from what the table actually "
+    "contains.":
+        "Restreindre à une catégorie, une région, un compte ou une devise. Construit à partir de "
+        "ce que contient le tableau.",
+    "Filter…": "Filtrer…",
+    "Show only funds whose ticker, name, category or region contains this text.":
+        "Afficher seulement les fonds dont le symbole, le nom, la catégorie ou la région contient "
+        "ce texte.",
+    "Refresh returns & risk": "Actualiser rendements et risque",
+    "Downloads 11 years of history per fund (Yahoo Finance) and recomputes returns and risk. Never "
+    "overwrites anything you typed.":
+        "Télécharge 11 ans d'historique par fonds (Yahoo Finance) et recalcule les rendements et "
+        "le risque. N'écrase jamais ce que vous avez tapé.",
+    "Stop": "Arrêter",
+    "Adds the fund at 0 shares, ready for you to enter what you hold on the Portfolio tab.":
+        "Ajoute le fonds à 0 part, prêt pour inscrire ce que vous détenez dans l'onglet "
+        "Portefeuille.",
+    "Compare selected": "Comparer la sélection",
+    "Plots the selected funds on one chart, each restated to 100 at the first date they all share.":
+        "Trace les fonds choisis sur un même graphique, chacun ramené à 100 à la première date "
+        "qu'ils ont en commun.",
+    "Allocation:": "Répartition :", "Low risk": "Risque faible", "Mid risk": "Risque moyen",
+    "High risk": "Risque élevé",
+    "Which allocation the analyses below act on.": "La répartition sur laquelle portent les analyses ci-dessous.",
+    "Build…": "Construire…",
+    "Fill the selected allocation column by a rule you set: which risk bands count, equal or "
+    "inverse-volatility weighting, a cap per fund.":
+        "Remplir la colonne de répartition choisie selon une règle : quels niveaux de risque "
+        "comptent, pondération égale ou inverse de la volatilité, plafond par fonds.",
+    "Target vs held": "Cible vs détenu",
+    "Compares this allocation against the positions on your Portfolio tab and reports the gap in "
+    "dollars.":
+        "Compare cette répartition aux positions de l'onglet Portefeuille et donne l'écart en "
+        "dollars.",
+    "What this mix holds": "Ce que contient ce mélange",
+    "Opens every fund in the allocation up to the companies inside it, so the same name held twice "
+    "shows once.":
+        "Ouvre chaque fonds de la répartition jusqu'aux sociétés qu'il contient, pour qu'un même "
+        "nom détenu deux fois n'apparaisse qu'une fois.",
+    "What each fund holds": "Ce que contient chaque fonds",
+    "Every fund and what is inside it, one row per holding — all of them, not just the allocation.":
+        "Chaque fonds et ce qu'il contient, une ligne par titre — tous, pas seulement la "
+        "répartition.",
+    "Export CSV": "Exporter (CSV)", "Ticker": "Symbole", "Category": "Catégorie", "Region": "Région",
+    "Exchange": "Bourse", "% Bonds": "% Obligations", "% Commodity": "% Marchandises",
+    "Div %/yr": "Div. %/an", "Volatility": "Volatilité", "Worst drop": "Pire baisse",
+    "Updated": "Mis à jour",
+    "Each allocation column adds up here. 100% means fully allocated.":
+        "Chaque colonne de répartition s'additionne ici. 100 % veut dire entièrement réparti.",
+    "What each allocation holds": "Ce que contient chaque répartition",
+    "Type percentages the way you say them (20 = 20%). A figure followed by \"of X% of the "
+    "allocation\" stands on that much of it — funds missing the figure are left out rather than "
+    "counted as zero. Analysis, not financial advice.":
+        "Tapez les pourcentages comme vous les dites (20 = 20 %). Un chiffre suivi de « de X % de "
+        "la répartition » ne porte que sur cette part — les fonds sans ce chiffre sont laissés "
+        "de côté plutôt que comptés à zéro. Analyse, pas un conseil financier.",
+    # Watchlists
+    "AAPL or RY.TO": "AAPL ou RY.TO", "Import": "Importer",
+    # Alerts
+    "Get notified when a symbol meets a condition. Alerts are edge-triggered: 'RSI Below 30' fires "
+    "once as it drops through 30, not every check. Analysis tool only - alerts never place orders.":
+        "Soyez averti quand un symbole remplit une condition. Les alertes se déclenchent au "
+        "franchissement : « RSI sous 30 » sonne une fois quand il passe sous 30, pas à chaque "
+        "vérification. Outil d'analyse seulement - une alerte ne passe jamais d'ordre.",
+    "New alert": "Nouvelle alerte", "Symbol e.g. AAPL": "Symbole ex. AAPL", "from list": "de la liste",
+    "Pick a symbol from your watchlist": "Choisir un symbole dans votre liste de suivi",
+    "recurring: re-arms and can fire again on the next crossing.\nonce: fires a single time, then "
+    "turns itself off.":
+        "recurring : se réarme et peut sonner au prochain franchissement.\nonce : sonne une seule "
+        "fois, puis se désactive.",
+    "Bars": "Barres", "Bar interval the condition is evaluated on.":
+        "Intervalle des barres sur lequel la condition est évaluée.",
+    "When": "Quand", "Add alert": "Ajouter l'alerte", "Condition": "Condition", "Status": "État",
+    "Last price": "Dernier prix", "Fired": "Déclenchée", "Enable / Disable": "Activer / Désactiver",
+    "Auto-check every": "Vérifier automatiquement toutes les", "Triggered alerts:": "Alertes déclenchées :",
+    # AI Assist
+    "Natural-language assistant. It explains indicators, scores and setups in plain English. "
+    "Educational only — not financial advice. Uses your own Anthropic API key (per-use cost billed "
+    "to you); with no key it falls back to the offline rules-based Trade Coach.":
+        "Assistant en langage courant. Il explique les indicateurs, les notes et les "
+        "configurations. Éducatif seulement — pas un conseil financier. Utilise votre propre clé "
+        "API Anthropic (coût par utilisation facturé à vous); sans clé, il se rabat sur le Coach "
+        "hors ligne fondé sur des règles.",
+    "⚠ No live market data. Answers are based on the indicators TradeLabPro computes for the loaded "
+    "symbol plus the model's general knowledge (not real-time). It cannot give current prices, "
+    "today's news, or earnings dates. Educational only — not financial advice.":
+        "⚠ Aucune donnée de marché en direct. Les réponses reposent sur les indicateurs que "
+        "TradeLabPro calcule pour le symbole chargé et sur les connaissances générales du modèle "
+        "(pas en temps réel). Il ne peut donner ni les prix actuels, ni les nouvelles du jour, ni "
+        "les dates de résultats. Éducatif seulement — pas un conseil financier.",
+    "API key": "Clé API",
+    "Anthropic API key (sk-ant-...) - stored locally on this machine":
+        "Clé API Anthropic (sk-ant-...) - gardée sur cet ordinateur",
+    "Model": "Modèle", "AI mode: off (no key) - answers use the offline Trade Coach.":
+        "Mode IA : désactivé (aucune clé) - les réponses viennent du Coach hors ligne.",
+    "Load symbol context": "Charger le contexte du symbole",
+    "Shortlist check - compare candidates side by side":
+        "Vérification d'une courte liste - comparer les candidats côte à côte",
+    "Symbols, e.g. XEQT.TO VEQT.TO XBB.TO VTI": "Symboles, ex. XEQT.TO VEQT.TO XBB.TO VTI",
+    "(then)": "(puis)", "Check all": "Tout vérifier", "Explain with AI": "Expliquer avec l'IA",
+    "Worst fall": "Pire baisse", "5 yr/yr": "5 ans/an", "10 yr/yr": "10 ans/an",
+    "Overlap": "Chevauchement",
+    "The candidate check's facts for each symbol, ordered by what you choose. Explain with AI "
+    "describes what stands out - it never says what to buy. Not financial advice.":
+        "Les faits de la vérification pour chaque symbole, triés selon votre choix. Expliquer "
+        "avec l'IA décrit ce qui ressort - il ne dit jamais quoi acheter. Pas un conseil financier.",
+    "Ask about a symbol, indicator or setup...": "Posez une question sur un symbole, un indicateur ou une configuration...",
+    "Send": "Envoyer", "Clear": "Effacer",
+    # Risk
+    "Size a trade by risk, not by gut: set how much of your account you'll risk and where your "
+    "stop is, and get the share count that risks exactly that. See your R-multiple targets and how "
+    "concentrated your portfolio is by sector. Planning tool only — it places no orders.":
+        "Dimensionnez une transaction selon le risque, pas à l'instinct : fixez la part de votre "
+        "compte que vous risquez et votre arrêt, et obtenez le nombre de parts qui risque "
+        "exactement cela. Voyez vos cibles en multiples de R et la concentration de votre "
+        "portefeuille par secteur. Outil de planification seulement — aucun ordre n'est passé.",
+    "Position sizing": "Taille de position", "Account equity": "Avoir du compte",
+    "Risk per trade": "Risque par transaction", "Side": "Sens", "Entry price": "Prix d'entrée",
+    "Stop price": "Prix d'arrêt", "Max position": "Position maximale",
+    "Optional cap on position size as % of account (0 = off).":
+        "Plafond facultatif de la position en % du compte (0 = aucun).",
+    "Use paper account equity": "Utiliser l'avoir du compte simulé",
+    "Fill Account equity from your paper-trading account.":
+        "Remplir l'avoir du compte à partir de votre compte de négociation simulée.",
+    "Targets (R = your stop distance):": "Cibles (R = distance de votre arrêt) :",
+    "Target price": "Prix cible", "$ / share": "$ / part", "Position $": "Position $",
+    "Portfolio sector exposure": "Exposition sectorielle du portefeuille",
+    "Load portfolio exposure": "Charger l'exposition du portefeuille",
+    "% of portfolio": "% du portefeuille",
+    "Positions come from the Portfolio tab.": "Les positions viennent de l'onglet Portefeuille.",
+    # Paper trading
+    "PAPER TRADING — simulated account. No real money, no live orders are ever placed. For "
+    "practice and testing only.":
+        "NÉGOCIATION SIMULÉE — compte fictif. Aucun argent réel, aucun ordre réel n'est jamais "
+        "passé. Pour la pratique et les tests seulement.",
+    "Qty": "Qté", "Limit": "Limite", "Trail": "Suivi", "Place order": "Passer l'ordre",
+    "Bracket:": "Ordres liés :",
+    "Attach a take-profit and/or stop-loss to a Market or Limit entry (one cancels the other).":
+        "Joindre une prise de profit et/ou un arrêt de perte à une entrée au marché ou à cours "
+        "limité (l'un annule l'autre).",
+    "Take-profit": "Prise de profit", "Stop-loss": "Arrêt de perte",
+    "0 = leave that exit off. Bracket uses a Market or Limit entry.":
+        "0 = pas de cette sortie. Les ordres liés utilisent une entrée au marché ou à cours limité.",
+    "Refresh (mark-to-market + trigger stops/limits)":
+        "Actualiser (évaluer au marché + déclencher arrêts et limites)",
+    "Cancel selected order": "Annuler l'ordre choisi", "Reset account": "Réinitialiser le compte",
+    "Positions": "Positions", "Avg price": "Prix moyen", "Mkt value": "Valeur marchande",
+    "Orders": "Ordres", "Fill price": "Prix d'exécution",
+    # Analytics
+    "Risk analytics for your Portfolio-tab holdings, viewed as one book. Enter a benchmark and "
+    "history window and click Analyze: the app values every position, measures the portfolio's "
+    "beta, volatility, drawdown and return against the benchmark, shows how concentrated it is, and "
+    "how correlated the holdings are. Add positions in the Portfolio tab first. Analysis only — no "
+    "live orders.":
+        "Analyse du risque des titres de l'onglet Portefeuille, vus comme un tout. Inscrivez un "
+        "indice de référence et une période, puis cliquez Analyser : l'application évalue chaque "
+        "position, mesure le bêta, la volatilité, la baisse maximale et le rendement par rapport "
+        "à l'indice, montre la concentration et la corrélation des titres. Ajoutez d'abord des "
+        "positions dans l'onglet Portefeuille. Analyse seulement — aucun ordre réel.",
+    "Benchmark": "Indice de référence", "History": "Historique", "Analyze": "Analyser",
+    "Add holdings in the Portfolio tab, then click Analyze.":
+        "Ajoutez des titres dans l'onglet Portefeuille, puis cliquez Analyser.",
+    "Total value": "Valeur totale", "Return vs bench": "Rendement vs indice", "Beta": "Bêta",
+    "Ann. volatility": "Volatilité annuelle", "Max drawdown": "Baisse maximale",
+    "Holdings": "Titres", "Ccy": "Devise", "Avg entry": "Entrée moyenne", "Weight %": "Poids %",
+    "Unreal P&L": "Gain/perte latent", "Unreal %": "Latent %",
+    "Look-through exposure (funds opened up)": "Exposition transparente (fonds ouverts)",
+    "Click Analyze to read your holdings through to the companies inside them.":
+        "Cliquez Analyser pour voir vos titres jusqu'aux sociétés qu'ils contiennent.",
+    "Company": "Société", "Exposure": "Exposition", "% of book": "% du total",
+    "Held directly": "Détenu directement", "Also inside": "Aussi dans",
+    "Your book by company instead of by position: a stock you own outright and also hold inside a "
+    "fund appears once, with both parts added together.\nClick a row to chart it.":
+        "Vos placements par société plutôt que par position : un titre détenu directement et "
+        "aussi dans un fonds n'apparaît qu'une fois, les deux parts additionnées.\nCliquez une "
+        "ligne pour son graphique.",
+    "Correlation (daily returns)": "Corrélation (rendements quotidiens)",
+    "Correlation of daily returns between holdings. Red = they move together (concentrated risk); "
+    "green = they diversify each other.":
+        "Corrélation des rendements quotidiens entre les titres. Rouge = ils bougent ensemble "
+        "(risque concentré); vert = ils se diversifient.",
+    "Risk analysis of holdings you record — not a live brokerage view and not financial advice.":
+        "Analyse du risque des titres que vous inscrivez — pas une vue en direct du courtier ni un "
+        "conseil financier.",
+    # Dividends
+    "The income your holdings actually pay. Reads the Portfolio tab and shows each position's "
+    "annual dividend, its yield at today's price versus the yield on what you paid, how often it "
+    "pays, whether the payout is growing, and a month-by-month calendar of when the money arrives. "
+    "Reporting only — not financial advice.":
+        "Le revenu que vos titres versent vraiment. Lit l'onglet Portefeuille et montre le "
+        "dividende annuel de chaque position, son rendement au prix du jour comparé au rendement "
+        "sur ce que vous avez payé, sa fréquence, si le versement augmente, et un calendrier mois "
+        "par mois de l'arrivée de l'argent. Rapport seulement — pas un conseil financier.",
+    "Add holdings in the Portfolio tab, then click Refresh.":
+        "Ajoutez des titres dans l'onglet Portefeuille, puis cliquez Actualiser.",
+    "Average per month": "Moyenne par mois", "Portfolio yield": "Rendement du portefeuille",
+    "Yield on cost": "Rendement sur le coût", "Paying holdings": "Titres qui versent",
+    "Income by holding": "Revenu par titre", "Pays": "Verse", "Div/share (yr)": "Div./part (an)",
+    "Yield": "Rendement", "On cost": "Sur le coût", "When it arrives": "Quand il arrive",
+    "Month": "Mois", "Expected income": "Revenu attendu", "From": "De",
+    "Projected from the months each holding paid in over the last year, at the current rate.":
+        "Projeté selon les mois où chaque titre a versé l'an dernier, au taux actuel.",
+    "Projected from past payments — dividends can be cut or raised at any time. Reporting only — "
+    "not financial advice.":
+        "Projeté à partir des versements passés — un dividende peut être réduit ou augmenté en "
+        "tout temps. Rapport seulement — pas un conseil financier.",
+    # Retirement
+    "A workplace plan the app can't connect to — a group RRSP, a pension. Paste the fund table from "
+    "your statement and each fund is measured against the others and against an index. Two "
+    "statement dates are what turn a balance into a return, so the first paste starts the clock "
+    "and the next one answers the question. Reporting only — not financial advice.":
+        "Un régime d'employeur auquel l'application ne peut se connecter — un REER collectif, un "
+        "régime de retraite. Collez le tableau des fonds de votre relevé et chaque fonds est "
+        "comparé aux autres et à un indice. Il faut deux dates de relevé pour qu'un solde "
+        "devienne un rendement : le premier collage démarre le chronomètre, le suivant répond. "
+        "Rapport seulement — pas un conseil financier.",
+    "New plan": "Nouveau régime", "Rename": "Renommer",
+    "Create a plan, then paste your statement below.":
+        "Créez un régime, puis collez votre relevé ci-dessous.",
+    "Plan value": "Valeur du régime", "Gain since first statement": "Gain depuis le premier relevé",
+    "Best fund": "Meilleur fonds", "Weakest fund": "Fonds le plus faible", "Funds": "Fonds",
+    "Enter a statement": "Inscrire un relevé",
+    "Copy the fund table straight off your plan's website and paste it here — one fund per line. "
+    "Two numbers on a line are read as units and unit value; one is read as a balance. Category "
+    "headings are ignored.":
+        "Copiez le tableau des fonds directement du site de votre régime et collez-le ici — un "
+        "fonds par ligne. Deux nombres sur une ligne sont lus comme unités et valeur unitaire; un "
+        "seul comme un solde. Les titres de catégorie sont ignorés.",
+    "Statement date": "Date du relevé", "YYYY-MM-DD": "AAAA-MM-JJ", "Save to plan": "Enregistrer au régime",
+    "Paste a statement and click Read.": "Collez un relevé et cliquez Lire.",
+    "Published fund returns (from your fund fact sheets)":
+        "Rendements publiés des fonds (selon vos fiches de fonds)",
+    "Your plan publishes each fund against its own benchmark. Paste a sheet's 'compound returns' "
+    "table — the header row plus the Fonds/Indice rows — and pick the fund it belongs to. These "
+    "returns are struck before the plan's investment management fee, so set that fee to see what's "
+    "left after what you pay.":
+        "Votre régime publie chaque fonds par rapport à son propre indice. Collez le tableau des "
+        "« rendements composés » d'une fiche — la ligne d'en-tête et les lignes Fonds/Indice — et "
+        "choisissez le fonds auquel il appartient. Ces rendements sont calculés avant les frais "
+        "de gestion du régime; inscrivez ces frais pour voir ce qui reste après ce que vous payez.",
+    "Read sheet": "Lire la fiche", "Plan fee %": "Frais du régime %",
+    "The plan's annual investment management fee, which fund fact sheet returns are struck before. "
+    "Applied to every fund unless one carries its own.":
+        "Les frais annuels de gestion du régime, déduits après les rendements des fiches. "
+        "Appliqués à chaque fonds, sauf s'il a les siens.",
+    "Horizon": "Horizon", "Compare the fees with": "Comparer les frais avec",
+    "A low-cost index fund's yearly fee - yours to set.":
+        "Les frais annuels d'un fonds indiciel à faible coût - à vous de les fixer.",
+    "at a return before fees of": "à un rendement avant frais de", "Weight": "Poids",
+    "Its benchmark": "Son indice", "Excess": "Écart", "Fee": "Frais", "After fee": "Après frais",
+    "Your funds": "Vos fonds", "Units": "Unités", "Unit value": "Valeur unitaire",
+    "Fund return": "Rendement du fonds", "Over": "Sur", "Your return": "Votre rendement",
+    "Index": "Indice", "vs index": "vs indice",
+    "Each fund since your first statement (rebased to 100)":
+        "Chaque fonds depuis votre premier relevé (ramené à 100)",
+    "No plan yet.": "Aucun régime.", "Contributions and withdrawals": "Cotisations et retraits",
+    "Only needed for 'Your return'. Money moved before your first statement is already inside that "
+    "balance and should not be entered again.":
+        "Seulement pour « Votre rendement ». L'argent déplacé avant votre premier relevé est déjà "
+        "dans ce solde et ne doit pas être inscrit de nouveau.",
+    "Contribution (you)": "Cotisation (vous)", "Employer": "Employeur",
+    "Your own figures, recalculated — not a statement from your plan. Not financial advice.":
+        "Vos propres chiffres, recalculés — pas un relevé de votre régime. Pas un conseil financier.",
+    # Journal
+    "Log your trades, tag them, and review what works: win rate, average R-multiple, expectancy, "
+    "and P&L by strategy/tag. Set a Stop to get R-multiples. Import round-trips from Paper Trading. "
+    "Practice tool only.":
+        "Inscrivez vos transactions, étiquetez-les et voyez ce qui fonctionne : taux de réussite, "
+        "multiple de R moyen, espérance et gain/perte par stratégie ou étiquette. Inscrivez un "
+        "arrêt pour obtenir les multiples de R. Importez les allers-retours de la négociation "
+        "simulée. Outil de pratique seulement.",
+    "Log a trade": "Inscrire une transaction",
+    "Protective stop (0 = none). Needed for R-multiples.":
+        "Arrêt de protection (0 = aucun). Nécessaire pour les multiples de R.",
+    "Tags": "Étiquettes", "tags, comma-separated": "étiquettes, séparées par des virgules",
+    "Entry date": "Date d'entrée", "Exit": "Sortie", "Exit date": "Date de sortie",
+    "P&L": "Gain/perte", "P&L %": "Gain/perte %", "Days": "Jours",
+    "Click a column header to sort; click again to reverse.":
+        "Cliquez un en-tête de colonne pour trier; de nouveau pour inverser.",
+    "Close selected…": "Fermer la sélection…", "Edit note…": "Modifier la note…",
+    "Import from Paper Trading": "Importer de la négociation simulée",
+    "Import from IBKR (CSV)…": "Importer d'IBKR (CSV)…",
+    "Import an IBKR trades CSV — a Flex Query 'Trades' export or an Activity Statement.":
+        "Importer un CSV de transactions IBKR — un export « Trades » d'une requête Flex ou un "
+        "relevé d'activité.",
+    "Import from IBKR (Flex)…": "Importer d'IBKR (Flex)…",
+    "Fetch your Flex Query report directly over IBKR's Flex Web Service (read-only).":
+        "Récupérer votre rapport de requête Flex directement par le service Web Flex d'IBKR "
+        "(lecture seule).",
+    "Tax summary…": "Sommaire fiscal…",
+    "One year's closed trades and retirement-plan contributions, gathered for tax season - to "
+    "compare with your slips.":
+        "Les transactions fermées et les cotisations de retraite d'une année, réunies pour la "
+        "saison des impôts - à comparer avec vos feuillets.",
+    "Breakdown by": "Répartition par", "Tag": "Étiquette", "Trades": "Transactions",
+    "Win %": "Réussite %", "Total P&L": "Gain/perte total", "Avg R": "R moyen",
+    "Click a column header to sort.": "Cliquez un en-tête de colonne pour trier.",
+    # Coach
+    "Your AI Trading Coach reviews your OWN past trades from the Journal and grades how well each "
+    "was executed — risk defined, stop honored, reward vs risk, plan written down — not just "
+    "whether it made money. Retrospective and educational: it reviews the past, it never tells you "
+    "what to trade next.":
+        "Votre coach de négociation revoit VOS transactions passées du Journal et note la qualité "
+        "de leur exécution — risque défini, arrêt respecté, gain par rapport au risque, plan "
+        "écrit — pas seulement si elles ont rapporté. Rétrospectif et éducatif : il revoit le "
+        "passé et ne vous dit jamais quoi négocier ensuite.",
+    "⚠ Process feedback, not financial advice. The Coach grades execution discipline from your "
+    "journal; it does not predict prices or recommend trades. The AI chat uses your own Anthropic "
+    "API key (per-use cost); with no key you still get the full offline rules-based review.":
+        "⚠ Rétroaction sur la méthode, pas un conseil financier. Le Coach note la discipline "
+        "d'exécution à partir de votre journal; il ne prédit pas les prix et ne recommande aucune "
+        "transaction. Le clavardage IA utilise votre propre clé API Anthropic (coût par "
+        "utilisation); sans clé, vous avez quand même la revue complète hors ligne.",
+    "Anthropic API key (shared with AI Assist) — stored locally on this machine":
+        "Clé API Anthropic (partagée avec l'Assistant IA) — gardée sur cet ordinateur",
+    "Refresh from journal": "Actualiser à partir du journal",
+    "Overall process grade:": "Note globale de la méthode :",
+    "AI chat: off (no key) — offline review still available.":
+        "Clavardage IA : désactivé (aucune clé) — la revue hors ligne reste disponible.",
+    "Grade": "Note",
+    "Each closed trade, graded on how it was executed. Click a row to see the grade breakdown below.":
+        "Chaque transaction fermée, notée selon son exécution. Cliquez une ligne pour voir le "
+        "détail de la note ci-dessous.",
+    "Ask your coach — e.g. 'What's my biggest weakness?' or 'How's my stop discipline?'":
+        "Demandez à votre coach — ex. « Quelle est ma plus grande faiblesse? » ou « Comment est ma "
+        "discipline d'arrêt? »",
+    "Ask coach": "Demander au coach", "Clear chat": "Effacer la conversation",
+    # Backtest
+    "Backtesting replays past prices and pretends to follow the strategy's buy/sell signals, to "
+    "check whether it would have made money. Nothing here places real trades.":
+        "Le test historique rejoue les prix passés en suivant les signaux d'achat et de vente de "
+        "la stratégie, pour voir si elle aurait rapporté. Rien ici ne passe de vraies transactions.",
+    "Splits the history into separate time periods and tests each one. This is the honesty check: a "
+    "strategy that only worked in one lucky period is probably overfit. High consistency = "
+    "trustworthy.":
+        "Découpe l'historique en périodes distinctes et teste chacune. C'est le test "
+        "d'honnêteté : une stratégie qui n'a fonctionné que dans une période chanceuse est "
+        "probablement surajustée. Grande constance = fiable.",
+    "Windows": "Fenêtres", "Run walk-forward": "Lancer le test progressif", "Window": "Fenêtre",
+    "To": "À", "Win rate %": "Taux de réussite %", "Total return %": "Rendement total %",
+    "Tries different values for ONE setting and ranks them best-first. The top row is the value "
+    "that performed best — but a single standout spike is often luck; prefer a value whose "
+    "neighbours also did well.":
+        "Essaie différentes valeurs pour UN réglage et les classe de la meilleure à la pire. La "
+        "première ligne a le mieux fait — mais un pic isolé est souvent de la chance; préférez une "
+        "valeur dont les voisines ont aussi bien fait.",
+    "Parameter": "Paramètre", "Values": "Valeurs", "Optimize": "Optimiser",
+    "Tests the strategy on MANY stocks at once. If it only works on one lucky name it isn't "
+    "reliable — look at the overall verdict to see if it works in general.":
+        "Teste la stratégie sur PLUSIEURS titres à la fois. Si elle ne fonctionne que sur un nom "
+        "chanceux, elle n'est pas fiable — regardez le verdict global pour voir si elle fonctionne "
+        "en général.",
+    "Symbols": "Symboles", "Run": "Lancer", "Profit factor": "Facteur de profit",
+    "Max drawdown %": "Baisse maximale %",
+    "Tests the strategy on ONE stock. The plain-English verdict below the table tells you if it "
+    "would have made money and how bumpy the ride was.":
+        "Teste la stratégie sur UN titre. Le verdict sous le tableau dit si elle aurait rapporté et "
+        "à quel point le parcours aurait été cahoteux.",
+    "Run backtest": "Lancer le test", "Metric": "Mesure", "Entry Date": "Date d'entrée",
+    "Exit Date": "Date de sortie", "Return %": "Rendement %",
+    "Research only — not financial advice.": "Recherche seulement — pas un conseil financier.",
+    # Strategy builder
+    "Build your own strategy with no code: pick conditions for when to BUY and when to SELL. Saved "
+    "strategies appear in the Scanner and Backtest strategy dropdowns and run just like the "
+    "built-in ones.":
+        "Construisez votre propre stratégie sans code : choisissez les conditions d'ACHAT et de "
+        "VENTE. Les stratégies enregistrées apparaissent dans les listes du Scanneur et du Test "
+        "historique et fonctionnent comme celles intégrées.",
+    "BUY when ALL of these are true:": "ACHETER quand TOUTES ces conditions sont vraies :",
+    "+ Add condition": "+ Ajouter une condition",
+    "SELL when ALL of these are true:": "VENDRE quand TOUTES ces conditions sont vraies :",
+    "Plain-English preview:": "Aperçu en clair :",
+    # Replay
+    "Practice reading a chart with the future hidden. Load a symbol, pick where to start, then Play "
+    "or step candle by candle. Indicators only use the revealed bars — no peeking ahead.":
+        "Exercez-vous à lire un graphique sans voir la suite. Chargez un symbole, choisissez le "
+        "départ, puis Lecture ou avancez chandelle par chandelle. Les indicateurs n'utilisent que "
+        "les barres révélées — impossible de tricher.",
+    "Start at bar": "Commencer à la barre",
+    "How many bars to reveal before you start stepping.": "Combien de barres révéler avant de commencer.",
+    "Load replay": "Charger la relecture", "Back to the start bar": "Retour à la barre de départ",
+    "Step back one bar": "Reculer d'une barre", "▶ Play": "▶ Lecture",
+    "Step forward one bar": "Avancer d'une barre", "Reveal all bars": "Révéler toutes les barres",
+    "Speed": "Vitesse", "Load a symbol to begin.": "Chargez un symbole pour commencer.",
+    # Seasonality
+    "Seasonality: how a stock has behaved by calendar. Enter a symbol and the app measures the "
+    "average return and win rate for each month and weekday over its history, and its year-by-year "
+    "performance — so you can see whether the current month has tended to be kind or cruel to that "
+    "name. Descriptive of the past, not a prediction of the future.":
+        "Saisonnalité : comment un titre s'est comporté selon le calendrier. Inscrivez un symbole "
+        "et l'application mesure le rendement moyen et le taux de réussite de chaque mois et jour "
+        "de la semaine dans son historique, et sa performance année par année — pour voir si le "
+        "mois en cours lui a été favorable ou non. Description du passé, pas une prévision.",
+    "Enter a symbol and click Analyze.": "Inscrivez un symbole et cliquez Analyser.",
+    "By month": "Par mois", "Avg %": "Moy. %", "Best %": "Meilleur %", "Worst %": "Pire %",
+    "Years": "Années", "By weekday": "Par jour de la semaine", "Day": "Jour", "By year": "Par année",
+    "Descriptive of past calendars only — not a forecast and not financial advice.":
+        "Description des calendriers passés seulement — pas une prévision ni un conseil financier.",
+    # Plugins, notes, links, help
+    "Drop a .py file in the plugins/ folder that defines PLUGIN_NAME and compute(df) -> Series. It "
+    "becomes usable as a field in Custom Filters and the Strategy Builder. See "
+    "plugins/sample_hl_range.py for a template.":
+        "Déposez dans le dossier plugins/ un fichier .py qui définit PLUGIN_NAME et compute(df) -> "
+        "Series. Il devient un champ utilisable dans les filtres personnalisés et le constructeur "
+        "de stratégies. Voyez plugins/sample_hl_range.py comme modèle.",
+    "Reload plugins": "Recharger les modules",
+    "A free-form scratchpad — your trading plan, ideas, reminders, rules. It saves automatically as "
+    "you type (stored on this PC).":
+        "Un bloc-notes libre — votre plan, vos idées, vos rappels, vos règles. Il s'enregistre "
+        "automatiquement pendant que vous tapez (gardé sur cet ordinateur).",
+    "Keep your go-to research sites, broker pages, news and screeners here. Enter a name and a URL "
+    "(https:// is added if you omit it), then double-click a row to open it in your browser. Stored "
+    "on your PC.":
+        "Gardez ici vos sites de recherche, pages de courtier, nouvelles et filtres préférés. "
+        "Inscrivez un nom et une adresse (https:// est ajouté s'il manque), puis double-cliquez "
+        "une ligne pour l'ouvrir dans votre navigateur. Gardé sur votre ordinateur.",
+    "Add / edit a link": "Ajouter / modifier un lien", "Name e.g. Finviz Map": "Nom ex. Carte Finviz",
+    "URL": "Adresse", "URL e.g. finviz.com/map.ashx": "Adresse ex. finviz.com/map.ashx",
+    "Group (optional)": "Groupe (facultatif)", "Open selected": "Ouvrir la sélection",
+    "Import CSV": "Importer (CSV)", "Double-click a link to open it.": "Double-cliquez un lien pour l'ouvrir.",
+    "📄  Open as PDF": "📄  Ouvrir en PDF",
+    "Export the manual to a PDF and open it in your default viewer":
+        "Exporter le manuel en PDF et l'ouvrir dans votre lecteur par défaut",
 }
