@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from tradelab.i18n import tr
+
 GUIDELINES = "FP Canada / IQPF Projection Assumption Guidelines 2026"
 SHORT_TERM = 0.024
 FIXED_INCOME = 0.032
@@ -149,16 +151,18 @@ def drop_alert(fall: float, last_step: float) -> tuple:
 
 def calm_text(fall: float, high, level_name: str, record: dict | None) -> str:
     """What the notification says in a fall - the plan's own record beside it."""
-    text = (f"Global stocks are {-fall:.0%} below their high of {high:%b} {high.day}. "
-            f"Falls like this are part of investing, and of your plan.")
+    text = tr("Global stocks are {fall} below their high of {high}. Falls like this are part of "
+              "investing, and of your plan.").format(fall=f"{-fall:.0%}",
+                                                     high=f"{high:%b} {high.day}")
     if record and record.get("worst_fall"):
-        text += (f" {level_name} fell {-record['worst_fall']:.0%} at worst since 2003 "
-                 f"({record['worst_when']})")
+        text += tr(" {level} fell {fall} at worst since 2003 ({when})").format(
+            level=tr(level_name), fall=f"{-record['worst_fall']:.0%}", when=record["worst_when"])
         if record.get("recovered"):
-            text += (f" and was back to its high by {record['recovered']}, "
-                     f"{record['recovery_months']} months later")
+            text += tr(" and was back to its high by {date}, {months} months later").format(
+                date=record["recovered"], months=record["recovery_months"])
         text += "."
-    return text + " Selling after a fall turns it into a loss for good; your plan has not changed."
+    return text + tr(" Selling after a fall turns it into a loss for good; your plan has not "
+                     "changed.")
 
 
 def reminder_due(day: int, last, today) -> bool:
@@ -197,9 +201,9 @@ def reminder_text(weights: dict, monthly: float) -> str:
     """What the reminder says: each fund's part of the month's amount."""
     parts = [f"${monthly * w:,.0f} {s}" for s, w in weights.items() if w > 0 and monthly * w >= 1]
     if monthly and parts:
-        return (f"Time for this month's purchase: ${monthly:,.0f} - " + ", ".join(parts)
-                + ". The Guide's step 4 has the share counts.")
-    return "Time for this month's purchase - the Guide's step 4 has the share counts."
+        return tr("Time for this month's purchase: {amount} - {parts}. The Guide's step 4 has "
+                  "the share counts.").format(amount=f"${monthly:,.0f}", parts=", ".join(parts))
+    return tr("Time for this month's purchase - the Guide's step 4 has the share counts.")
 
 
 # Step 4 - the purchases. A pick is (symbol, class): "all" for a fund that
@@ -422,39 +426,43 @@ def recommend(horizon_idx: int, drop_idx: int, measured: list | None = None) -> 
     level = min(cap_h, cap_d)
     reasons = []
     top = len(LEVELS) - 1
+    horizon = tr(HORIZONS[horizon_idx][0]).lower()
     if cap_h <= cap_d and cap_h < top:
-        reasons.append(f"you need the money in {HORIZONS[horizon_idx][0].lower()}, and a "
-                       f"higher level can take longer than that to recover from a fall")
+        reasons.append(tr("you need the money in {horizon}, and a higher level can take longer "
+                          "than that to recover from a fall").format(horizon=horizon))
     elif level == top:
-        reasons.append(f"you need the money in {HORIZONS[horizon_idx][0].lower()} - time to "
-                       f"wait out a fall")
+        reasons.append(tr("you need the money in {horizon} - time to wait out a fall")
+                       .format(horizon=horizon))
     if cap_d <= cap_h:
         if fits == []:
-            reasons.append(f"you want {phrase}, and {LEVELS[0][0]} is the level that fell least "
-                           f"({-measured[0]['worst_fall']:.0%})")
+            reasons.append(tr("you want {phrase}, and {level} is the level that fell least "
+                              "({fall})").format(phrase=tr(phrase), level=tr(LEVELS[0][0]),
+                                                 fall=f"{-measured[0]['worst_fall']:.0%}"))
         elif measured:
-            reasons.append(f"you could live with {phrase}, and {LEVELS[level][0]} fell "
-                           f"{-measured[level]['worst_fall']:.0%} at worst")
+            reasons.append(tr("you could live with {phrase}, and {level} fell {fall} at worst")
+                           .format(phrase=tr(phrase), level=tr(LEVELS[level][0]),
+                                   fall=f"{-measured[level]['worst_fall']:.0%}"))
         else:
-            reasons.append(f"you could live with {phrase}")
+            reasons.append(tr("you could live with {phrase}").format(phrase=tr(phrase)))
     note = ""
     if fits == []:
-        note = "Only savings accounts and GICs (term deposits) never drop."
-    return {"level": level, "why": "Because " + " - and ".join(reasons) + ".", "note": note}
+        note = tr("Only savings accounts and GICs (term deposits) never drop.")
+    return {"level": level, "why": tr("Because ") + tr(" - and ").join(reasons) + ".",
+            "note": note}
 
 
 def first_steps(emergency: str, debt: str, accounts: str) -> list:
     """What usually comes before investing, from the answers - plain facts."""
     steps = []
     if emergency != "Yes":
-        steps.append("Keep a few months of expenses in a savings account first, so an "
-                     "emergency never forces you to sell after a drop.")
+        steps.append(tr("Keep a few months of expenses in a savings account first, so an "
+                        "emergency never forces you to sell after a drop."))
     if debt == "Yes":
-        steps.append("A credit card or loan at 15-20% costs more than any level here "
-                     "is expected to earn: paying it off is a sure return.")
+        steps.append(tr("A credit card or loan at 15-20% costs more than any level here "
+                        "is expected to earn: paying it off is a sure return."))
     if accounts == "Neither yet":
-        steps.append("A CELI or a REER keeps the growth from being taxed every year. "
-                     "The next step of the guide places funds by account.")
+        steps.append(tr("A CELI or a REER keeps the growth from being taxed every year. "
+                        "The next step of the guide places funds by account."))
     return steps
 
 
@@ -462,6 +470,8 @@ def check_choice(chosen: int, recommended: int, measured: list | None) -> str:
     """What choosing above the answers' level means - "" when it does not."""
     if chosen <= recommended:
         return ""
-    fall = f" It fell {-measured[chosen]['worst_fall']:.0%} at worst." if measured else ""
-    return (f"{LEVELS[chosen][0]} is above the level your answers point to "
-            f"({LEVELS[recommended][0]}).{fall} It is your choice.")
+    fall = (tr(" It fell {fall} at worst.").format(fall=f"{-measured[chosen]['worst_fall']:.0%}")
+            if measured else "")
+    return tr("{chosen} is above the level your answers point to ({recommended}).{fall} It is "
+              "your choice.").format(chosen=tr(LEVELS[chosen][0]),
+                                     recommended=tr(LEVELS[recommended][0]), fall=fall)

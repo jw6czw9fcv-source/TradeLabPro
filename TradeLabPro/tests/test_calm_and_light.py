@@ -17,7 +17,7 @@ def test_the_plan_light():
     light, text = ap.status_light([("warn", "one"), ("warn", "two")])
     assert light == "yellow" and text == "one (and 1 more)"
     assert ap.status_light([("warn", "a"), ("warn", "b"), ("warn", "c")])[0] == "red"
-    assert ap.status_light([("warn", "Spending $70,000 is above the safe budget")])[0] == "red"
+    assert ap.status_light([("alert", "Spending $70,000 is above the safe budget")])[0] == "red"
 
 
 def test_the_next_purchase_date():

@@ -533,7 +533,7 @@ class HomePanel(AutoRefresh, QWidget):
         from tradelab.i18n import tr
         self.plan_line.setText(
             f"<span style='color:{colour}; font-size:16px;'>●</span> "
-            f"<b>{tr('Your plan:')}</b> {html.escape(tr(text))}"
+            f"<b>{tr('Your plan:')}</b> {html.escape(text)}"
             + (f" &nbsp;<span style='color:{theme.MUTED};'>{html.escape(extra)}</span>" if extra else "")
             + f" &nbsp;<a href='plan'>{tr('Open the Plan tab')}</a>")
         self.plan_light = light

@@ -412,4 +412,345 @@ FR = {
         "positions, pour que le total corresponde à ce que montre votre courtier. Les inscrire de "
         "nouveau remplace le montant.",
     "Set on": "Inscrit le",
+
+    # --- Phase 2: messages built on the fly --------------------------------------------
+    # Classes and small words
+    "stocks": "actions", "bonds": "obligations", "cash": "liquidités", "other": "autre",
+    "buy": "acheter", "sell": "vendre", "of": "de",
+    "no drop at all": "aucune baisse", "a drop of about 5%": "une baisse d'environ 5 %",
+    "a drop of about 10%": "une baisse d'environ 10 %", "a drop of about 20%": "une baisse d'environ 20 %",
+    "a drop of about 30%": "une baisse d'environ 30 %", "a drop of more than 30%": "une baisse de plus de 30 %",
+    # Guide
+    "Your answers point to {level}.": "Vos réponses mènent à {level}.",
+    "Because ": "Parce que ", " - and ": " - et ",
+    "you need the money in {horizon}, and a higher level can take longer than that to recover from a fall":
+        "vous aurez besoin de l'argent dans {horizon}, et un niveau plus élevé peut prendre plus de "
+        "temps que cela à se remettre d'une baisse",
+    "you need the money in {horizon} - time to wait out a fall":
+        "vous aurez besoin de l'argent dans {horizon} - le temps d'attendre la fin d'une baisse",
+    "you want {phrase}, and {level} is the level that fell least ({fall})":
+        "vous voulez {phrase}, et {level} est le niveau qui a le moins baissé ({fall})",
+    "you could live with {phrase}, and {level} fell {fall} at worst":
+        "vous pourriez vivre avec {phrase}, et {level} a baissé de {fall} au pire",
+    "you could live with {phrase}": "vous pourriez vivre avec {phrase}",
+    "Only savings accounts and GICs (term deposits) never drop.":
+        "Seuls les comptes d'épargne et les CPG (dépôts à terme) ne baissent jamais.",
+    "Before you start: ": "Avant de commencer : ",
+    "Keep a few months of expenses in a savings account first, so an emergency never forces you "
+    "to sell after a drop.":
+        "Gardez d'abord quelques mois de dépenses dans un compte d'épargne, pour qu'une urgence ne "
+        "vous force jamais à vendre après une baisse.",
+    "A credit card or loan at 15-20% costs more than any level here is expected to earn: paying it "
+    "off is a sure return.":
+        "Une carte de crédit ou un prêt à 15-20 % coûte plus que ce qu'aucun niveau ici devrait "
+        "rapporter : le rembourser est un rendement assuré.",
+    "A CELI or a REER keeps the growth from being taxed every year. The next step of the guide "
+    "places funds by account.":
+        "Un CELI ou un REER évite que la croissance soit imposée chaque année. L'étape suivante du "
+        "guide place les fonds par compte.",
+    "{chosen} is above the level your answers point to ({recommended}).{fall} It is your choice.":
+        "{chosen} est au-dessus du niveau auquel mènent vos réponses ({recommended}).{fall} C'est "
+        "votre choix.",
+    " It fell {fall} at worst.": " Il a baissé de {fall} au pire.",
+    "{name}: {st} stocks, {bo} bonds, {ca} cash.":
+        "{name} : {st} actions, {bo} obligations, {ca} liquidités.",
+    " In its worst stretch since {since}, $10,000 became {value}.":
+        " Dans sa pire période depuis {since}, 10 000 $ sont devenus {value}.",
+    "{window} is too short to judge a level: it can miss a crash entirely, and a strong stretch "
+    "does not repeat on demand.":
+        "{window}, c'est trop court pour juger un niveau : on peut y manquer un krach, et une "
+        "bonne période ne se répète pas sur commande.",
+    "Saved: {name}.": "Enregistré : {name}.",
+    " It is now {portfolio}'s target mix in the Plan tab, which shows what it would take to get "
+    "there.":
+        " C'est maintenant le mélange cible de {portfolio} dans l'onglet Plan, qui montre ce qu'il "
+        "faudrait pour y arriver.",
+    " Pick a portfolio to make it that portfolio's target mix in the Plan tab.":
+        " Choisissez un portefeuille pour en faire son mélange cible dans l'onglet Plan.",
+    "Your level: {level} (chosen {date}": "Votre niveau : {level} (choisi le {date}",
+    ", for {portfolio}": ", pour {portfolio}",
+    "). Go through the steps again any time.": "). Refaites les étapes quand vous voulez.",
+    "Measuring what each level really did since 2003…":
+        "Mesure de ce que chaque niveau a vraiment fait depuis 2003…",
+    "Measured on real prices since {since}.": "Mesuré sur les prix réels depuis {since}.",
+    "{name}: {split}. Either one fund that does it all, or one fund per part - compare them below.":
+        "{name} : {split}. Soit un seul fonds qui fait tout, soit un fonds par partie - "
+        "comparez-les ci-dessous.",
+    "Checking {symbols}…": "Vérification de {symbols}…",
+    "Facts from real prices, dividends included. Not advice.":
+        "Faits tirés des prix réels, dividendes compris. Pas un conseil.",
+    "For {portfolio}:": "Pour {portfolio} :", "For your account:": "Pour votre compte :",
+    "Getting the last prices…": "Récupération des derniers prix…",
+    "Prices are the last close.": "Les prix sont ceux de la dernière clôture.",
+    "The shares add up to {total}: the other {rest} stays as cash.":
+        "Les parts totalisent {total} : les {rest} restants demeurent en liquidités.",
+    "The shares add up to {total} - more than the money.":
+        "Les parts totalisent {total} - plus que l'argent disponible.",
+    "No fund picked yet for {parts} - add one in step 3, or that part stays as cash.":
+        "Aucun fonds choisi pour {parts} - ajoutez-en un à l'étape 3, sinon cette partie demeure "
+        "en liquidités.",
+    "The portfolio also holds {amount} in other holdings; they are left alone here (the Plan tab "
+    "weighs the whole account).":
+        "Le portefeuille détient aussi {amount} en autres titres; ils ne sont pas touchés ici "
+        "(l'onglet Plan pèse le compte entier).",
+    "Now: buy for {spent}, {left} left as cash.":
+        "Maintenant : acheter pour {spent}, {left} restent en liquidités.",
+    " Each month after: buy for {spent}; {left} carried to the next month.":
+        " Chaque mois ensuite : acheter pour {spent}; {left} reportés au mois suivant.",
+    "Next purchase: {date}.": "Prochain achat : {date}.",
+    "TradeLab - your monthly purchase": "TradeLab - votre achat du mois",
+    "Time for this month's purchase: {amount} - {parts}. The Guide's step 4 has the share counts.":
+        "C'est le moment de l'achat du mois : {amount} - {parts}. L'étape 4 du Guide donne le "
+        "nombre de parts.",
+    "Time for this month's purchase - the Guide's step 4 has the share counts.":
+        "C'est le moment de l'achat du mois - l'étape 4 du Guide donne le nombre de parts.",
+    "TradeLab - the market has fallen": "TradeLab - le marché a baissé",
+    "Global stocks are {fall} below their high of {high}. Falls like this are part of investing, "
+    "and of your plan.":
+        "Les actions mondiales sont {fall} sous leur sommet du {high}. Les baisses comme "
+        "celle-ci font partie du placement, et de votre plan.",
+    " {level} fell {fall} at worst since 2003 ({when})":
+        " {level} a baissé de {fall} au pire depuis 2003 ({when})",
+    " and was back to its high by {date}, {months} months later":
+        " et était revenu à son sommet en {date}, {months} mois plus tard",
+    " Selling after a fall turns it into a loss for good; your plan has not changed.":
+        " Vendre après une baisse la transforme en perte définitive; votre plan n'a pas changé.",
+    # Plan
+    "{name}: swing trades {amount} are {share} of the portfolio, {verdict}.":
+        "{name} : les négociations à court terme ({amount}) font {share} du portefeuille, {verdict}.",
+    "above its {cap} cap by {room}": "au-dessus de son plafond de {cap} de {room}",
+    "inside its {cap} cap ({room} of room)": "sous son plafond de {cap} ({room} de marge)",
+    "{name}: no target mix set - type one above.":
+        "{name} : aucun mélange cible - inscrivez-en un ci-dessus.",
+    "{name}: {amount} of cash beyond your target cash share - by your target mix, putting it to "
+    "work without selling anything would mean {parts}. Pick the funds with the candidate check "
+    "below.":
+        "{name} : {amount} de liquidités au-delà de votre part cible - selon votre mélange cible, "
+        "les placer sans rien vendre voudrait dire {parts}. Choisissez les fonds avec la "
+        "vérification d'un candidat ci-dessous.",
+    "{name}: off its target ({gaps}) - getting back would take: {moves}.":
+        "{name} : hors de sa cible ({gaps}) - pour y revenir, il faudrait : {moves}.",
+    "{name}: on target (largest gap {gap} points).":
+        "{name} : dans la cible (plus grand écart {gap} points).",
+    "Trading ({name}) is {share} of everything, above its {cap} cap by {room}.":
+        "La négociation ({name}) fait {share} du total, au-dessus de son plafond de {cap} de {room}.",
+    "Trading ({name}) is {share} of everything, inside its {cap} cap ({room} of room).":
+        "La négociation ({name}) fait {share} du total, sous son plafond de {cap} ({room} de marge).",
+    "No trading portfolio chosen and no holding set to \"trading\" - do one or the other to keep "
+    "trading capped.":
+        "Aucun portefeuille de négociation choisi et aucun titre marqué « trading » - faites l'un "
+        "ou l'autre pour plafonner la négociation.",
+    "Safe budget not checked yet - Retirement Sim → Safe budget.":
+        "Budget sécuritaire pas encore vérifié - Simulation retraite → Budget sécuritaire.",
+    "Spending {spending} is above the safe budget of {safe} a year (checked {checked}).":
+        "Les dépenses de {spending} dépassent le budget sécuritaire de {safe} par an (vérifié le "
+        "{checked}).",
+    "Spending {spending} is under the safe budget of {safe} a year (checked {checked}).":
+        "Les dépenses de {spending} sont sous le budget sécuritaire de {safe} par an (vérifié le "
+        "{checked}).",
+    "Review due: go through this list, then Mark reviewed today.":
+        "Révision due : parcourez cette liste, puis Marquer révisé aujourd'hui.",
+    "Next review around {date} ({days} days).": "Prochaine révision vers le {date} ({days} jours).",
+    "Last review {last}; next around {next} (about every quarter).":
+        "Dernière révision le {last}; prochaine vers le {next} (environ chaque trimestre).",
+    "TradeLab - {n} thing(s) to look at in your plan": "TradeLab - {n} point(s) à voir dans votre plan",
+    " (and more in the Plan tab)": " (et d'autres dans l'onglet Plan)",
+    " (and {n} more)": " (et {n} autre(s))",
+    "Targets saved.": "Cibles enregistrées.",
+    "No portfolios yet - add positions in the Portfolio tab.":
+        "Aucun portefeuille - ajoutez des positions dans l'onglet Portefeuille.",
+    "Pricing your portfolios…": "Évaluation de vos portefeuilles…",
+    "Your return: not enough recorded to measure yet.":
+        "Votre rendement : pas encore assez de données pour le mesurer.",
+    "Your return: TradeLab needs a few days of recorded values first (Home records one each day "
+    "it prices your book).":
+        "Votre rendement : TradeLab a d'abord besoin de quelques jours de valeurs enregistrées "
+        "(Accueil en enregistre une chaque jour où il évalue vos comptes).",
+    "Your return: choose a level in the Guide to compare it with.":
+        "Votre rendement : choisissez un niveau dans le Guide pour le comparer.",
+    "Since {date} ({days} days)": "Depuis le {date} ({days} jours)",
+    "{since}: your book did {mine} a year, your deposits left out":
+        "{since} : vos comptes ont fait {mine} par an, sans compter vos dépôts",
+    "; {level} did {theirs} a year.": "; {level} a fait {theirs} par an.",
+    " The past is no promise.": " Le passé n'est pas une promesse.",
+    "{since}: your book {mine}, your deposits left out":
+        "{since} : vos comptes {mine}, sans compter vos dépôts",
+    "; {level} {theirs} over the same days": "; {level} {theirs} sur les mêmes jours",
+    ". Too short to judge - compare after a year.": ". Trop court pour juger - comparez après un an.",
+    # Contribution room
+    "{name}: {left} of room left.": "{name} : {left} de droits restants.",
+    " {amount} withdrawn comes back on January 1.": " {amount} retirés reviennent le 1er janvier.",
+    "{name} room: a new year began - type the room CRA shows now (My Account) so it stays right.":
+        "Droits {name} : une nouvelle année a commencé - inscrivez les droits que montre l'ARC "
+        "(Mon dossier) pour qu'ils restent justes.",
+    "{name}: {over} over your room - taxed {taxed}. Withdrawing the excess soon limits the tax.":
+        "{name} : {over} au-delà de vos droits - imposé à {taxed}. Retirer l'excédent rapidement "
+        "limite l'impôt.",
+    "1% a month on the highest excess each month": "1 % par mois sur l'excédent le plus élevé du mois",
+    "1% a month on what is beyond the $2,000 allowance": "1 % par mois sur ce qui dépasse la marge de 2 000 $",
+    "{name}: {over} over your deduction limit, inside the $2,000 allowance - not taxed, but not "
+    "deductible this year.":
+        "{name} : {over} au-delà de votre plafond de déduction, dans la marge de 2 000 $ - pas "
+        "imposé, mais pas déductible cette année.",
+
+    # --- Phase 2: Retirement Sim -----------------------------------------------------------
+    "Spending": "Dépenses",
+    "Household spending per year, in today's dollars — it grows with inflation from there. The "
+    "input that moves the answer more than any other.":
+        "Dépenses du ménage par année, en dollars d'aujourd'hui — elles augmentent ensuite avec "
+        "l'inflation. La donnée qui change le plus le résultat.",
+    "Return": "Rendement",
+    "The return as a fund reports it, with inflation still in it. 5 means five percent.":
+        "Le rendement tel qu'un fonds le publie, inflation comprise. 5 veut dire cinq pour cent.",
+    "Projected explicitly rather than netted out of the return. It grows the indexed benefits "
+    "(RRQ, PSV, AOW), the spending, and the tax brackets — which are indexed by law, so leaving "
+    "them frozen would invent bracket creep that will not happen.":
+        "Projetée explicitement plutôt que retranchée du rendement. Elle fait croître les "
+        "prestations indexées (RRQ, PSV, AOW), les dépenses et les paliers d'impôt — indexés par "
+        "la loi, donc les figer inventerait une hausse d'impôt qui n'arrivera pas.",
+    "How much the return varies year to year. This is what turns one projection into a range - "
+    "and what makes the order of the returns matter.":
+        "À quel point le rendement varie d'une année à l'autre. C'est ce qui transforme une "
+        "projection en fourchette - et ce qui rend l'ordre des rendements important.",
+    "Project": "Projeter", "Pension": "Rente",
+    "How much eligible pension income to move to the lower earner. Only pension income can move "
+    "— a wage cannot, and RRQ has its own separate mechanism.":
+        "La part du revenu de pension admissible à transférer au conjoint au revenu le plus bas. "
+        "Seul le revenu de pension peut être fractionné — pas un salaire, et le RRQ a son propre "
+        "mécanisme.",
+    "Today's $": "$ d'aujourd'hui",
+    "Show the results in today's purchasing power instead of the dollars of the year they happen. "
+    "The projection itself is unchanged — this only divides each year by its inflation factor.":
+        "Afficher les résultats en pouvoir d'achat d'aujourd'hui plutôt qu'en dollars de l'année "
+        "où ils arrivent. La projection ne change pas — chaque année est seulement divisée par "
+        "son facteur d'inflation.",
+    "Run projection": "Lancer la projection", "Run many paths": "Lancer plusieurs scénarios",
+    "Run the same plan over hundreds of return orderings. One average cannot show sequence risk; "
+    "this can.":
+        "Faire tourner le même plan sur des centaines d'ordres de rendements. Une moyenne ne "
+        "montre pas le risque de séquence; ceci, oui.",
+    "Compare start ages": "Comparer les âges de début",
+    "Run the plan with each RRQ and PSV started at every age from 65 to 72 (RRQ) or 70 (PSV) and "
+    "show what each leaves at the end.":
+        "Faire tourner le plan avec la RRQ et la PSV commencées à chaque âge de 65 à 72 (RRQ) ou "
+        "70 (PSV), et montrer ce que chacun laisse à la fin.",
+    "Key dates": "Dates clés",
+    "When to apply for the RRQ and the PSV, the RRSP deadline at 71 and the TFSA's new room - "
+    "dated from each person's Born month.":
+        "Quand demander la RRQ et la PSV, l'échéance du REER à 71 ans et les nouveaux droits du "
+        "CELI - datés selon le mois de naissance de chacun.",
+    "Safe budget": "Budget sécuritaire",
+    "The most this plan can spend a year to its last age: if every year is average, and in 90% of "
+    "simulated return orderings (using the Return and % vol set here).":
+        "Le maximum que ce plan peut dépenser par an jusqu'au dernier âge : si chaque année est "
+        "moyenne, et dans 90 % des ordres de rendements simulés (avec le Rendement et la % vol "
+        "inscrits ici).",
+    "Withdrawal order": "Ordre des retraits",
+    "Run the plan drawing from REER/FERR, CELI and non-registered accounts in every order, and "
+    "compare what is left, the tax paid and the OAS clawback.":
+        "Faire tourner le plan en puisant dans le REER/FERR, le CELI et le non enregistré dans "
+        "tous les ordres, et comparer ce qui reste, l'impôt payé et la récupération de la PSV.",
+    "Best split": "Meilleur fractionnement",
+    "Run the plan with 0% to 50% of eligible pension income moved to the lower-income spouse, and "
+    "show which leaves the most.":
+        "Faire tourner le plan avec 0 % à 50 % du revenu de pension admissible transféré au "
+        "conjoint au revenu le plus bas, et montrer lequel laisse le plus.",
+    "REER or CELI?": "REER ou CELI?",
+    "For money saved now: compare a REER and a CELI with your marginal tax rate now and in the "
+    "year it would come out.":
+        "Pour l'argent épargné maintenant : comparer un REER et un CELI avec votre taux marginal "
+        "aujourd'hui et l'année où il serait retiré.",
+    "Draw REER early": "Décaisser le REER tôt",
+    "Compare drawing the REER down early - up to a taxable income each year until 71 - with "
+    "drawing nothing extra.":
+        "Comparer un décaissement hâtif du REER - jusqu'à un revenu imposable donné chaque année "
+        "jusqu'à 71 ans - avec aucun retrait supplémentaire.",
+    "Save inputs": "Enregistrer les données", "Save sim": "Garder la simulation",
+    "Keep the current run on the chart as the line to compare against. It stays there until you "
+    "press this again — including after the app is closed.":
+        "Garder la simulation actuelle sur le graphique comme ligne de comparaison. Elle y reste "
+        "jusqu'à ce que vous cliquiez de nouveau — même après la fermeture de l'application.",
+    "Clear saved": "Effacer la simulation gardée", "People": "Personnes", "Age": "Âge",
+    "TFSA room": "Droits CELI", "Born": "Naissance", "Add": "Ajouter", "Remove": "Retirer",
+    "Accounts": "Comptes", "Balance": "Solde", "Owner": "Titulaire", "Incomes": "Revenus",
+    "Income": "Revenu", "Per year": "Par an", "Starts": "Début", "Ends": "Fin", "Indexed": "Indexé",
+    "Fill in the tables, then Run projection.": "Remplissez les tableaux, puis Lancer la projection.",
+    "Year": "Année", "Ages": "Âges", "RRIF minimum": "Minimum FERR", "Tax": "Impôt",
+    "OAS clawback": "Récupération PSV", "From capital": "Du capital", "Reinvested": "Réinvesti",
+    "Into TFSA": "Au CELI", "Unfunded": "Non financé", "Closing": "Solde final",
+    "Every figure is in the dollars of the year it happens: the return is the nominal one a fund "
+    "reports, and inflation is projected rather than netted out of it. So the RRQ, the PSV and "
+    "the spending all rise year by year, and so do the tax brackets, which are indexed by law — "
+    "if indexation ever stops, this is optimistic. An income you mark Indexed = No keeps paying "
+    "the same cheque and quietly loses half its worth over thirty years. Tick Today's $ to read "
+    "the whole table in today's purchasing power. A withdrawal from a registered account is "
+    "income: covering a gap takes enough more to pay its own tax. Income left over after tax and "
+    "spending - a RRIF minimum you did not need, a wage still coming in - is saved, drawn last: "
+    "into the TFSA while there is room (each person's room today, in the People table, plus each "
+    "year's new limit), the rest in a non-registered account whose growth is taxed every year as "
+    "a capital gain. And a single return path says nothing about the order returns arrive in: a "
+    "bad first few years of drawing down hurts far more than the same average later. Not "
+    "financial advice.":
+        "Chaque montant est en dollars de l'année où il arrive : le rendement est le rendement "
+        "nominal qu'un fonds publie, et l'inflation est projetée plutôt que retranchée. La RRQ, "
+        "la PSV et les dépenses augmentent donc d'année en année, tout comme les paliers d'impôt, "
+        "indexés par la loi — si l'indexation cessait, ceci serait optimiste. Un revenu marqué "
+        "Indexé = Non verse le même chèque et perd discrètement la moitié de sa valeur en trente "
+        "ans. Cochez $ d'aujourd'hui pour lire tout le tableau en pouvoir d'achat d'aujourd'hui. "
+        "Un retrait d'un compte enregistré est un revenu : combler un manque demande assez de "
+        "plus pour payer son propre impôt. Le revenu qui reste après l'impôt et les dépenses - un "
+        "minimum FERR non requis, un salaire qui rentre encore - est épargné et puisé en dernier : "
+        "au CELI tant qu'il y a des droits (les droits de chacun aujourd'hui, dans le tableau "
+        "Personnes, plus le nouveau plafond de chaque année), le reste dans un compte non "
+        "enregistré dont la croissance est imposée chaque année comme gain en capital. Et un seul "
+        "scénario de rendement ne dit rien de l'ordre où les rendements arrivent : quelques "
+        "mauvaises premières années de décaissement font bien plus mal que la même moyenne plus "
+        "tard. Ceci n'est pas un conseil financier.",
+
+    # --- Phase 2: Settings -------------------------------------------------------------------
+    "Data source": "Source des données",
+    "Where the app gets prices and fundamentals. Switch to Offline (synthetic) to run with no "
+    "network (demos/testing) — new data loads use the selected source. The architecture supports "
+    "adding more sources (Alpaca, Polygon, IBKR feed) later.":
+        "D'où l'application tire les prix et les données fondamentales. Passez à Hors ligne "
+        "(synthétique) pour fonctionner sans réseau (démos, tests) — les nouveaux chargements "
+        "utilisent la source choisie. D'autres sources (Alpaca, Polygon, flux IBKR) pourront "
+        "s'ajouter plus tard.",
+    "Provider": "Fournisseur",
+    "Live prices & fundamentals via Yahoo (yfinance); synthetic fallback if a symbol fails.":
+        "Prix et données fondamentales en direct par Yahoo (yfinance); données synthétiques si un "
+        "symbole échoue.",
+    "Data refresh": "Actualisation des données",
+    "When you open a tab, its data is fetched again if it has gone stale. Prices, book value and "
+    "the market read go stale after the time below; dividends, sectors and the retirement indices "
+    "once a day, because nothing in them moves during a session. The ETF Screener, and anything "
+    "you run yourself - scans, backtests, projections - never refresh on their own.":
+        "Quand vous ouvrez un onglet, ses données sont récupérées de nouveau si elles sont "
+        "périmées. Les prix, la valeur des comptes et la lecture du marché se périment après le "
+        "délai ci-dessous; les dividendes, les secteurs et les indices de retraite une fois par "
+        "jour, car rien n'y bouge pendant une séance. Le filtre de FNB, et tout ce que vous lancez "
+        "vous-même - balayages, tests historiques, projections - ne s'actualisent jamais seuls.",
+    "Refresh a tab when it is opened, if older than":
+        "Actualiser un onglet à l'ouverture, s'il date de plus de",
+    "Updates": "Mises à jour",
+    "TradeLab looks for a newer installer in the folder below (where new versions are built - "
+    "TradeLabPro\\installer\\Output) and offers to install it in one click; it also checks which "
+    "version is published on GitHub.":
+        "TradeLab cherche un installateur plus récent dans le dossier ci-dessous (où les "
+        "nouvelles versions sont construites - TradeLabPro\\installer\\Output) et offre de "
+        "l'installer en un clic; il vérifie aussi quelle version est publiée sur GitHub.",
+    "Installer folder": "Dossier de l'installateur",
+    "Folder holding TradeLabPro-Setup-X.Y.Z.exe": "Dossier contenant TradeLabPro-Setup-X.Y.Z.exe",
+    "Browse…": "Parcourir…", "Check now": "Vérifier maintenant",
+    "Check when TradeLab starts": "Vérifier au démarrage de TradeLab",
+    "Backups": "Sauvegardes",
+    "Once a week TradeLab copies your data (portfolios, cash, journal, retirement plan, alerts, "
+    "links, notes) into a zip in the backups folder; the last 8 are kept. To restore, close "
+    "TradeLab, unzip a backup and copy its files back into the data folder.":
+        "Une fois par semaine, TradeLab copie vos données (portefeuilles, liquidités, journal, "
+        "plan de retraite, alertes, liens, notes) dans un fichier zip du dossier de sauvegardes; "
+        "les 8 dernières sont gardées. Pour restaurer, fermez TradeLab, décompressez une "
+        "sauvegarde et recopiez ses fichiers dans le dossier de données.",
+    "Back up now": "Sauvegarder maintenant", "Restore…": "Restaurer…",
+    "Open backup folder": "Ouvrir le dossier des sauvegardes", "No backup yet.": "Aucune sauvegarde.",
 }

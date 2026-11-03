@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QDoubleS
 from tradelab.core import allocation_plan as ap
 from tradelab.core import room
 from tradelab.core.logging_config import get_logger
+from tradelab.i18n import tr
 from tradelab.data.database import Database
 from tradelab.settings import app_settings
 from tradelab.ui import theme
@@ -34,18 +35,22 @@ def return_text(mine, theirs, level_name, start, end) -> str:
     days - per year from a year on, as it was before that."""
     days = (end - start).days
     if mine is None:
-        return "Your return: not enough recorded to measure yet."
-    since = f"Since {start:%b} {start.day}, {start.year} ({days} days)"
+        return tr("Your return: not enough recorded to measure yet.")
+    since = tr("Since {date} ({days} days)").format(date=f"{start:%Y-%m-%d}", days=days)
+    level = tr(level_name)
     if days >= 365:
-        text = (f"{since}: your book did {room.annualized(mine, days):+.1%} a year, your "
-                f"deposits left out")
+        text = tr("{since}: your book did {mine} a year, your deposits left out").format(
+            since=since, mine=f"{room.annualized(mine, days):+.1%}")
         if theirs is not None:
-            text += f"; {level_name} did {room.annualized(theirs, days):+.1%} a year."
-        return text + " The past is no promise."
-    text = f"{since}: your book {mine:+.1%}, your deposits left out"
+            text += tr("; {level} did {theirs} a year.").format(
+                level=level, theirs=f"{room.annualized(theirs, days):+.1%}")
+        return text + tr(" The past is no promise.")
+    text = tr("{since}: your book {mine}, your deposits left out").format(
+        since=since, mine=f"{mine:+.1%}")
     if theirs is not None:
-        text += f"; {level_name} {theirs:+.1%} over the same days"
-    return text + ". Too short to judge - compare after a year."
+        text += tr("; {level} {theirs} over the same days").format(level=level,
+                                                                   theirs=f"{theirs:+.1%}")
+    return text + tr(". Too short to judge - compare after a year.")
 
 
 class _ReturnWorker(QThread):
@@ -314,7 +319,7 @@ class PlanPanel(QWidget):
                 self.flow_table.setItem(r, c, item)
         self.flow_table.resizeColumnsToContents()
         lines = [t for _k, t in room.check_items(self.room_statuses())]
-        self.room_line.setText("  ".join(lines) if lines else "No room typed yet.")
+        self.room_line.setText("  ".join(lines) if lines else tr("No room typed yet."))
 
     def save_room(self, account):
         amount, day = self.room_edits[account]
@@ -373,11 +378,11 @@ class PlanPanel(QWidget):
         history = [h for h in self.db.value_history("CAD") if h.get("value")]
         level = self._guide_level()
         if len(history) < 2:
-            self.return_line.setText("Your return: TradeLab needs a few days of recorded values "
-                                     "first (Home records one each day it prices your book).")
+            self.return_line.setText(tr("Your return: TradeLab needs a few days of recorded values "
+                                        "first (Home records one each day it prices your book)."))
             return
         if level is None:
-            self.return_line.setText("Your return: choose a level in the Guide to compare it with.")
+            self.return_line.setText(tr("Your return: choose a level in the Guide to compare it with."))
             return
         if self._return_worker is not None and self._return_worker.isRunning():
             return
@@ -452,7 +457,7 @@ class PlanPanel(QWidget):
         if problems:
             flag_problem(self.status, "Some targets were not saved: " + "; ".join(problems))
         else:
-            self.status.setText("Targets saved.")
+            self.status.setText(tr("Targets saved."))
         self.recompute()
 
     def _save_trading(self):
@@ -477,10 +482,11 @@ class PlanPanel(QWidget):
     def _show_review(self):
         due = ap.review_due(self._last_review())
         if due["last"] is None:
-            self.review_line.setText("No review recorded yet.")
+            self.review_line.setText(tr("No review recorded yet."))
         else:
-            self.review_line.setText(f"Last review {due['last']:%Y-%m-%d}; next around "
-                                     f"{due['next']:%Y-%m-%d} (about every quarter).")
+            self.review_line.setText(tr("Last review {last}; next around {next} (about every "
+                                        "quarter).").format(last=f"{due['last']:%Y-%m-%d}",
+                                                            next=f"{due['next']:%Y-%m-%d}"))
 
     # --- prices --------------------------------------------------------------
     def refresh(self):
@@ -494,13 +500,13 @@ class PlanPanel(QWidget):
         ccys = {currency_of(s) for s in symbols} | {str(c["currency"]).upper() for c in self.db.cash()}
         self._fx_pairs = {c: fx_pair_symbol(c, "CAD") for c in ccys if c != "CAD"}
         if not symbols and not self.db.cash():
-            self.status.setText("No portfolios yet - add positions in the Portfolio tab.")
+            self.status.setText(tr("No portfolios yet - add positions in the Portfolio tab."))
             self.recompute()
             return
         if not symbols and not self._fx_pairs:
             self._on_priced({}, {}, "")          # cash only, in CAD: nothing to price
             return
-        self.status.setText("Pricing your portfolios…")
+        self.status.setText(tr("Pricing your portfolios…"))
         self._worker = _PlanWorker(symbols, self._fx_pairs.values())
         self._worker.done.connect(self._on_priced)
         self._worker.start()
@@ -586,60 +592,71 @@ class PlanPanel(QWidget):
             totals[name] = sum(mix.values()) + trades[name]
             if trades[name]:
                 t = ap.trading_check(trades[name], totals[name], self.cap.value())
-                verdict = (f"above its {t['cap_pct']:.0f}% cap by ${-t['room']:,.0f}" if t["over"]
-                           else f"inside its {t['cap_pct']:.0f}% cap (${t['room']:,.0f} of room)")
+                fields = {"cap": f"{t['cap_pct']:.0f}%", "room": f"${abs(t['room']):,.0f}"}
+                verdict = (tr("above its {cap} cap by {room}") if t["over"]
+                           else tr("inside its {cap} cap ({room} of room)")).format(**fields)
                 items.append(("warn" if t["over"] else "ok",
-                              f"{name}: swing trades ${trades[name]:,.0f} are {t['share_pct']:.1f}% "
-                              f"of the portfolio, {verdict}."))
+                              tr("{name}: swing trades {amount} are {share} of the portfolio, "
+                                 "{verdict}.").format(name=name, amount=f"${trades[name]:,.0f}",
+                                                      share=f"{t['share_pct']:.1f}%",
+                                                      verdict=verdict)))
             target = targets.get(name)
             if not target:
                 if totals[name]:
-                    items.append(("info", f"{name}: no target mix set - type one above."))
+                    items.append(("info", tr("{name}: no target mix set - type one above.")
+                                  .format(name=name)))
                 continue
             result = ap.rebalance(mix, target)
             deploy = ap.deploy_cash(mix, target)
             if deploy["investable"] >= max(500.0, totals[name] * 0.01):
-                parts = [f"${v:,.0f} {c}" for c, v in deploy["buys"].items() if v >= 1]
-                items.append(("info", f"{name}: ${deploy['investable']:,.0f} of cash beyond your "
-                              f"target cash share - by your target mix, putting it to work "
-                              f"without selling anything would mean " + ", ".join(parts)
-                              + ". Pick the funds with the candidate check below."))
+                parts = [f"${v:,.0f} {tr(c)}" for c, v in deploy["buys"].items() if v >= 1]
+                items.append(("info", tr("{name}: {amount} of cash beyond your target cash share - "
+                                         "by your target mix, putting it to work without selling "
+                                         "anything would mean {parts}. Pick the funds with the "
+                                         "candidate check below.").format(
+                    name=name, amount=f"${deploy['investable']:,.0f}", parts=", ".join(parts))))
             for row in result["rows"]:
                 if row["value"] or row["target_pct"]:
                     table_rows.append((name, row))
             if result["drifted"]:
-                moves = [f"{'buy' if r['change'] > 0 else 'sell'} ${abs(r['change']):,.0f} "
-                         f"{r['class']}" for r in result["rows"] if abs(r["change"]) >= 1
+                moves = [(tr("buy") if r["change"] > 0 else tr("sell"))
+                         + f" ${abs(r['change']):,.0f} {tr(r['class'])}"
+                         for r in result["rows"] if abs(r["change"]) >= 1
                          and r["class"] in result["drifted"]]
-                items.append(("warn", f"{name}: off its target ("
-                              + ", ".join(f"{r['class']} {r['pct']:.0f}% vs {r['target_pct']:.0f}%"
-                                          for r in result["rows"] if r["class"] in result["drifted"])
-                              + ") - getting back would take: " + "; ".join(moves) + "."))
+                gaps = ", ".join(f"{tr(r['class'])} {r['pct']:.0f}% vs {r['target_pct']:.0f}%"
+                                 for r in result["rows"] if r["class"] in result["drifted"])
+                items.append(("warn", tr("{name}: off its target ({gaps}) - getting back would "
+                                         "take: {moves}.").format(name=name, gaps=gaps,
+                                                                  moves="; ".join(moves))))
             else:
                 worst = max(abs(r["drift_pp"]) for r in result["rows"])
-                items.append(("ok", f"{name}: on target (largest gap {worst:.0f} points)."))
+                items.append(("ok", tr("{name}: on target (largest gap {gap} points).")
+                              .format(name=name, gap=f"{worst:.0f}")))
         trading = str(self._settings.value(TRADING_KEY, "") or "")
         whole = sum(totals.values())
         if trading and whole:
             t = ap.trading_check(totals.get(trading, 0.0), whole, self.cap.value())
+            fields = {"name": trading, "share": f"{t['share_pct']:.1f}%", "cap": f"{t['cap_pct']:.0f}%",
+                      "room": f"${abs(t['room']):,.0f}"}
             if t["over"]:
-                items.append(("warn", f"Trading ({trading}) is {t['share_pct']:.1f}% of everything, "
-                              f"above its {t['cap_pct']:.0f}% cap by ${-t['room']:,.0f}."))
+                items.append(("warn", tr("Trading ({name}) is {share} of everything, above its "
+                                         "{cap} cap by {room}.").format(**fields)))
             else:
-                items.append(("ok", f"Trading ({trading}) is {t['share_pct']:.1f}% of everything, "
-                              f"inside its {t['cap_pct']:.0f}% cap (${t['room']:,.0f} of room)."))
+                items.append(("ok", tr("Trading ({name}) is {share} of everything, inside its "
+                                       "{cap} cap ({room} of room).").format(**fields)))
         elif whole and not any(trades.values()):
-            items.append(("info", "No trading portfolio chosen and no holding set to \"trading\" - "
-                                  "do one or the other to keep trading capped."))
+            items.append(("info", tr("No trading portfolio chosen and no holding set to "
+                                     "\"trading\" - do one or the other to keep trading capped.")))
         try:
             items += room.check_items(self.room_statuses())
         except Exception:
             log.exception("The contribution room could not be checked")
         items.append(self._budget_item())
         due = ap.review_due(self._last_review())
-        items.append(("warn", "Review due: go through this list, then Mark reviewed today.")
+        items.append(("warn", tr("Review due: go through this list, then Mark reviewed today."))
                      if due["due"] else
-                     ("ok", f"Next review around {due['next']:%Y-%m-%d} ({due['days_left']} days)."))
+                     ("ok", tr("Next review around {date} ({days} days).").format(
+                         date=f"{due['next']:%Y-%m-%d}", days=due["days_left"])))
         self._show(items, table_rows)
 
     def _budget_item(self):
@@ -648,12 +665,15 @@ class PlanPanel(QWidget):
         except (TypeError, ValueError):
             b = None
         if not b:
-            return ("info", "Safe budget not checked yet - Retirement Sim → Safe budget.")
+            return ("info", tr("Safe budget not checked yet - Retirement Sim → Safe budget."))
+        fields = {"spending": f"${b['spending']:,.0f}", "safe": f"${b['safe']:,.0f}",
+                  "checked": b["checked"]}
         if b["spending"] > b["safe"]:
-            return ("warn", f"Spending ${b['spending']:,.0f} is above the safe budget of "
-                            f"${b['safe']:,.0f} a year (checked {b['checked']}).")
-        return ("ok", f"Spending ${b['spending']:,.0f} is under the safe budget of "
-                      f"${b['safe']:,.0f} a year (checked {b['checked']}).")
+            # "alert": a warning serious enough to turn Home's light red.
+            return ("alert", tr("Spending {spending} is above the safe budget of {safe} a year "
+                                "(checked {checked}).").format(**fields))
+        return ("ok", tr("Spending {spending} is under the safe budget of {safe} a year "
+                         "(checked {checked}).").format(**fields))
 
     def startup_check(self):
         """At launch: check the plan, and if anything wants a look, say so in a
@@ -665,12 +685,12 @@ class PlanPanel(QWidget):
         if not getattr(self, "_notify_when_done", False):
             return
         self._notify_when_done = False
-        warns = [text for kind, text in items if kind == "warn"]
+        warns = [text for kind, text in items if kind in ("warn", "alert")]
         today = dt.date.today().isoformat()
         if not warns or str(self._settings.value(NOTIFIED_KEY, "")) == today:
             return
-        title = f"TradeLab - {len(warns)} thing{'s' if len(warns) > 1 else ''} to look at in your plan"
-        if notify(title, warns[0] + (" (and more in the Plan tab)" if len(warns) > 1 else "")):
+        title = tr("TradeLab - {n} thing(s) to look at in your plan").format(n=len(warns))
+        if notify(title, warns[0] + (tr(" (and more in the Plan tab)") if len(warns) > 1 else "")):
             self._settings.setValue(NOTIFIED_KEY, today)
             self._settings.sync()
 
@@ -679,7 +699,8 @@ class PlanPanel(QWidget):
         self.check_items = items
         self.checked.emit(list(items))
         self.checklist.clear()
-        marks = {"ok": ("✓", theme.UP), "warn": ("⚠", theme.WARN), "info": ("•", theme.MUTED)}
+        marks = {"ok": ("✓", theme.UP), "warn": ("⚠", theme.WARN), "alert": ("⚠", theme.DOWN),
+                 "info": ("•", theme.MUTED)}
         for kind, text in items:
             mark, colour = marks[kind]
             entry = QListWidgetItem(f"{mark}  {text}")

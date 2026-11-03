@@ -164,17 +164,18 @@ def trading_check(trading_value: float, total_value: float, cap_pct: float) -> d
 
 
 def status_light(items: list) -> tuple:
-    """The plan checklist ([(kind, text)], kind ok / warn / info) as one light
-    for Home: ("green" | "yellow" | "red" | "", the line to show). Red when the
-    spending is above the safe budget or three things or more want a look;
-    yellow for one or two; green when nothing does."""
+    """The plan checklist ([(kind, text)], kind ok / warn / alert / info) as
+    one light for Home: ("green" | "yellow" | "red" | "", the line to show).
+    Red for an alert (spending above the safe budget) or three things or more
+    to look at; yellow for one or two; green when nothing wants a look."""
+    from tradelab.i18n import tr
     if not items:
         return "", ""
-    warns = [text for kind, text in items if kind == "warn"]
+    warns = [text for kind, text in items if kind in ("warn", "alert")]
     if not warns:
-        return "green", "Your plan is on track."
-    more = f" (and {len(warns) - 1} more)" if len(warns) > 1 else ""
-    red = len(warns) >= 3 or any("safe budget" in w for w in warns)
+        return "green", tr("Your plan is on track.")
+    more = tr(" (and {n} more)").format(n=len(warns) - 1) if len(warns) > 1 else ""
+    red = len(warns) >= 3 or any(kind == "alert" for kind, _t in items)
     return ("red" if red else "yellow"), warns[0] + more
 
 

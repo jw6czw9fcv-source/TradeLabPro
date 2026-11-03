@@ -111,9 +111,11 @@ starts in Advanced. The choice is remembered.
 
 **English or French.** **View → Language → Français** shows TradeLab in
 French; it asks to restart, since the language applies when TradeLab starts.
-The tab names, the menus and the tabs of Simple mode — Guide, Home, Plan,
-Portfolio — are in French so far; the other tabs, some messages and this
-manual are still in English and follow over the next versions.
+In French so far: the tab names, the menus, every tab of Simple mode — Guide,
+Home, Plan, Portfolio, Retirement Sim, Settings — and the messages they build
+as they go (the Plan checklist, the Guide's explanations, the plan light, the
+monthly reminder and the notice in a market fall). The trading tabs of
+Advanced mode and this manual are still in English.
 
 **When something goes wrong, a pop-up says so.** A chart that finds no data, an
 import that fails, a refresh that cannot reach the market or a link that will

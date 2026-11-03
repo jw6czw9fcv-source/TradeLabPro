@@ -459,7 +459,7 @@ class GuidePanel(QWidget):
             return
         self._go(3)
         portfolio = self._target_portfolio()
-        self.buy_portfolio.setText(f"For {portfolio}:" if portfolio else "For your account:")
+        self.buy_portfolio.setText(tr("For {portfolio}:").format(portfolio=portfolio) if portfolio else tr("For your account:"))
         if not self.buy_now.value() and not self._buy_touched:
             self.buy_now.setValue(self.lump.value())
         if not self.buy_monthly.value() and not self._buy_touched:
@@ -471,7 +471,7 @@ class GuidePanel(QWidget):
         missing += [s for s in held if s not in self._prices and s not in missing]
         self._show_purchases()
         if (missing or need_fx) and (self._price_worker is None or not self._price_worker.isRunning()):
-            self.buy_status.setText("Getting the last prices…")
+            self.buy_status.setText(tr("Getting the last prices…"))
             self._price_worker = _PriceWorker(missing, need_fx)
             self._price_worker.done.connect(self._on_prices)
             self._price_worker.start()
@@ -484,7 +484,7 @@ class GuidePanel(QWidget):
         if errors:
             flag_problem(self.buy_status, "No price for: " + "; ".join(errors))
         else:
-            self.buy_status.setText("Prices are the last close.")
+            self.buy_status.setText(tr("Prices are the last close."))
 
     def _cad(self, symbol):
         p = self._prices.get(symbol)
@@ -566,22 +566,25 @@ class GuidePanel(QWidget):
         notes = []
         total_w = sum(weights.values())
         if abs(total_w - 1.0) > 0.005:
-            notes.append(f"The shares add up to {total_w:.0%}: the other {max(0, 1 - total_w):.0%} "
-                         f"stays as cash." if total_w < 1 else
-                         f"The shares add up to {total_w:.0%} - more than the money.")
+            notes.append(tr("The shares add up to {total}: the other {rest} stays as cash.").format(
+                total=f"{total_w:.0%}", rest=f"{max(0, 1 - total_w):.0%}") if total_w < 1 else
+                tr("The shares add up to {total} - more than the money.").format(total=f"{total_w:.0%}"))
         if d["uncovered"]:
-            notes.append("No fund picked yet for " + ", ".join(
-                f"{c} ({v:.0%} of {g.LEVELS[self._level()][0]})" for c, v in d["uncovered"].items())
-                         + " - add one in step 3, or that part stays as cash.")
+            level_name = tr(g.LEVELS[self._level()][0])
+            notes.append(tr("No fund picked yet for {parts} - add one in step 3, or that part "
+                            "stays as cash.").format(parts=", ".join(
+                f"{tr(c)} ({v:.0%} {tr('of')} {level_name})" for c, v in d["uncovered"].items())))
         if other:
-            notes.append(f"The portfolio also holds {_money(other)} in other holdings; they are "
-                         "left alone here (the Plan tab weighs the whole account).")
+            notes.append(tr("The portfolio also holds {amount} in other holdings; they are left "
+                            "alone here (the Plan tab weighs the whole account).").format(
+                amount=_money(other)))
         self.buy_note.setText(" ".join(notes))
         self.buy_note.setVisible(bool(notes))
-        summary = (f"Now: buy for {_money(now['spent'])}, {_money(now['left'])} left as cash.")
+        summary = tr("Now: buy for {spent}, {left} left as cash.").format(
+            spent=_money(now["spent"]), left=_money(now["left"]))
         if month:
-            summary += (f" Each month after: buy for {_money(month['spent'])}; "
-                        f"{_money(month['left'])} carried to the next month.")
+            summary += tr(" Each month after: buy for {spent}; {left} carried to the next "
+                          "month.").format(spent=_money(month["spent"]), left=_money(month["left"]))
         self.buy_summary.setText(summary)
         self._last_purchase = (now, month)
 
@@ -641,7 +644,7 @@ class GuidePanel(QWidget):
             last = None
         when = g.next_reminder(int(saved.get("reminder_day") or 0), last,
                                today or dt.date.today())
-        return f"Next purchase: {when:%b} {when.day}." if when and self.picks else ""
+        return tr("Next purchase: {date}.").format(date=f"{when:%Y-%m-%d}") if when and self.picks else ""
 
     def startup_checks(self):
         """At launch, then every six hours while TradeLab is open: the monthly
@@ -677,7 +680,7 @@ class GuidePanel(QWidget):
             level = self._saved_level if self._saved_level is not None else len(g.LEVELS) - 1
             text = g.calm_text(fall, high, g.LEVELS[level][0],
                                records[level] if records else None)
-            if not notify("TradeLab - the market has fallen", text):
+            if not notify(tr("TradeLab - the market has fallen"), text):
                 return                     # say it next time instead
         self._settings.setValue(DROP_KEY, keep)
         self._settings.sync()
@@ -700,7 +703,7 @@ class GuidePanel(QWidget):
         if not g.reminder_due(day, last, today):
             return False
         text = g.reminder_text(self._weights()["weights"], self.monthly.value())
-        if notify("TradeLab - your monthly purchase", text):
+        if notify(tr("TradeLab - your monthly purchase"), text):
             self._settings.setValue(REMINDER_KEY, today.isoformat())
             self._settings.sync()
             return True
@@ -726,11 +729,12 @@ class GuidePanel(QWidget):
         name = g.LEVELS[level][0]
         amount = self.lump.value()
         parts = g.block_amounts(level, amount)
-        split = ", ".join(f"{cls} {_money(v)}" for cls, v in parts.items() if v) if amount else \
-            ", ".join(f"{cls} {share:.0%}" for cls, share in zip(("stocks", "bonds", "cash"),
-                                                                g.LEVELS[level][1:]) if share)
-        self.funds_intro.setText(f"{name}: {split}. Either one fund that does it all, or one "
-                                 f"fund per part - compare them below.")
+        split = ", ".join(f"{tr(cls)} {_money(v)}" for cls, v in parts.items() if v) if amount else \
+            ", ".join(f"{tr(cls)} {share:.0%}" for cls, share in zip(("stocks", "bonds", "cash"),
+                                                                    g.LEVELS[level][1:]) if share)
+        self.funds_intro.setText(tr("{name}: {split}. Either one fund that does it all, or one "
+                                    "fund per part - compare them below.").format(name=tr(name),
+                                                                                  split=split))
         self.fund_set.blockSignals(True)
         self.fund_set.clear()
         self.fund_set.addItem(tr("One fund for {name}").format(name=tr(name)))
@@ -765,7 +769,7 @@ class GuidePanel(QWidget):
         if self._funds_worker is not None and self._funds_worker.isRunning():
             self._funds_pending = True
             return
-        self.fund_status.setText(f"Checking {', '.join(missing)}…")
+        self.fund_status.setText(tr("Checking {symbols}…").format(symbols=", ".join(missing)))
         self._funds_worker = _FundsWorker(missing)
         self._funds_worker.done.connect(self._on_funds)
         self._funds_worker.start()
@@ -789,7 +793,7 @@ class GuidePanel(QWidget):
         if errors:
             flag_problem(self.fund_status, "Could not check: " + "; ".join(errors))
         else:
-            self.fund_status.setText("Facts from real prices, dividends included. Not advice.")
+            self.fund_status.setText(tr("Facts from real prices, dividends included. Not advice."))
         if self._funds_pending:
             self._funds_pending = False
             self.check_funds()
@@ -819,7 +823,7 @@ class GuidePanel(QWidget):
         self._fill_portfolios()
         self._show()
         if self.measured is None and (self._worker is None or not self._worker.isRunning()):
-            self.status.setText("Measuring what each level really did since 2003…")
+            self.status.setText(tr("Measuring what each level really did since 2003…"))
             self._worker = _GuideWorker()
             self._worker.done.connect(self._on_measured)
             self._worker.start()
@@ -830,7 +834,7 @@ class GuidePanel(QWidget):
                                       "The returns from the guidelines are still shown.")
             return
         self.measured = GuidePanel._measured_cache = measured
-        self.status.setText(f"Measured on real prices since {measured[0]['since']}.")
+        self.status.setText(tr("Measured on real prices since {since}.").format(since=measured[0]["since"]))
         self._show()
 
     def answers(self) -> dict:
@@ -846,21 +850,21 @@ class GuidePanel(QWidget):
         a = self.answers()
         rec = g.recommend(a["horizon"], a["drop"], self.measured)
         self.recommended = rec["level"]
-        self.why.setText(f"Your answers point to {g.LEVELS[rec['level']][0]}. {rec['why']}"
-                         + (f" {rec['note']}" if rec["note"] else ""))
+        self.why.setText(tr("Your answers point to {level}.").format(level=tr(g.LEVELS[rec['level']][0]))
+                         + f" {rec['why']}" + (f" {rec['note']}" if rec["note"] else ""))
         steps = g.first_steps(a["emergency"], a["debt"], a["accounts"])
-        self.steps.setText("Before you start: " + " ".join(steps) if steps else "")
+        self.steps.setText(tr("Before you start: ") + " ".join(steps) if steps else "")
         self.steps.setVisible(bool(steps))
         years = g.HORIZONS[a["horizon"]][1]
         window = g.WINDOWS[a["basis"] if a["basis"] < len(g.WINDOWS) else 0][0]
         months = g.WINDOWS[a["basis"]][1] if a["basis"] < len(g.WINDOWS) else None
         if months is not None and months < 120:
-            self.period_note.setText(f"{window.capitalize()} is too short to judge a level: it "
-                                     "can miss a crash entirely, and a strong stretch does not "
-                                     "repeat on demand.")
+            self.period_note.setText(tr("{window} is too short to judge a level: it can miss a "
+                                        "crash entirely, and a strong stretch does not repeat on "
+                                        "demand.").format(window=tr(window).capitalize()))
             self.period_note.setStyleSheet("color:#c9a227;")
         else:
-            self.period_note.setText("The returns, the falls and your money below all follow it.")
+            self.period_note.setText(tr("The returns, the falls and your money below all follow it."))
             self.period_note.setStyleSheet("color:#8a9099;")
         window = tr(window)
         for col, text in ((2, tr("Did a year, {window}").format(window=window)),
@@ -908,9 +912,10 @@ class GuidePanel(QWidget):
         text = g.check_choice(level, self.recommended, self.measured)
         if not text:
             m = self.measured[level] if self.measured else None
-            text = (f"{name}: {st:.0%} stocks, {bo:.0%} bonds, {ca:.0%} cash."
-                    + (f" In its worst stretch since {m['since']}, $10,000 became "
-                       f"{_money(10_000 * (1 + m['worst_fall']))}."
+            text = (tr("{name}: {st} stocks, {bo} bonds, {ca} cash.").format(
+                        name=tr(name), st=f"{st:.0%}", bo=f"{bo:.0%}", ca=f"{ca:.0%}")
+                    + (tr(" In its worst stretch since {since}, $10,000 became {value}.").format(
+                        since=m["since"], value=_money(10_000 * (1 + m["worst_fall"])))
                        if m else ""))
         self.choice.setText(text)
 
@@ -938,10 +943,11 @@ class GuidePanel(QWidget):
         self._settings.setValue(PROFILE_KEY, json.dumps(saved))
         self._save_funds()
         self._load_profile()
-        where = (f" It is now {portfolio}'s target mix in the Plan tab, which shows what it "
-                 f"would take to get there." if portfolio and self.db is not None else
-                 " Pick a portfolio to make it that portfolio's target mix in the Plan tab.")
-        self.status.setText(f"Saved: {name}.{where}")
+        where = (tr(" It is now {portfolio}'s target mix in the Plan tab, which shows what it "
+                    "would take to get there.").format(portfolio=portfolio)
+                 if portfolio and self.db is not None else
+                 tr(" Pick a portfolio to make it that portfolio's target mix in the Plan tab."))
+        self.status.setText(tr("Saved: {name}.").format(name=tr(name)) + where)
 
     def _load_profile(self):
         try:
@@ -976,9 +982,11 @@ class GuidePanel(QWidget):
         self._saved_level = level if isinstance(level, int) and 0 <= level < len(g.LEVELS) else None
         if isinstance(level, int) and 0 <= level < len(g.LEVELS):
             self.saved_line.setText(
-                f"Your level: {g.LEVELS[level][0]} (chosen {saved.get('saved', '')}"
-                + (f", for {saved['portfolio']}" if saved.get("portfolio") else "")
-                + "). Go through the steps again any time.")
+                tr("Your level: {level} (chosen {date}").format(level=tr(g.LEVELS[level][0]),
+                                                                date=saved.get("saved", ""))
+                + (tr(", for {portfolio}").format(portfolio=saved["portfolio"])
+                   if saved.get("portfolio") else "")
+                + tr("). Go through the steps again any time."))
         else:
             self.saved_line.setText("")
         self.saved_line.setVisible(bool(self.saved_line.text()))

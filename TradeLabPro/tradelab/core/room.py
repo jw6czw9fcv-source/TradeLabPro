@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import datetime as dt
 
+from tradelab.i18n import tr
+
 CELI, REER = "CELI", "REER"
 ACCOUNTS = (CELI, REER)
 TFSA_LIMIT = {2026: 7000.0}      # canada.ca, read 2026-11-01
@@ -70,20 +72,23 @@ def check_items(statuses: list) -> list:
     for s in statuses:
         name = s["account"]
         if s["unknown_years"]:
-            items.append(("warn", f"{name} room: a new year began - type the room CRA shows now "
-                                  f"(My Account) so it stays right."))
+            items.append(("warn", tr("{name} room: a new year began - type the room CRA shows "
+                                     "now (My Account) so it stays right.").format(name=name)))
         if s["excess"] > 0:
-            taxed = ("1% a month on the highest excess each month" if name == CELI
-                     else "1% a month on what is beyond the $2,000 allowance")
-            items.append(("warn", f"{name}: ${s['over']:,.0f} over your room - taxed {taxed}. "
-                                  f"Withdrawing the excess soon limits the tax."))
+            taxed = tr("1% a month on the highest excess each month" if name == CELI
+                       else "1% a month on what is beyond the $2,000 allowance")
+            items.append(("warn", tr("{name}: {over} over your room - taxed {taxed}. Withdrawing "
+                                     "the excess soon limits the tax.").format(
+                name=name, over=f"${s['over']:,.0f}", taxed=taxed)))
         elif s["over"] > 0:
-            items.append(("warn", f"{name}: ${s['over']:,.0f} over your deduction limit, inside the "
-                                  f"$2,000 allowance - not taxed, but not deductible this year."))
+            items.append(("warn", tr("{name}: {over} over your deduction limit, inside the "
+                                     "$2,000 allowance - not taxed, but not deductible this "
+                                     "year.").format(name=name, over=f"${s['over']:,.0f}")))
         else:
-            text = f"{name}: ${s['left']:,.0f} of room left."
+            text = tr("{name}: {left} of room left.").format(name=name, left=f"${s['left']:,.0f}")
             if s["pending_back"]:
-                text += f" ${s['pending_back']:,.0f} withdrawn comes back on January 1."
+                text += tr(" {amount} withdrawn comes back on January 1.").format(
+                    amount=f"${s['pending_back']:,.0f}")
             items.append(("ok", text))
     return items
 

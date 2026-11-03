@@ -25,6 +25,38 @@ def test_the_templates_keep_their_fields():
         assert fields == {f for _t, f, _s, _c in string.Formatter().parse(value) if f}, key
 
 
+def test_every_message_the_code_translates_has_its_french():
+    """A tr("...") written in the code without its French would show English
+    in the middle of a French screen."""
+    import ast
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1] / "tradelab"
+    missing = []
+    for path in root.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "tr" and node.args:
+                arg = node.args[0]
+                options = [arg.body, arg.orelse] if isinstance(arg, ast.IfExp) else [arg]
+                for o in options:
+                    if isinstance(o, ast.Constant) and isinstance(o.value, str) \
+                            and o.value not in i18n.FR:
+                        missing.append(f"{path.name}: {o.value[:60]}")
+    assert not missing, missing
+
+
+def test_the_guides_and_plans_messages_in_french(french):
+    from tradelab.core import guide as g
+    from tradelab.core import room
+    rec = g.recommend(2, 5, None)                  # the horizon decides
+    assert rec["why"].startswith("Parce que") and "4 à 5 ans" in rec["why"]
+    assert g.first_steps("No", "No", "CELI and REER")[0].startswith("Gardez")
+    ok = room.status("CELI", 7000, "2026-01-01", [], __import__("datetime").date(2026, 5, 1))
+    assert room.check_items([ok]) == [("ok", "CELI : $7,000 de droits restants.")]
+    import pandas as pd
+    assert g.calm_text(-0.12, pd.Timestamp("2026-10-02"), "Balanced", None).startswith(
+        "Les actions mondiales sont 12%")
+
+
 def test_the_language_setting(tmp_path):
     from PySide6.QtCore import QSettings
     s = QSettings(str(tmp_path / "l.ini"), QSettings.IniFormat)
