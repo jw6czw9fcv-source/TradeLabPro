@@ -7561,6 +7561,18 @@ def run_app():
     except Exception:
         pass
     logging.shutdown()
+    end_process(code)
+
+
+def end_process(code):
+    """End now, whatever threads are left. On Windows through TerminateProcess:
+    os._exit still runs every library's unload routine, and one of Qt's
+    crashed there - the process ended with an access violation (0xC0000005)
+    after everything was saved (2.72.0)."""
+    if sys.platform == "win32":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.TerminateProcess(kernel32.GetCurrentProcess(), int(code) & 0xFFFFFFFF)
     os._exit(code)
 
 
