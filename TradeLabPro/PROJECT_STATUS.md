@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.72.1
+Current version: 2.73.0
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.73.0 (Le manuel en français)
+- **French, phase 4:** `docs/USER_MANUAL.fr.md`, the whole manual translated (24 sections, same subsections and screenshots, French UI names); bundled by the spec; `app.manual_path()` picks it for the Help tab, F1 and the PDF when the UI is French. `tools/build_manual_html.py` strips either table-of-contents heading and takes the page title and language from the manual (`--manual docs/USER_MANUAL.fr.md --out docs/USER_MANUAL.fr.html`; the French page is its own Artifact). Tests: the French table of contents resolves, both editions have the same sections, subsections, images and version, the manual follows the language. The English manual's AI model list brought up to date (Opus / Sonnet / Haiku 5.5, no costs quoted from memory).
 
 ## Completed in 2.72.1 (A clean exit)
 - **`app.end_process(code)`:** on Windows `TerminateProcess` on the current process; `os._exit` still ran every DLL's unload routine and one of Qt's crashed after "TradeLab Pro closed" was logged (exit code 0xC0000005 since 2.67.0, nothing lost). The release check now reads the built exe's exit code as well as the log, and runs the self-restart.

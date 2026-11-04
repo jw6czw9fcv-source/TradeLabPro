@@ -1,6 +1,6 @@
 # TradeLab Pro — Manuel d'utilisation
 
-**Version 2.72.1**
+**Version 2.73.0**
 
 TradeLab Pro est un **poste de travail** pour le marché boursier, sur ordinateur :
 il s'ouvre sur un tableau de bord **Accueil** qui montre vos comptes, un

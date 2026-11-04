@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.73.0 - Le manuel en français
+
+### Added
+- **The user manual in French** - all 24 sections, with the names the French screens use. With TradeLab in French, the Help tab, F1 and "Open as PDF" open it; in English, the English manual as before. It is also published as its own web page.
+
+### Fixed
+- The English manual still listed older AI models (Sonnet 5, Haiku 4.5, Opus 4.8) with costs per question; it now lists the models the app offers - Opus 5.5 by default, Sonnet 5.5 and Haiku 5.5.
+
+### Verified
+- Full pytest suite passes (1674), including 3 new tests: the French table of contents lands on its headings, both editions have the same sections, subsections, screenshots and version, and the manual follows the language.
+
 ## 2.72.1 - A clean exit
 
 ### Fixed
