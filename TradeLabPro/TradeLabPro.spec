@@ -17,6 +17,7 @@ datas = [
     # The in-app Help viewer reads the manual at runtime, so it has to travel
     # with the executable — along with the screenshots it references.
     ("docs/USER_MANUAL.md", "docs"),
+    ("docs/USER_MANUAL.fr.md", "docs"),
     ("docs/images", "docs/images"),
     # Help -> Revision history reads both of these at runtime.
     ("docs/VERSIONS.md", "docs"),

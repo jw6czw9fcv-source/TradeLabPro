@@ -4621,6 +4621,16 @@ def _scroll_tab(widget):
     return sa
 
 
+def manual_path():
+    """The user manual in the language on screen: docs/USER_MANUAL.fr.md in
+    French when it is there, else the English one."""
+    docs = ROOT_DIR / "docs"
+    french = docs / "USER_MANUAL.fr.md"
+    if i18n.current() == "fr" and french.is_file():
+        return french
+    return docs / "USER_MANUAL.md"
+
+
 # Simple mode: the tabs needed to invest calmly. Advanced shows every tab;
 # hidden tabs keep their data and come back as they were.
 SIMPLE_TABS = ("Guide", "Home", "Plan", "Portfolio", "Retirement Sim", "Settings", "Help")
@@ -6873,7 +6883,7 @@ class MainWindow(QMainWindow):
         self.notes_panel = NotesPanel()
         self.links_panel = LinksPanel()
         self.settings_panel = SettingsPanel(self.db)
-        self.help_panel = HelpPanel(ROOT_DIR / "docs" / "USER_MANUAL.md",
+        self.help_panel = HelpPanel(manual_path(),
                                     on_pdf=self._export_manual_pdf)
 
         # Tabs follow the trading process (each page wrapped in a scroll area so
@@ -7073,9 +7083,9 @@ class MainWindow(QMainWindow):
     def show_user_manual(self):
         """Open the bundled docs/USER_MANUAL.md in a scrollable in-app viewer
         (rendered from Markdown), so users never leave the app to read it."""
-        manual_path = ROOT_DIR / "docs" / "USER_MANUAL.md"
+        path = manual_path()
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"{APP_NAME} - User Manual")
+        dlg.setWindowTitle(f"{APP_NAME} - {tr('User Manual')}")
         # Standard window title-bar controls: minimize and maximize/restore
         # next to the close [X], like any normal window.
         dlg.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint
@@ -7085,19 +7095,19 @@ class MainWindow(QMainWindow):
 
         # Top shortcut row: open the manual as a PDF in the system viewer.
         toolbar = QHBoxLayout()
-        pdf_btn = QPushButton("📄  Open as PDF")
-        pdf_btn.setToolTip("Export the manual to a PDF and open it in your default viewer")
-        pdf_btn.clicked.connect(lambda: self._export_manual_pdf(manual_path))
+        pdf_btn = QPushButton(tr("📄  Open as PDF"))
+        pdf_btn.setToolTip(tr("Export the manual to a PDF and open it in your default viewer"))
+        pdf_btn.clicked.connect(lambda: self._export_manual_pdf(path))
         toolbar.addWidget(pdf_btn)
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        viewer = ManualBrowser(manual_path.parent)
+        viewer = ManualBrowser(path.parent)
         try:
-            viewer.load_markdown(manual_path.read_text(encoding="utf-8"))
+            viewer.load_markdown(path.read_text(encoding="utf-8"))
         except Exception as e:
             viewer.setPlainText(
-                f"Could not load the user manual from:\n{manual_path}\n\n{e}")
+                f"Could not load the user manual from:\n{path}\n\n{e}")
         layout.addWidget(viewer)
         dlg.exec()
 

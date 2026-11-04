@@ -32,7 +32,7 @@ DEFAULT_OUT = ROOT / "docs" / "USER_MANUAL.html"
 
 # The manual's own table of contents is replaced by the sidebar, so rendering it
 # too would just be the same list twice.
-TOC_HEADING = "## Table of Contents"
+TOC_HEADINGS = ("## Table of Contents", "## Table des matières")   # English, French
 
 
 # The rule lives beside the app, not here: the in-app viewer resolves the same
@@ -43,7 +43,7 @@ from tradelab.core.manual import slugify  # noqa: E402  (re-exported for callers
 
 def strip_toc(md: str) -> str:
     """Drop the markdown TOC block (heading through the following rule)."""
-    start = md.find(TOC_HEADING)
+    start = next((i for i in (md.find(h) for h in TOC_HEADINGS) if i != -1), -1)
     if start == -1:
         return md
     rule = md.find("\n---", md.find("\n", start))
@@ -129,7 +129,10 @@ def build(manual: Path = MANUAL, out: Path = DEFAULT_OUT) -> Path:
     html, entries = add_heading_ids(html)
     html, images = embed_images(html, manual.parent)
 
-    page = PAGE.format(version=version, nav=render_nav(entries), body=html)
+    title = md_text.splitlines()[0].lstrip("# ").strip() if md_text else "TradeLab Pro"
+    french = "Manuel" in title
+    page = PAGE.format(version=version, nav=render_nav(entries), body=html, title=title,
+                       lang="fr" if french else "en", eyebrow="Manuel" if french else "Manual")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")
     try:
@@ -144,7 +147,7 @@ def build(manual: Path = MANUAL, out: Path = DEFAULT_OUT) -> Path:
 # The page shell. Colours come from the app's own semantic palette
 # (tradelab/ui/theme.py) so the manual looks like the product it documents:
 # bullish green as the single accent, slate-biased neutrals, amber for callouts.
-PAGE = """<title>TradeLab Pro — User Manual</title>
+PAGE = """<title>{title}</title>
 <style>
   :root {{
     --bg: #f7f8fa;          --panel: #eef1f5;      --text: #2b333c;
@@ -260,7 +263,7 @@ PAGE = """<title>TradeLab Pro — User Manual</title>
   <nav class="sidebar" aria-label="Manual sections">
     <div class="masthead">
       <b>TradeLab Pro</b>
-      <span class="eyebrow">Manual · {version}</span>
+      <span class="eyebrow">{eyebrow} · {version}</span>
     </div>
     <ul>
 {nav}

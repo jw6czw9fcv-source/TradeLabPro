@@ -420,6 +420,46 @@ def test_every_contents_link_lands_on_a_heading(qapp):
     assert not links - slugs, f"links point at nothing: {sorted(links - slugs)}"
 
 
+def test_the_french_manual_links_land_on_its_headings_too(qapp):
+    """The French edition (2.73.0) has its own headings and so its own
+    slugs - accented ones included."""
+    import re
+    from tradelab.ui.app import ManualBrowser
+    from tradelab.core.config import ROOT_DIR
+    docs = ROOT_DIR / "docs"
+    md = (docs / "USER_MANUAL.fr.md").read_text(encoding="utf-8")
+    browser = ManualBrowser(docs)
+    browser.load_markdown(md)
+    browser.resize(900, 700); browser.show(); qapp.processEvents()
+    slugs = {slug for slug, _block in browser.heading_blocks()}
+    links = set(re.findall(r"\]\(#([^)]+)\)", md))
+    browser.hide()
+    assert len(links) == 24 and not links - slugs, sorted(links - slugs)
+
+
+def test_the_manual_follows_the_language(monkeypatch):
+    from tradelab import i18n
+    from tradelab.ui.app import manual_path
+    assert manual_path().name == "USER_MANUAL.md"
+    monkeypatch.setattr(i18n, "_current", "fr")
+    assert manual_path().name == "USER_MANUAL.fr.md"
+
+
+def test_both_manuals_cover_the_same_sections():
+    """The French edition is a translation, not a summary: same 24 sections,
+    same subsections, same screenshots."""
+    import re
+    from tradelab.core.config import ROOT_DIR
+    en = (ROOT_DIR / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8")
+    fr = (ROOT_DIR / "docs" / "USER_MANUAL.fr.md").read_text(encoding="utf-8")
+    count = lambda text, pat: len(re.findall(pat, text, flags=re.M))  # noqa: E731
+    assert count(en, r"^## \d+\. ") == count(fr, r"^## \d+\. ") == 24
+    assert count(en, r"^### ") == count(fr, r"^### ")
+    assert re.findall(r"\]\((images/[^)]+)\)", en) == re.findall(r"\]\((images/[^)]+)\)", fr)
+    assert re.search(r"\*\*Version ([^*]+)\*\*", en).group(1) == \
+        re.search(r"\*\*Version ([^*]+)\*\*", fr).group(1)
+
+
 def test_every_contents_entry_lands_on_its_own_heading(qapp):
     """Not merely "it scrolled somewhere". Qt lays the document out lazily, and
     with screenshots in it every position below the first image came back from a

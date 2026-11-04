@@ -111,13 +111,13 @@ starts in Advanced. The choice is remembered.
 
 **English or French.** **View → Language → Français** shows TradeLab in
 French; it asks to restart, since the language applies when TradeLab starts.
-In French so far: the tab names, the menus, every tab — Simple and Advanced
-— and the messages the Simple tabs build as they go (the Plan checklist, the
-Guide's explanations, the plan light, the monthly reminder and the notice in
-a market fall). Still in English: the status lines the Advanced tabs write
-as they work, the choices in their drop-down lists (strategy names,
-intervals, indicators), the technical codes (RSI, MACD, 1d…) and this
-manual.
+In French: the tab names, the menus, every tab — Simple and Advanced — the
+messages the Simple tabs build as they go (the Plan checklist, the Guide's
+explanations, the plan light, the monthly reminder and the notice in a market
+fall), and this manual: the Help tab and F1 open its French edition. Still in
+English: the status lines the Advanced tabs write as they work, the choices in
+their drop-down lists (strategy names, intervals, indicators) and the
+technical codes (RSI, MACD, 1d…).
 
 **When something goes wrong, a pop-up says so.** A chart that finds no data, an
 import that fails, a refresh that cannot reach the market or a link that will
@@ -1726,12 +1726,9 @@ automatically, and otherwise says it was declined.
 1. Create a key at **console.anthropic.com** → API Keys, and add a little billing
    credit (the key won't work without it).
 2. Paste it into the **API key** field and choose a **model**:
-   - **Sonnet 5** *(default)* — the best balance; near-Opus quality for
-     technical-analysis explanations at a fraction of the cost (~½–1¢ per
-     question).
-   - **Haiku 4.5** — cheapest (~⅓¢), great for simple "what is X?" lookups.
-   - **Opus 4.8** — the richest multi-indicator reasoning (~1.3¢), when you want
-     the most careful answer.
+   - **Opus 5.5** *(default)* — the most careful reasoning.
+   - **Sonnet 5.5** — a good balance of quality and cost.
+   - **Haiku 5.5** — the cheapest, fine for simple "what is X?" lookups.
 3. Click **Save**. The key is stored on your PC (Windows registry, under
    `TradeLabPro`) — treat it like a password; on a shared machine prefer an
    `ANTHROPIC_API_KEY` environment variable, or clear the field when done.
