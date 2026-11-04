@@ -307,8 +307,23 @@ PAGE = """<title>{title}</title>
     var link = links[best.id];
     if (link) {{
       link.classList.add("active");
-      if (link.scrollIntoViewIfNeeded) link.scrollIntoViewIfNeeded();
+      keepInBox(link);
     }}
+  }}
+  // Bring the lit link into view inside the index's own scrolling box only.
+  // scrollIntoView would scroll the page too, and on a narrow window, where the
+  // index sits above the text, that dragged the reader back up to the index.
+  function keepInBox(link) {{
+    var box = link.parentNode;
+    while (box && box !== document.body) {{
+      var oy = getComputedStyle(box).overflowY;
+      if ((oy === "auto" || oy === "scroll") && box.scrollHeight > box.clientHeight) break;
+      box = box.parentNode;
+    }}
+    if (!box || box === document.body) return;
+    var b = box.getBoundingClientRect(), r = link.getBoundingClientRect();
+    if (r.top < b.top) box.scrollTop -= b.top - r.top + 8;
+    else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom + 8;
   }}
   var ticking = false;
   window.addEventListener("scroll", function () {{

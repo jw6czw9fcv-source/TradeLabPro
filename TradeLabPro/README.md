@@ -3,6 +3,8 @@
 TradeLab Pro is a Qt desktop trading workstation for scanning, charting, watchlists, portfolios, and strategy development.
 
 ## Version
+2.73.1 - The index stays put - the manual's web page no longer jumps back to its index after a click or a scroll in a narrow window
+
 2.73.0 - Le manuel en français - the whole user manual in French, opened by Help and F1 when TradeLab is in French
 
 2.72.1 - A clean exit - closing TradeLab no longer ends in a crash Windows records after everything is saved

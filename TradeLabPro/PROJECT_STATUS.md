@@ -1,7 +1,10 @@
 # TradeLab Pro Project Status
 
-Current version: 2.73.0
+Current version: 2.73.1
 Current phase: ETF comparison & allocation building (done)
+
+## Completed in 2.73.1 (The index stays put)
+- **Published manual pages:** the scroll-spy called `scrollIntoViewIfNeeded` on the lit index link; below 900 px (the Claude side pane) the index is static above the text, so that scrolled the page back to the index after every click or scroll. `keepInBox()` now scrolls only the index's own scrolling box. Test: the page script never calls scrollIntoView.
 
 ## Completed in 2.73.0 (Le manuel en français)
 - **French, phase 4:** `docs/USER_MANUAL.fr.md`, the whole manual translated (24 sections, same subsections and screenshots, French UI names); bundled by the spec; `app.manual_path()` picks it for the Help tab, F1 and the PDF when the UI is French. `tools/build_manual_html.py` strips either table-of-contents heading and takes the page title and language from the manual (`--manual docs/USER_MANUAL.fr.md --out docs/USER_MANUAL.fr.html`; the French page is its own Artifact). Tests: the French table of contents resolves, both editions have the same sections, subsections, images and version, the manual follows the language. The English manual's AI model list brought up to date (Opus / Sonnet / Haiku 5.5, no costs quoted from memory).

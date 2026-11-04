@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.73.1 - The index stays put
+
+### Fixed
+- **The manual's web page jumped back to its index** in a narrow window, such as Claude's side pane: after clicking a topic, or even scrolling, the page returned to the index. Keeping the highlighted index entry in view scrolled the whole page when the index sits above the text; now only the index's own box scrolls. The manual inside TradeLab was not affected.
+
+### Verified
+- Full pytest suite passes, including a new test that the page never scrolls the reader back to the index.
+
 ## 2.73.0 - Le manuel en français
 
 ### Added

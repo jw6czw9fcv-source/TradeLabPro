@@ -522,6 +522,15 @@ def test_the_slug_rule_is_shared_with_the_published_page(qapp):
         "8-portfolio-analytics-dividends--retirement"
 
 
+def test_the_published_page_never_scrolls_the_reader_back_to_the_index():
+    """On a narrow window the index sits above the text; scrollIntoView on the
+    lit index link scrolled the whole page back up to it after every click or
+    scroll (2.73.1). Only the index's own box may scroll."""
+    from tools.build_manual_html import PAGE
+    assert ".scrollIntoView" not in PAGE
+    assert "keepInBox(link)" in PAGE
+
+
 # -- the Help tab --------------------------------------------------------------
 
 def test_help_is_the_last_tab_after_settings(qapp):
