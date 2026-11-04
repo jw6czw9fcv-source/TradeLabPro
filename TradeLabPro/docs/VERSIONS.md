@@ -10,7 +10,7 @@ is in [CHANGELOG.md](../CHANGELOG.md). The version the app reports is in
 
 | Version | Date | What shipped |
 | --- | --- | --- |
-| **2.73.0** | *unreleased* | Le manuel en français |
+| **2.73.0** | 2026-11-03 | Le manuel en français |
 | **2.72.1** | 2026-11-02 | A clean exit |
 | **2.72.0** | 2026-11-02 | Tout en français |
 | **2.71.0** | 2026-11-02 | En français, suite |
